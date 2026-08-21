@@ -21,4 +21,8 @@ jobs:
       - run: go test -race -coverprofile=coverage.out ./...
       - run: GOOS=linux GOARCH=amd64 go build ./cmd/mikrotik-tui
       - run: GOOS=linux GOARCH=arm64 go build ./cmd/mikrotik-tui
+      - run: GOOS=darwin GOARCH=amd64 go build ./cmd/mikrotik-tui
+      - run: GOOS=darwin GOARCH=arm64 go build ./cmd/mikrotik-tui
+      - run: GOOS=windows GOARCH=amd64 go build ./cmd/mikrotik-tui
+      - run: GOOS=windows GOARCH=arm64 go build ./cmd/mikrotik-tui
       - run: docker build --build-arg VERSION=ci .
