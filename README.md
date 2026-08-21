@@ -1,8 +1,8 @@
 # MikroTik TUI
 
-A keyboard-first RouterOS control deck for Linux terminals. The initial release
-is deliberately read-only: it makes common home-router state easy to inspect
-without exposing configuration mutations.
+A keyboard-first RouterOS control deck for Linux and Windows terminals. The
+initial release is deliberately read-only: it makes common home-router state
+easy to inspect without exposing configuration mutations.
 
 ## Features
 
