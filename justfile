@@ -6,8 +6,16 @@ app := "mikrotik-tui"
 default:
     @just --list
 
-# Format check, Clippy, and workspace tests
+# GitHub Actions `just check`: fail if unformatted, then Clippy, then tests.
+# Does not apply rustfmt. Run `just prepush` locally so Clippy sees the
+# formatted tree (fmt can introduce lints). OS-gated tests still differ.
 check: fmt clippy test
+
+# Local gate before push: format, then the same Clippy+tests as CI.
+prepush: fmt-fix clippy test
+
+# CI job except Docker (`docker build --build-arg VERSION=ci .`)
+ci: check build
 
 # Fail if rustfmt would change files
 fmt:
@@ -17,7 +25,7 @@ fmt:
 fmt-fix:
     cargo fmt --all
 
-# Clippy with warnings as errors
+# Clippy with warnings as errors (lib, bins, tests, examples)
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 

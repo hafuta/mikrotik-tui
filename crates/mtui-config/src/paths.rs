@@ -65,11 +65,10 @@ pub fn state_dir() -> Result<PathBuf> {
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 
-    #[cfg(windows)]
     #[test]
     fn windows_config_dir_matches_go_appdata_layout() {
         if std::env::var_os("XDG_CONFIG_HOME").is_some() {

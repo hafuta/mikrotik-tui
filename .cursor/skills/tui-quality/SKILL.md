@@ -10,7 +10,7 @@ description: Build and review ratatui TUI behavior for correctness, responsivene
 4. Provide keyboard-first navigation, visible focus, discoverable key hints, and a non-color-only state indicator. Respect terminal color capability.
 5. Keep secrets out of models used by `render`, debug formatting, and logs; request credentials only at the connection boundary.
 6. Test update transitions and view invariants with fixed dimensions. Cover resize, repeated keys, empty data, errors, cancellation, and stale messages without sleeps or live network access.
-7. Run `just check` (or `cargo fmt`, affected crate tests, and `cargo test --workspace`). Use `cargo clippy --workspace --all-targets` when concurrency or layout code changes. The compiler is pinned in `rust-toolchain.toml`.
+7. Before push run `just prepush` (format, then Clippy `-D warnings`, then tests). CI runs `just check` (fmt `--check`, same Clippy, same tests). Never Clippy then format. Keep OS-gated tests in their own `cfg` modules so unused imports cannot appear only on Linux or only on Windows. The compiler is pinned in `rust-toolchain.toml`.
 
 ## Rendering invariants
 

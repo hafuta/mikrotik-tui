@@ -113,17 +113,31 @@ upward detaches from the tail and shows an unread-event counter.
 ## Build and test
 
 ```sh
+just prepush
 just check
 just build
 just release
 docker build -t mikrotik-tui .
 ```
 
-`just check` runs `cargo fmt --all -- --check`, Clippy with `-D warnings`, and
-`cargo test --workspace`. `just build` and `just release` both compile
-`-p mikrotik-tui --release` and copy the binary to `bin/` and `dist/`
-respectively. `just --list` shows the rest (`fmt-fix`, `clippy`, `test`,
-`run`, `clean`).
+Use `just prepush` before pushing: it runs `cargo fmt --all`, then Clippy with
+`-D warnings`, then `cargo test --workspace`. That is the local gate. GitHub
+Actions runs `just check` (`fmt --check`, same Clippy, same tests), then
+`just build`, then `docker build`. `just ci` is check plus build without
+Docker.
+
+Do not run Clippy and then format afterward: rustfmt can wrap code in a way
+that Clippy then rejects. `just check` does not reformat, so unformatted or
+half-formatted trees can look clean locally and fail in CI.
+
+Clippy and tests still follow the host OS. `cfg(windows)` / `cfg(unix)` code
+that is unused on the other platform will not fail locally; keep platform
+tests in their own `cfg` modules so imports are not shared with an empty
+Linux or Windows test module.
+
+`just build` and `just release` compile `-p mikrotik-tui --release` and copy
+the binary to `bin/` and `dist/` respectively. `just --list` shows the rest
+(`fmt-fix`, `clippy`, `test`, `run`, `clean`).
 
 ## Docker
 
