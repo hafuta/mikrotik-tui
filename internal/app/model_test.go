@@ -230,9 +230,9 @@ func TestDashboardRenderGoldens(t *testing.T) {
 	model.focus = 1
 
 	goldens := map[int]string{
-		60:  "09545545f94e4b7310083124a238b8251a19fff34e48e6d3337364b66ee6c156",
-		90:  "253a242863b9b901519ecaf0679d087fb522f08f380ec45208cc7836ef76d350",
-		140: "6db075a07dd51a26094c5d0e86b46d3fe2e8bddbb520d56da9ac9e4f6d8f8237",
+		60:  "48348739165be3b36877ac937d8af06130f48fd59b518e4045ca22c563d1b0fb",
+		90:  "9c2c4afd7007dcb7b8a925d08839add5e2c52932abcee10fa41d63335b8002be",
+		140: "8d92b0a3f9632900bc2bce4f0127b0ac82d16a8c3cb87ab7c75b88bbb310a98d",
 	}
 	for width, expected := range goldens {
 		model.resize(width, 28)
@@ -812,10 +812,10 @@ func TestCommandPaletteNavigatesToRouterOSPath(t *testing.T) {
 	model.activateDashboard()
 	model.loading = false
 
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
 	model = updated.(Model)
 	if !model.palette.Visible {
-		t.Fatal("ctrl+p did not open command palette")
+		t.Fatal("ctrl+k did not open command palette")
 	}
 	for _, r := range "/IP/firewall" {
 		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})

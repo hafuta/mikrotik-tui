@@ -47,7 +47,7 @@ encrypted; use an appropriately protected machine or a secret-file override.
 ## Keyboard
 
 `↑/↓` or `j/k` moves, `←/→` or `h/l` scrolls columns, `tab` changes pane,
-`enter` inspects, `/` filters, `s` sorts, `r` refreshes, `ctrl+p` opens the
+`enter` inspects, `/` filters, `s` sorts, `r` refreshes, `ctrl+k` opens the
 command palette, `ctrl+l` logs out, `?` opens help, `esc` goes back, and `q`
 quits. Logging out removes the saved local profile and credential; quitting
 keeps them for automatic reconnection.

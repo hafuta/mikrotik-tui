@@ -193,7 +193,7 @@ func (p CommandPalette) Update(msg tea.Msg) (CommandPalette, tea.Cmd) {
 		return p, nil
 	}
 	if !p.Visible {
-		if key.String() == "ctrl+p" {
+		if key.String() == "ctrl+k" {
 			p.Visible = true
 			p.Query, p.selected = "", 0
 		}

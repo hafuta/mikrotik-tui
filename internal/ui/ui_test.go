@@ -245,15 +245,15 @@ func TestLoginIgnoresModifierAndControlRunes(t *testing.T) {
 	}
 }
 
-func TestCommandPaletteOpensWithCtrlP(t *testing.T) {
+func TestCommandPaletteOpensWithCtrlK(t *testing.T) {
 	palette := NewCommandPalette([]Command{{ID: "refresh", Title: "Refresh"}})
-	palette, _ = palette.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
-	if palette.Visible {
-		t.Fatal("legacy ctrl+k shortcut opened command palette")
-	}
 	palette, _ = palette.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	if palette.Visible {
+		t.Fatal("ctrl+p opened command palette")
+	}
+	palette, _ = palette.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
 	if !palette.Visible {
-		t.Fatal("ctrl+p did not open command palette")
+		t.Fatal("ctrl+k did not open command palette")
 	}
 }
 

@@ -173,7 +173,7 @@ func New(options Options) Model {
 			{Key: "e", Description: "cycle RouterOS log severity"},
 			{Key: "c", Description: "clear the local RouterOS log buffer"},
 			{Key: "ctrl+l", Description: "log out and forget the saved session"},
-			{Key: "ctrl+p", Description: "open command palette"},
+			{Key: "ctrl+k", Description: "open command palette"},
 			{Key: "q", Description: "quit"},
 		},
 		Width: 56,
@@ -322,7 +322,7 @@ func (m Model) updateDashboard(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			m.help, _ = m.help.Update(message)
 			return m, nil
-		case "ctrl+p":
+		case "ctrl+k":
 			m.palette, _ = m.palette.Update(message)
 			return m, nil
 		case "ctrl+l":
@@ -1161,7 +1161,7 @@ func (m Model) trustView() string {
 func (m Model) dashboardView() string {
 	header := m.headerView()
 	body := m.bodyView()
-	footer := theme.Default.Muted.Render("[? help] [ctrl+p commands] [ctrl+l logout] [/ filter] [r refresh] [q quit]")
+	footer := theme.Default.Muted.Render("[? help] [ctrl+k commands] [ctrl+l logout] [/ filter] [r refresh] [q quit]")
 	status := m.status.View()
 	view := lipgloss.JoinVertical(lipgloss.Left, header, body, status, footer)
 	base := theme.Default.Base.Width(m.width).Height(m.height).Render(view)
