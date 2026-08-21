@@ -75,8 +75,10 @@ mod tests {
 
     #[test]
     fn insert_char_appends_printable_runes() {
-        let mut form = LoginForm::default();
-        form.focus = LoginField::Username;
+        let mut form = LoginForm {
+            focus: LoginField::Username,
+            ..LoginForm::default()
+        };
         form.insert_char('a');
         form.insert_char('d');
         form.insert_char('m');
@@ -87,8 +89,10 @@ mod tests {
 
     #[test]
     fn insert_char_ignores_control_runes() {
-        let mut form = LoginForm::default();
-        form.focus = LoginField::Password;
+        let mut form = LoginForm {
+            focus: LoginField::Password,
+            ..LoginForm::default()
+        };
         form.insert_char('\0');
         form.insert_char('\r');
         form.insert_char('\n');
@@ -117,17 +121,21 @@ mod tests {
 
     #[test]
     fn backspace_on_empty_field_is_a_no_op() {
-        let mut form = LoginForm::default();
-        form.focus = LoginField::Username;
+        let mut form = LoginForm {
+            focus: LoginField::Username,
+            ..LoginForm::default()
+        };
         form.backspace();
         assert_eq!(form.username, "");
     }
 
     #[test]
     fn backspace_pops_a_whole_unicode_scalar() {
-        let mut form = LoginForm::default();
-        form.focus = LoginField::Password;
-        form.password = "Päss".into();
+        let mut form = LoginForm {
+            focus: LoginField::Password,
+            password: "Päss".into(),
+            ..LoginForm::default()
+        };
         form.backspace();
         assert_eq!(form.password, "Päs");
     }

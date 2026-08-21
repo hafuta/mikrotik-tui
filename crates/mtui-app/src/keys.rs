@@ -58,9 +58,10 @@ impl App {
                 self.should_quit = true;
                 return vec![AppCommand::Quit];
             }
-            KeyCode::Backspace | KeyCode::Delete => self.login.backspace(),
             // Some Windows terminals report Backspace as ASCII BS (0x08) or DEL (0x7f).
-            KeyCode::Char('\u{8}' | '\u{7f}') => self.login.backspace(),
+            KeyCode::Backspace | KeyCode::Delete | KeyCode::Char('\u{8}' | '\u{7f}') => {
+                self.login.backspace()
+            }
             KeyCode::Char('q') if self.login.focus != LoginField::Password => {
                 self.should_quit = true;
                 return vec![AppCommand::Quit];
@@ -202,12 +203,11 @@ impl App {
                 self.table.scroll_columns(1);
             }
             KeyCode::Enter => {
-                if self.pane == Pane::Nav {
-                    if let Some(id) = self.nav.selected_id().map(str::to_owned) {
-                        if !id.ends_with("-group") {
-                            return self.open_resource(&id);
-                        }
-                    }
+                if self.pane == Pane::Nav
+                    && let Some(id) = self.nav.selected_id().map(str::to_owned)
+                    && !id.ends_with("-group")
+                {
+                    return self.open_resource(&id);
                 }
             }
             KeyCode::Char(ch)

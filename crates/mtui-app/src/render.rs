@@ -342,7 +342,7 @@ fn draw_dashboard(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-const HELP_TEXT: &str = r#"↑↓ / j k   move
+const HELP_TEXT: &str = r"↑↓ / j k   move
 pgup/pgdn   page
 g / G       first / last
 h / l       columns
@@ -357,4 +357,4 @@ ctrl+l      log out
 q           quit
 
 Logs: space pause · f follow · e severity · c clear local
-"#;
+";

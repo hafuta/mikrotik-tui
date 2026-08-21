@@ -47,11 +47,13 @@ pub struct ColorRgb {
 }
 
 impl ColorRgb {
+    #[must_use]
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
     }
 
     /// Parse `#RRGGBB` (case-insensitive).
+    #[must_use]
     pub fn from_hex(hex: &str) -> Option<Self> {
         let hex = hex.trim().trim_start_matches('#');
         if hex.len() != 6 {
@@ -103,7 +105,7 @@ pub struct Palette {
 /// [`ThemeRegistry`].
 pub trait Theme: Send + Sync {
     fn id(&self) -> &ThemeId;
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
     fn palette(&self) -> &Palette;
 }
 
@@ -154,7 +156,7 @@ impl Theme for DefaultTheme {
         &self.id
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Default"
     }
 
@@ -283,7 +285,7 @@ mod tests {
             fn id(&self) -> &ThemeId {
                 &self.id
             }
-            fn name(&self) -> &str {
+            fn name(&self) -> &'static str {
                 "Alt"
             }
             fn palette(&self) -> &Palette {

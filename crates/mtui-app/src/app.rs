@@ -69,6 +69,7 @@ pub enum AppCommand {
     ClearSession,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct App {
     pub screen: Screen,
     pub login: LoginForm,
@@ -271,10 +272,10 @@ impl App {
     }
 
     fn pin_for_url(&self, url: &str) -> Option<String> {
-        if let Some(fingerprint) = self.trust_fingerprint.as_deref() {
-            if !fingerprint.is_empty() {
-                return Some(fingerprint.to_string());
-            }
+        if let Some(fingerprint) = self.trust_fingerprint.as_deref()
+            && !fingerprint.is_empty()
+        {
+            return Some(fingerprint.to_string());
         }
         match (&self.saved_url, &self.saved_fingerprint) {
             (Some(saved_url), Some(fingerprint)) if saved_url == url && !fingerprint.is_empty() => {
@@ -429,7 +430,7 @@ impl App {
                 self.status = if self.refreshing {
                     "Refreshing…".into()
                 } else {
-                    format!("{resource_id}")
+                    resource_id
                 };
                 Vec::new()
             }
@@ -451,14 +452,14 @@ impl App {
                 self.loading = false;
                 self.refreshing = false;
                 self.apply_dashboard(
-                    cpu,
-                    cpu_error,
-                    system,
-                    system_error,
-                    interfaces,
-                    interface_error,
-                    firewall,
-                    firewall_error,
+                    &cpu,
+                    cpu_error.as_deref(),
+                    system.as_ref(),
+                    system_error.as_deref(),
+                    &interfaces,
+                    interface_error.as_deref(),
+                    &firewall,
+                    firewall_error.as_deref(),
                 );
                 Vec::new()
             }
@@ -474,7 +475,7 @@ impl App {
         }
     }
 
-    /// Header signals: board, host, RouterOS version, memory, uptime, and local clock.
+    /// Header signals: board, host, `RouterOS` version, memory, uptime, and local clock.
     #[must_use]
     pub fn header_signals(&self) -> Vec<Signal> {
         let board = nonempty_field(&self.router, "board-name").unwrap_or("RouterOS");
@@ -674,7 +675,7 @@ impl App {
                     .to_ascii_lowercase()
                     .contains(other.label()),
             })
-            .map(|r| r.masked_fields())
+            .map(Resource::masked_fields)
             .collect();
         let previous = self.table.selected;
         self.table.set_rows(rows);
@@ -705,32 +706,32 @@ impl App {
     #[allow(clippy::too_many_arguments)]
     fn apply_dashboard(
         &mut self,
-        cpu: Vec<Resource>,
-        cpu_error: Option<String>,
-        system: Option<Resource>,
-        system_error: Option<String>,
-        interfaces: Vec<Resource>,
-        interface_error: Option<String>,
-        firewall: Vec<Resource>,
-        firewall_error: Option<String>,
+        cpu: &[Resource],
+        cpu_error: Option<&str>,
+        system: Option<&Resource>,
+        system_error: Option<&str>,
+        interfaces: &[Resource],
+        interface_error: Option<&str>,
+        firewall: &[Resource],
+        firewall_error: Option<&str>,
     ) {
-        if let Some(system) = system.as_ref() {
+        if let Some(system) = system {
             self.apply_system_resource(system.clone());
         }
         if cpu_error.is_none() {
-            self.dash.update_cpu(&cpu, system.as_ref());
+            self.dash.update_cpu(cpu, system);
         } else if system_error.is_none() {
-            self.dash.update_cpu(&[], system.as_ref());
+            self.dash.update_cpu(&[], system);
         }
         if firewall_error.is_none() {
-            self.dash.update_firewall(&firewall);
+            self.dash.update_firewall(firewall);
         }
 
         if let Some(err) = interface_error {
             self.status = format!("System telemetry live · WAN {err} · retrying");
             return;
         }
-        match select_wan_interface(&interfaces) {
+        match select_wan_interface(interfaces) {
             Ok(iface) => {
                 self.dash.update_wan(iface, Instant::now());
                 let mut unavailable = Vec::new();
@@ -813,6 +814,7 @@ fn format_header_clock(now: chrono::DateTime<Local>) -> String {
     now.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+#[cfg(test)]
 fn is_header_clock(value: &str) -> bool {
     let bytes = value.as_bytes();
     bytes.len() == 19
@@ -899,8 +901,8 @@ mod dashboard_tests {
             error: None,
         }));
         assert!(cmds.is_empty());
-        assert_eq!(app.dash.memory_used_bytes, 134217728);
-        assert_eq!(app.dash.memory_total_bytes, 268435456);
+        assert_eq!(app.dash.memory_used_bytes, 134_217_728);
+        assert_eq!(app.dash.memory_total_bytes, 268_435_456);
         let header = app
             .header_signals()
             .into_iter()

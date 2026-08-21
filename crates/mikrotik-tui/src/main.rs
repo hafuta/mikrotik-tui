@@ -1,4 +1,4 @@
-//! MikroTik TUI — keyboard-first RouterOS control deck (Rust).
+//! `MikroTik` TUI — keyboard-first `RouterOS` control deck (Rust).
 
 use clap::Parser;
 use mtui_core::DefaultTheme;

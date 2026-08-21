@@ -81,7 +81,7 @@ pub fn footer_hints(hints: &[(&str, &str)], styles: &Styles) -> Line<'static> {
         if i > 0 {
             spans.push(Span::styled("  ", styles.muted));
         }
-        spans.push(Span::styled(format!("{key}"), styles.focus));
+        spans.push(Span::styled(key.to_string(), styles.focus));
         spans.push(Span::styled(format!(" {label}"), styles.muted));
     }
     Line::from(spans)

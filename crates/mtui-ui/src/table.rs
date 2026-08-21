@@ -330,19 +330,19 @@ impl TableState {
             .map(|(i, _)| i)
             .collect();
 
-        if let Some(col_idx) = self.sort_col {
-            if let Some(col) = self.columns.get(col_idx) {
-                let key = col.key;
-                let dir = self.sort_dir;
-                indices.sort_by(|&a, &b| {
-                    let av = self.rows[a].get(key).map_or("", String::as_str);
-                    let bv = self.rows[b].get(key).map_or("", String::as_str);
-                    match dir {
-                        SortDir::Asc => av.cmp(bv),
-                        SortDir::Desc => bv.cmp(av),
-                    }
-                });
-            }
+        if let Some(col_idx) = self.sort_col
+            && let Some(col) = self.columns.get(col_idx)
+        {
+            let key = col.key;
+            let dir = self.sort_dir;
+            indices.sort_by(|&a, &b| {
+                let av = self.rows[a].get(key).map_or("", String::as_str);
+                let bv = self.rows[b].get(key).map_or("", String::as_str);
+                match dir {
+                    SortDir::Asc => av.cmp(bv),
+                    SortDir::Desc => bv.cmp(av),
+                }
+            });
         }
 
         self.filtered = indices;

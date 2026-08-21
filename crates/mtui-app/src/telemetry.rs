@@ -78,15 +78,14 @@ impl DashboardTelemetry {
             let samples = self.cpu_core_samples.entry(name).or_default();
             *samples = append_bounded(samples, load, CPU_HISTORY);
         }
-        if seen.is_empty() {
-            if let Some(system) = system {
-                if let Some(load) = parse_f64(system.field("cpu-load").unwrap_or("")) {
-                    seen.insert("cpu".into());
-                    self.cpu_core_loads.insert("cpu".into(), load);
-                    let samples = self.cpu_core_samples.entry("cpu".into()).or_default();
-                    *samples = append_bounded(samples, load, CPU_HISTORY);
-                }
-            }
+        if seen.is_empty()
+            && let Some(system) = system
+            && let Some(load) = parse_f64(system.field("cpu-load").unwrap_or(""))
+        {
+            seen.insert("cpu".into());
+            self.cpu_core_loads.insert("cpu".into(), load);
+            let samples = self.cpu_core_samples.entry("cpu".into()).or_default();
+            *samples = append_bounded(samples, load, CPU_HISTORY);
         }
         let mut order: Vec<String> = seen.into_iter().collect();
         order.sort();
@@ -113,14 +112,14 @@ impl DashboardTelemetry {
             next_previous.insert(id.clone(), current);
             let mut packet_delta = 0_u64;
             let mut byte_delta = 0_u64;
-            if self.firewall_has_base {
-                if let Some(previous) = self.firewall_previous.get(&id) {
-                    if current.packets >= previous.packets {
-                        packet_delta = current.packets - previous.packets;
-                    }
-                    if current.bytes >= previous.bytes {
-                        byte_delta = current.bytes - previous.bytes;
-                    }
+            if self.firewall_has_base
+                && let Some(previous) = self.firewall_previous.get(&id)
+            {
+                if current.packets >= previous.packets {
+                    packet_delta = current.packets - previous.packets;
+                }
+                if current.bytes >= previous.bytes {
+                    byte_delta = current.bytes - previous.bytes;
                 }
             }
             let activity = firewall_activity(packet_delta, byte_delta);
@@ -158,23 +157,23 @@ impl DashboardTelemetry {
         let rx = resource_counter(iface, &["rx-byte", "fp-rx-byte"]);
         let tx = resource_counter(iface, &["tx-byte", "fp-tx-byte"]);
         self.traffic_interface = iface.field("name").unwrap_or("").to_string();
-        if self.traffic_has_base {
-            if let Some(previous) = self.traffic_updated {
-                let elapsed = at.saturating_duration_since(previous).as_secs_f64();
-                if elapsed > 0.0 {
-                    self.traffic_rx_rate = counter_rate(self.traffic_rx_bytes, rx, elapsed);
-                    self.traffic_tx_rate = counter_rate(self.traffic_tx_bytes, tx, elapsed);
-                    if self.traffic_samples.is_empty() {
-                        self.traffic_samples.push(TrafficSample::default());
-                    }
-                    self.traffic_samples.push(TrafficSample {
-                        rx: self.traffic_rx_rate,
-                        tx: self.traffic_tx_rate,
-                    });
-                    if self.traffic_samples.len() > TRAFFIC_HISTORY {
-                        let keep = self.traffic_samples.len() - TRAFFIC_HISTORY;
-                        self.traffic_samples.drain(..keep);
-                    }
+        if self.traffic_has_base
+            && let Some(previous) = self.traffic_updated
+        {
+            let elapsed = at.saturating_duration_since(previous).as_secs_f64();
+            if elapsed > 0.0 {
+                self.traffic_rx_rate = counter_rate(self.traffic_rx_bytes, rx, elapsed);
+                self.traffic_tx_rate = counter_rate(self.traffic_tx_bytes, tx, elapsed);
+                if self.traffic_samples.is_empty() {
+                    self.traffic_samples.push(TrafficSample::default());
+                }
+                self.traffic_samples.push(TrafficSample {
+                    rx: self.traffic_rx_rate,
+                    tx: self.traffic_tx_rate,
+                });
+                if self.traffic_samples.len() > TRAFFIC_HISTORY {
+                    let keep = self.traffic_samples.len() - TRAFFIC_HISTORY;
+                    self.traffic_samples.drain(..keep);
                 }
             }
         }
@@ -185,7 +184,7 @@ impl DashboardTelemetry {
     }
 }
 
-/// WAN auto-detect: PPPoE > name contains wan > ether > bridge.
+/// WAN auto-detect: `PPPoE` > name contains wan > ether > bridge.
 pub fn select_wan_interface(records: &[Resource]) -> Result<&Resource, &'static str> {
     let mut best_score = -1_i32;
     let mut best: Option<&Resource> = None;
@@ -243,10 +242,10 @@ pub fn counter_rate(previous: u64, current: u64, seconds: f64) -> f64 {
 #[must_use]
 pub fn resource_counter(resource: &Resource, names: &[&str]) -> u64 {
     for name in names {
-        if let Some(value) = resource.field(name) {
-            if let Ok(parsed) = value.parse::<u64>() {
-                return parsed;
-            }
+        if let Some(value) = resource.field(name)
+            && let Ok(parsed) = value.parse::<u64>()
+        {
+            return parsed;
         }
     }
     0
@@ -444,22 +443,24 @@ mod tests {
 
     #[test]
     fn returning_resets_baseline_without_gap_spike() {
-        let mut dash = DashboardTelemetry::default();
-        dash.traffic_interface = "pppoe-out2".into();
-        dash.traffic_samples = vec![
-            TrafficSample {
-                rx: 10_000_000.0,
-                tx: 1_000_000.0,
-            },
-            TrafficSample {
-                rx: 12_000_000.0,
-                tx: 2_000_000.0,
-            },
-        ];
-        dash.traffic_rx_bytes = 1_000;
-        dash.traffic_tx_bytes = 500;
-        dash.traffic_updated = Some(Instant::now());
-        dash.traffic_has_base = true;
+        let mut dash = DashboardTelemetry {
+            traffic_interface: "pppoe-out2".into(),
+            traffic_samples: vec![
+                TrafficSample {
+                    rx: 10_000_000.0,
+                    tx: 1_000_000.0,
+                },
+                TrafficSample {
+                    rx: 12_000_000.0,
+                    tx: 2_000_000.0,
+                },
+            ],
+            traffic_rx_bytes: 1_000,
+            traffic_tx_bytes: 500,
+            traffic_updated: Some(Instant::now()),
+            traffic_has_base: true,
+            ..DashboardTelemetry::default()
+        };
         dash.activate();
         assert_eq!(dash.traffic_samples.len(), 2);
         assert!(!dash.traffic_has_base);

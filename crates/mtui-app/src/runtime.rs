@@ -61,7 +61,7 @@ pub fn run(alt_screen: bool) -> anyhow::Result<()> {
                         dispatch_commands(&rt, &tx, &mut app, cmds);
                     }
                 }
-                _ = tokio::time::sleep(Duration::from_millis(16)) => {
+                () = tokio::time::sleep(Duration::from_millis(16)) => {
                     while event::poll(Duration::from_millis(0))? {
                         match event::read()? {
                             Event::Key(key) if key.kind == KeyEventKind::Press => {

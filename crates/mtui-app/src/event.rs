@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crossterm::event::KeyEvent;
 use mtui_routeros::{Client, Resource};
 
+#[allow(clippy::large_enum_variant)]
 pub enum AppEvent {
     Input(KeyEvent),
     Worker(WorkerMsg),

@@ -1,4 +1,4 @@
-//! Descriptor-driven RouterOS resource catalog and navigation tree.
+//! Descriptor-driven `RouterOS` resource catalog and navigation tree.
 
 use std::time::Duration;
 

@@ -59,16 +59,24 @@ impl NavState {
         if step == 0 {
             return;
         }
-        let len = self.entries.len() as isize;
-        let mut idx = self.selected as isize + delta;
+        let Some(len) = isize::try_from(self.entries.len()).ok() else {
+            return;
+        };
+        let Some(selected) = isize::try_from(self.selected).ok() else {
+            return;
+        };
+        let mut idx = selected.saturating_add(delta);
         // Skip group headers in the same direction. Stop at the first and last
         // selectable items instead of wrapping.
         for _ in 0..self.entries.len() {
             if idx < 0 || idx >= len {
                 return;
             }
-            if !self.entries[idx as usize].is_group {
-                self.selected = idx as usize;
+            let Ok(index) = usize::try_from(idx) else {
+                return;
+            };
+            if !self.entries[index].is_group {
+                self.selected = index;
                 return;
             }
             idx += step;
