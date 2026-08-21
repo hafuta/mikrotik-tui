@@ -1,0 +1,23 @@
+[package]
+name = "mtui-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Application state machine, polling, and business orchestration"
+
+[dependencies]
+anyhow = { workspace = true }
+mtui-config = { workspace = true }
+mtui-core = { workspace = true }
+mtui-routeros = { workspace = true }
+mtui-ui = { workspace = true }
+crossterm = { workspace = true }
+chrono = { workspace = true }
+ratatui = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "mtui-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Pure TUI widgets and layouts (no networking)"
+
+[dependencies]
+mtui-core = { workspace = true }
+ratatui = { workspace = true }
+unicode-width = { workspace = true }
+
+[lints]
+workspace = true

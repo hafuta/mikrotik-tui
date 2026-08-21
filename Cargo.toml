@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mtui-core",
+    "crates/mtui-routeros",
+    "crates/mtui-config",
+    "crates/mtui-ui",
+    "crates/mtui-app",
+    "crates/mikrotik-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+authors = ["MikroTik TUI contributors"]
+
+[workspace.dependencies]
+mtui-core = { path = "crates/mtui-core" }
+mtui-routeros = { path = "crates/mtui-routeros" }
+mtui-config = { path = "crates/mtui-config" }
+mtui-ui = { path = "crates/mtui-ui" }
+mtui-app = { path = "crates/mtui-app" }
+
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+crossterm = "0.28"
+directories = "6"
+hex = "0.4"
+ratatui = "0.29"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+unicode-width = "0.2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"

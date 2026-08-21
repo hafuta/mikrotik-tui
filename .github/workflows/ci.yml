@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup show
+      - uses: taiki-e/install-action@just
+      - uses: Swatinem/rust-cache@v2
+      - run: just check
+      - run: just build
+      - run: docker build --build-arg VERSION=ci .

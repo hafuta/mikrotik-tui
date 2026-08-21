@@ -1,0 +1,22 @@
+[package]
+name = "mikrotik-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Keyboard-first RouterOS control deck (Rust)"
+
+[[bin]]
+name = "mikrotik-tui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+mtui-app = { workspace = true }
+mtui-config = { workspace = true }
+mtui-core = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
