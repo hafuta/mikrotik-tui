@@ -60,7 +60,7 @@ impl App {
             }
             // Some Windows terminals report Backspace as ASCII BS (0x08) or DEL (0x7f).
             KeyCode::Backspace | KeyCode::Delete | KeyCode::Char('\u{8}' | '\u{7f}') => {
-                self.login.backspace()
+                self.login.backspace();
             }
             KeyCode::Char('q') if self.login.focus != LoginField::Password => {
                 self.should_quit = true;
