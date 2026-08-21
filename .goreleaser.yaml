@@ -1,0 +1,25 @@
+version: 2
+
+project_name: mikrotik-tui
+
+builds:
+  - main: ./cmd/mikrotik-tui
+    binary: mikrotik-tui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: git
