@@ -158,6 +158,13 @@ impl TableState {
         self.col_offset = add_clamped(self.col_offset, delta, max);
     }
 
+    /// Whether `scroll_columns(delta)` would change the column window.
+    #[must_use]
+    pub fn can_scroll_columns(&self, delta: isize) -> bool {
+        let max = self.max_col_offset(self.content_width());
+        add_clamped(self.col_offset, delta, max) != self.col_offset
+    }
+
     pub fn scroll_columns_home(&mut self) {
         self.col_offset = 0;
     }
@@ -509,8 +516,12 @@ mod scroll_tests {
         state.sync_viewport(18, 8);
         state.scroll_columns(-3);
         assert_eq!(state.col_offset, 0);
+        assert!(!state.can_scroll_columns(-1));
+        assert!(state.can_scroll_columns(1));
         state.scroll_columns(10);
         assert_eq!(state.col_offset, 1);
+        assert!(!state.can_scroll_columns(1));
+        assert!(state.can_scroll_columns(-1));
     }
 
     #[test]
