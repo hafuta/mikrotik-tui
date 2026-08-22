@@ -357,6 +357,28 @@ pub const ACTION_TORCH: ActionSpec = ActionSpec {
     when: ActionWhen::HasSelection,
 };
 
+pub const ACTION_PING: ActionSpec = ActionSpec {
+    id: "ping",
+    label: "Ping",
+    key: Some('p'),
+    enter: true,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Overlay { id: "ping" },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_TRACEROUTE: ActionSpec = ActionSpec {
+    id: "traceroute",
+    label: "Traceroute",
+    key: None,
+    enter: true,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Overlay { id: "traceroute" },
+    when: ActionWhen::Always,
+};
+
 pub const INTERFACE_LIST_ACTIONS: &[ActionSpec] = &[
     ACTION_ADD_TYPE,
     ACTION_EDIT,
@@ -369,6 +391,10 @@ pub const INTERFACE_LIST_ACTIONS: &[ActionSpec] = &[
 
 pub const ETHERNET_ACTIONS: &[ActionSpec] =
     &[ACTION_EDIT, ACTION_TOGGLE, ACTION_RESET, ACTION_TORCH];
+
+pub const PING_ACTIONS: &[ActionSpec] = &[ACTION_PING];
+
+pub const TRACEROUTE_ACTIONS: &[ActionSpec] = &[ACTION_TRACEROUTE];
 
 pub const VIRTUAL_IFACE_ACTIONS: &[ActionSpec] = &[
     ACTION_ADD,

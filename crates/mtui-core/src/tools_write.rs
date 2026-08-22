@@ -3,6 +3,7 @@
 //! Catalog wiring (do not register here):
 //! - `netwatch` → `/rest/tool/netwatch` (`NETWATCH_FORM`)
 //! - `email` → `/rest/tool/email` (`EMAIL_FORM`)
+//! - `ping` / `traceroute` → overlay-only (`FetchKind::Local`, no form)
 //!
 //! Group id: `tools-group`.
 

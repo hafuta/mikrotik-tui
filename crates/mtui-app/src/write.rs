@@ -9,7 +9,9 @@ use mtui_core::{
     patch_body, resource_by_id, truthy,
 };
 use mtui_routeros::MASKED_VALUE;
-use mtui_ui::{ActionMenuItem, ActionMenuState, FormSession, Row, TorchState};
+use mtui_ui::{
+    ActionMenuItem, ActionMenuState, FormSession, ProbeKind, ProbeState, Row, TorchState,
+};
 
 use crate::app::{App, AppCommand, Overlay, Pane};
 use crate::event::WorkerMsg;
@@ -241,6 +243,8 @@ impl App {
             ActionKind::Confirm { command } => self.open_confirm(action, command),
             ActionKind::Prompt { command } => self.open_prompt(command),
             ActionKind::Overlay { id: "torch" } => self.open_torch(),
+            ActionKind::Overlay { id: "ping" } => self.open_probe(ProbeKind::Ping),
+            ActionKind::Overlay { id: "traceroute" } => self.open_probe(ProbeKind::Traceroute),
             ActionKind::Overlay { id: "create-type" } => self.open_type_picker(),
             ActionKind::Overlay { .. } => Vec::new(),
         }
@@ -525,6 +529,13 @@ impl App {
         self.torch_generation = self.torch_generation.wrapping_add(1);
         self.overlay = Overlay::Torch(TorchState::new(name, id, self.torch_generation));
         tracing::trace!(overlay = "torch", "opened pane");
+        Vec::new()
+    }
+
+    fn open_probe(&mut self, kind: ProbeKind) -> Vec<AppCommand> {
+        self.probe_generation = self.probe_generation.wrapping_add(1);
+        self.overlay = Overlay::Probe(ProbeState::new(kind, self.probe_generation));
+        tracing::trace!(overlay = kind.command(), "opened pane");
         Vec::new()
     }
 
@@ -982,6 +993,95 @@ impl App {
             self.torch_sample_command()
         } else {
             Vec::new()
+        }
+    }
+
+    pub(crate) fn apply_probe_result(
+        &mut self,
+        generation: u64,
+        rows: Vec<HashMap<String, String>>,
+        error: Option<String>,
+    ) -> Vec<AppCommand> {
+        let Overlay::Probe(probe) = &mut self.overlay else {
+            return Vec::new();
+        };
+        if generation != probe.generation {
+            return Vec::new();
+        }
+        probe.running = false;
+        if let Some(err) = error {
+            probe.error = Some(err);
+            return Vec::new();
+        }
+        probe.error = None;
+        probe.push_samples(rows);
+        Vec::new()
+    }
+
+    pub(crate) fn start_probe(&mut self) -> Vec<AppCommand> {
+        let prepared = {
+            let Overlay::Probe(probe) = &mut self.overlay else {
+                return Vec::new();
+            };
+            if probe.address.trim().is_empty() {
+                probe.error = Some("Address is required".into());
+                None
+            } else {
+                self.probe_generation = self.probe_generation.wrapping_add(1);
+                probe.generation = self.probe_generation;
+                probe.running = true;
+                probe.error = None;
+                let kind = probe.kind;
+                let count = {
+                    let trimmed = probe.count.trim();
+                    if trimmed.is_empty() {
+                        match kind {
+                            ProbeKind::Ping => "4".into(),
+                            ProbeKind::Traceroute => "8".into(),
+                        }
+                    } else {
+                        trimmed.to_string()
+                    }
+                };
+                let protocol = {
+                    let trimmed = probe.protocol.trim();
+                    if trimmed.is_empty() {
+                        "icmp".into()
+                    } else {
+                        trimmed.to_string()
+                    }
+                };
+                Some((
+                    kind,
+                    probe.generation,
+                    probe.address.trim().to_string(),
+                    count,
+                    probe.src.trim().to_string(),
+                    protocol,
+                ))
+            }
+        };
+        let Some((kind, generation, address, count, src, protocol)) = prepared else {
+            self.status = "Address is required".into();
+            return Vec::new();
+        };
+        let request_id = self.next_request();
+        match kind {
+            ProbeKind::Ping => vec![AppCommand::FetchPing {
+                request_id,
+                generation,
+                address,
+                count,
+                src,
+            }],
+            ProbeKind::Traceroute => vec![AppCommand::FetchTraceroute {
+                request_id,
+                generation,
+                address,
+                count,
+                src,
+                protocol,
+            }],
         }
     }
 
@@ -1804,5 +1904,184 @@ mod tests {
             "status: {}",
             app.status
         );
+    }
+
+    fn ping_screen() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("ping");
+        app.pane = Pane::Content;
+        app
+    }
+
+    fn traceroute_screen() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("traceroute");
+        app.pane = Pane::Content;
+        app
+    }
+
+    fn type_chars(app: &mut App, text: &str) {
+        for ch in text.chars() {
+            let _ = app.update(AppEvent::Input(press(KeyCode::Char(ch))));
+        }
+    }
+
+    #[test]
+    fn opening_ping_overlay_does_not_fetch_identity() {
+        let mut app = ping_screen();
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('p'))));
+        assert!(cmds.is_empty(), "overlay open must not issue I/O: {cmds:?}");
+        assert!(matches!(app.overlay, Overlay::Probe(_)));
+        let Overlay::Probe(probe) = &app.overlay else {
+            panic!("expected ping overlay");
+        };
+        assert_eq!(probe.kind, ProbeKind::Ping);
+    }
+
+    #[test]
+    fn ping_local_fetch_is_empty_without_error() {
+        let mut app = ping_screen();
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "ping".into(),
+            rows: Vec::new(),
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+        assert!(!app.loading);
+        assert!(!app.status.contains("Refresh failed"));
+        assert!(app.table.rows.is_empty());
+    }
+
+    #[test]
+    fn starting_ping_emits_fetch_ping_with_address() {
+        let mut app = ping_screen();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('p'))));
+        type_chars(&mut app, "192.0.2.1");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        match cmds.as_slice() {
+            [
+                AppCommand::FetchPing {
+                    address,
+                    count,
+                    src,
+                    ..
+                },
+            ] => {
+                assert_eq!(address, "192.0.2.1");
+                assert_eq!(count, "4");
+                assert!(src.is_empty());
+            }
+            other => panic!("expected FetchPing, got {other:?}"),
+        }
+        let Overlay::Probe(probe) = &app.overlay else {
+            panic!("overlay stays open");
+        };
+        assert!(probe.running);
+        assert!(probe.samples.is_empty());
+    }
+
+    #[test]
+    fn empty_ping_address_shows_status_error() {
+        let mut app = ping_screen();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('p'))));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.status, "Address is required");
+        let Overlay::Probe(probe) = &app.overlay else {
+            panic!("expected ping overlay");
+        };
+        assert!(!probe.running);
+    }
+
+    #[test]
+    fn stale_ping_generation_is_ignored() {
+        let mut app = ping_screen();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('p'))));
+        type_chars(&mut app, "192.0.2.1");
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let Overlay::Probe(probe) = &app.overlay else {
+            panic!("expected ping overlay");
+        };
+        let stale = probe.generation.wrapping_sub(1);
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::PingTraceResult {
+            generation: stale,
+            rows: vec![HashMap::from([("host".into(), "stale".into())])],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+        let Overlay::Probe(probe) = &app.overlay else {
+            panic!("expected ping overlay");
+        };
+        assert!(probe.samples.is_empty());
+        assert!(probe.running);
+    }
+
+    #[test]
+    fn traceroute_enter_opens_overlay_and_start_fetches() {
+        let mut app = traceroute_screen();
+        let open = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(open.is_empty());
+        let Overlay::Probe(probe) = &app.overlay else {
+            panic!("expected traceroute overlay, got {:?}", app.overlay);
+        };
+        assert_eq!(probe.kind, ProbeKind::Traceroute);
+        type_chars(&mut app, "192.0.2.1");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        match cmds.as_slice() {
+            [
+                AppCommand::FetchTraceroute {
+                    address,
+                    count,
+                    protocol,
+                    ..
+                },
+            ] => {
+                assert_eq!(address, "192.0.2.1");
+                assert_eq!(count, "8");
+                assert_eq!(protocol, "icmp");
+            }
+            other => panic!("expected FetchTraceroute, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_traceroute_address_shows_status_error() {
+        let mut app = traceroute_screen();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.status, "Address is required");
+    }
+
+    #[test]
+    fn ping_keeps_samples_while_running() {
+        let mut app = ping_screen();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('p'))));
+        type_chars(&mut app, "192.0.2.1");
+        let first = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let AppCommand::FetchPing { generation, .. } = first[0] else {
+            panic!("expected FetchPing");
+        };
+        let _ = app.update(AppEvent::Worker(WorkerMsg::PingTraceResult {
+            generation,
+            rows: vec![HashMap::from([("host".into(), "192.0.2.1".into())])],
+            error: None,
+        }));
+        let Overlay::Probe(probe) = &app.overlay else {
+            panic!("expected ping overlay");
+        };
+        assert_eq!(probe.samples.len(), 1);
+        assert!(!probe.running);
+        let second = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(matches!(second.as_slice(), [AppCommand::FetchPing { .. }]));
+        let Overlay::Probe(probe) = &app.overlay else {
+            panic!("expected ping overlay");
+        };
+        assert_eq!(probe.samples.len(), 1);
+        assert!(probe.running);
     }
 }

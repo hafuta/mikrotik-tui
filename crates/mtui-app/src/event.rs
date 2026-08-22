@@ -79,4 +79,9 @@ pub enum WorkerMsg {
         contents: Option<String>,
         error: Option<String>,
     },
+    PingTraceResult {
+        generation: u64,
+        rows: Vec<std::collections::HashMap<String, String>>,
+        error: Option<String>,
+    },
 }

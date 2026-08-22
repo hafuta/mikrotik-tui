@@ -16,8 +16,8 @@ use mtui_routeros::{Client, Resource};
 use mtui_ui::{
     ActionMenuState, Command, CommandPalette, ConsoleEntry, ConsoleLevel, ConsoleState,
     DashboardGeometry, FirewallHitChart, FormSession, InspectorState, LayoutMetrics, LoginForm,
-    NavState, Row, Signal, SignalLevel, TableState, ToggleHidden, TorchState, console_pane_height,
-    format_rate,
+    NavState, ProbeState, Row, Signal, SignalLevel, TableState, ToggleHidden, TorchState,
+    console_pane_height, format_rate,
 };
 
 use crate::event::{AppEvent, WorkerMsg};
@@ -59,6 +59,7 @@ pub enum Overlay {
     ActionMenu(ActionMenuState),
     TypePicker(ActionMenuState),
     Torch(TorchState),
+    Probe(ProbeState),
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +99,21 @@ pub enum AppCommand {
         dst: String,
         protocol: String,
         port: String,
+    },
+    FetchPing {
+        request_id: u64,
+        generation: u64,
+        address: String,
+        count: String,
+        src: String,
+    },
+    FetchTraceroute {
+        request_id: u64,
+        generation: u64,
+        address: String,
+        count: String,
+        src: String,
+        protocol: String,
     },
     CopyToClipboard {
         text: String,
@@ -151,6 +167,7 @@ pub struct App {
     pub request_id: u64,
     pub poll_generation: u64,
     pub torch_generation: u64,
+    pub probe_generation: u64,
     pub should_quit: bool,
     pub alt_screen: bool,
     pub dash: DashboardTelemetry,
@@ -236,6 +253,7 @@ impl App {
             request_id: 0,
             poll_generation: 0,
             torch_generation: 0,
+            probe_generation: 0,
             should_quit: false,
             alt_screen,
             dash: DashboardTelemetry::default(),
@@ -445,7 +463,7 @@ impl App {
         }
         let mut cmds = Vec::new();
         match &self.overlay {
-            Overlay::None | Overlay::Form(_) | Overlay::Torch(_) => {
+            Overlay::None | Overlay::Form(_) | Overlay::Torch(_) | Overlay::Probe(_) => {
                 tracing::debug!(resource = self.current_resource.as_str(), "scheduled poll");
                 self.refreshing = true;
                 cmds.extend(self.poll_current());
@@ -601,6 +619,11 @@ impl App {
             WorkerMsg::ReadLocalFileResult { .. } => self.apply_read_local_file(msg),
             WorkerMsg::WriteLocalFileResult { .. } => self.apply_write_local_file(msg),
             WorkerMsg::RecordResult { .. } => self.apply_record_result(msg),
+            WorkerMsg::PingTraceResult {
+                generation,
+                rows,
+                error,
+            } => self.apply_probe_result(generation, rows, error),
         }
     }
 
@@ -707,6 +730,7 @@ impl App {
         tracing::trace!(resource_id = id, "opened pane");
         self.poll_generation = self.poll_generation.wrapping_add(1);
         self.torch_generation = self.torch_generation.wrapping_add(1);
+        self.probe_generation = self.probe_generation.wrapping_add(1);
         self.overlay = Overlay::None;
         self.current_resource = id.to_string();
         self.refreshing = false;

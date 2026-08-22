@@ -23,9 +23,11 @@ through confirmation dialogs and a sectioned properties sheet. Operator menus
 beyond Interfaces — PPP, Bridge, Switch, IP, IPv6, Routing, Queues, Files,
 Tools, RADIUS, and System — use the same action catalog. On Files, `u` uploads
 a local UTF-8 file (1 MiB REST cap), `w` downloads the selected file, and `f`
-runs `/tool/fetch` so the router pulls a package or backup from HTTP(S).
-Runtime-only views (logs, health, RouterBOARD, neighbor/session tables) stay
-non-editable except where WebFig allows remove/disconnect.
+runs `/tool/fetch` so the router pulls a package or backup from HTTP(S). Tools
+includes Ping and Traceroute overlays (POST `/tool/ping` and `/tool/traceroute`;
+those screens are not live-polled). Runtime-only views
+(logs, health, RouterBOARD, neighbor/session tables) stay non-editable except
+where WebFig allows remove/disconnect.
 
 ## Features
 
@@ -128,7 +130,8 @@ up or down, `m` makes a DHCP lease static, `t` opens torch, `b` reboots on
 Resources or saves a backup on Files, `o` shuts down (power off) on Resources,
 `u` uploads a UTF-8 file on Files, `w` downloads the selected file, `f` fetches a
 URL onto the router, and load-backup is on the Files action menu (`a`) for
-`.backup` rows. `a` opens the
+`.backup` rows. `p` opens ping on the Ping tool screen (Enter starts traceroute
+on Traceroute). `a` opens the
 action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,
 `ctrl+l` logs out, `` ` `` toggles the application log console, `-` hides the
 selected sidebar item after confirmation (or restores it when hidden menus are

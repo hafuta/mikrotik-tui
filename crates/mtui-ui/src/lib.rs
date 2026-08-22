@@ -16,6 +16,7 @@ mod navigation;
 mod overlay;
 mod paint;
 mod palette;
+mod probe;
 mod styles;
 mod table;
 mod torch;
@@ -48,6 +49,7 @@ pub use overlay::{
 };
 pub use paint::{fill_rect, line_on_bg};
 pub use palette::{Command, CommandPalette, PALETTE_VISIBLE_ROWS, highlight_match};
+pub use probe::{ProbeField, ProbeKind, ProbeState, render_probe};
 pub use styles::{Styles, rgb_color};
 pub use table::{Row, SortDir, TableState};
 pub use torch::{TorchField, TorchState, render_torch};
