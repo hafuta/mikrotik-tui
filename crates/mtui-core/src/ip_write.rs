@@ -225,6 +225,104 @@
 //!     actions: crate::actions::MEMBER_ACTIONS,
 //!     form: Some(&crate::ip_write::ADDRESS_LIST_FORM),
 //! }
+//! ResourceSpec {
+//!     id: "dhcp-relay",
+//!     group: "ip-group",
+//!     label: "DHCP Relay",
+//!     fetch: FetchKind::List { endpoint: "/rest/ip/dhcp-relay" },
+//!     columns: &[
+//!         col!("name", "Name", 18),
+//!         col!("interface", "Interface", 16),
+//!         col!("dhcp-server", "DHCP server", 24),
+//!         col!("local-address", "Local", 18),
+//!         col!("disabled", "Off", 5),
+//!         col!("comment", "Comment", 28),
+//!     ],
+//!     refresh: Duration::from_secs(10),
+//!     actions: crate::actions::MEMBER_ACTIONS,
+//!     form: Some(&crate::ip_write::DHCP_RELAY_FORM),
+//! }
+//! ResourceSpec {
+//!     id: "dhcp-options",
+//!     group: "ip-group",
+//!     label: "DHCP Options",
+//!     fetch: FetchKind::List { endpoint: "/rest/ip/dhcp-server/option" },
+//!     columns: &[
+//!         col!("name", "Name", 18),
+//!         col!("code", "Code", 6),
+//!         col!("value", "Value", 28),
+//!         col!("comment", "Comment", 28),
+//!     ],
+//!     refresh: Duration::from_secs(30),
+//!     actions: crate::actions::LIST_ACTIONS,
+//!     form: Some(&crate::ip_write::DHCP_OPTION_FORM),
+//! }
+//! ResourceSpec {
+//!     id: "dhcp-option-sets",
+//!     group: "ip-group",
+//!     label: "DHCP Option Sets",
+//!     fetch: FetchKind::List { endpoint: "/rest/ip/dhcp-server/option/sets" },
+//!     columns: &[
+//!         col!("name", "Name", 18),
+//!         col!("options", "Options", 36),
+//!         col!("comment", "Comment", 28),
+//!     ],
+//!     refresh: Duration::from_secs(30),
+//!     actions: crate::actions::LIST_ACTIONS,
+//!     form: Some(&crate::ip_write::DHCP_OPTION_SET_FORM),
+//! }
+//! ResourceSpec {
+//!     id: "firewall-raw",
+//!     group: "ip-group",
+//!     label: "Raw",
+//!     fetch: FetchKind::List { endpoint: "/rest/ip/firewall/raw" },
+//!     columns: &[
+//!         col!("chain", "Chain", 12),
+//!         col!("action", "Action", 14),
+//!         col!("protocol", "Protocol", 9),
+//!         col!("src-address", "Source", 20),
+//!         col!("dst-address", "Destination", 20),
+//!         col!("in-interface", "In interface", 16),
+//!         col!("out-interface", "Out interface", 16),
+//!         col!("packets", "Packets", 12),
+//!         col!("bytes", "Bytes", 14),
+//!         col!("disabled", "Off", 5),
+//!         col!("dynamic", "Dyn", 5),
+//!         col!("invalid", "Bad", 5),
+//!         col!("comment", "Comment", 28),
+//!     ],
+//!     refresh: Duration::from_secs(5),
+//!     actions: crate::actions::FILTER_ACTIONS,
+//!     form: Some(&crate::ip_write::FIREWALL_RAW_FORM),
+//! }
+//! ResourceSpec {
+//!     id: "firewall-layer7",
+//!     group: "ip-group",
+//!     label: "Layer7 Protocol",
+//!     fetch: FetchKind::List { endpoint: "/rest/ip/firewall/layer7-protocol" },
+//!     columns: &[
+//!         col!("name", "Name", 18),
+//!         col!("regexp", "Regexp", 36),
+//!         col!("comment", "Comment", 28),
+//!     ],
+//!     refresh: Duration::from_secs(30),
+//!     actions: crate::actions::LIST_ACTIONS,
+//!     form: Some(&crate::ip_write::LAYER7_FORM),
+//! }
+//! ResourceSpec {
+//!     id: "firewall-service-port",
+//!     group: "ip-group",
+//!     label: "Service Port",
+//!     fetch: FetchKind::List { endpoint: "/rest/ip/firewall/service-port" },
+//!     columns: &[
+//!         col!("name", "Name", 14),
+//!         col!("ports", "Ports", 20),
+//!         col!("disabled", "Off", 5),
+//!     ],
+//!     refresh: Duration::from_secs(30),
+//!     actions: crate::actions::TOGGLE_EDIT_ACTIONS,
+//!     form: Some(&crate::ip_write::SERVICE_PORT_FORM),
+//! }
 //! ```
 
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
@@ -274,6 +372,11 @@ const LOOKUP_ADDRESS_LIST_NAMES: FieldKind = FieldKind::Lookup {
     value_key: "list",
     multiple: false,
 };
+const LOOKUP_DHCP_OPTIONS: FieldKind = FieldKind::Lookup {
+    resource_id: "dhcp-options",
+    value_key: "name",
+    multiple: true,
+};
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
@@ -287,6 +390,13 @@ const FILTER_CHAIN: FieldSpec = f!(
     "Chain",
     FieldKind::Enum {
         values: &["input", "forward", "output"],
+    }
+);
+const RAW_CHAIN: FieldSpec = f!(
+    "chain",
+    "Chain",
+    FieldKind::Enum {
+        values: &["prerouting", "output"],
     }
 );
 const NAT_CHAIN: FieldSpec = f!(
@@ -818,6 +928,144 @@ pub static ADDRESS_LIST_FORM: FormSchema = FormSchema {
     }],
 };
 
+pub static DHCP_RELAY_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["interface"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            INTERFACE,
+            f!("dhcp-server", "DHCP server", FieldKind::Text),
+            f!("local-address", "Local address", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, INTERFACE],
+    }],
+};
+
+pub static DHCP_OPTION_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["code"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("code", "Code", FieldKind::Number),
+            f!("value", "Value", FieldKind::Text),
+            COMMENT,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("code", "Code", FieldKind::Number)],
+    }],
+};
+
+pub static DHCP_OPTION_SET_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["options"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("options", "Options", LOOKUP_DHCP_OPTIONS), COMMENT],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
+pub static FIREWALL_RAW_FORM: FormSchema = FormSchema {
+    title_key: "chain",
+    subtitle_keys: &["action"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                RAW_CHAIN,
+                ACTION,
+                PROTOCOL,
+                SRC_ADDRESS,
+                SRC_ADDRESS_LIST,
+                SRC_PORT,
+                DST_ADDRESS,
+                DST_ADDRESS_LIST,
+                DST_PORT,
+                IN_INTERFACE,
+                IN_INTERFACE_LIST,
+                OUT_INTERFACE,
+                OUT_INTERFACE_LIST,
+                COMMENT,
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: FW_STATUS,
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[RAW_CHAIN, ACTION],
+    }],
+};
+
+pub static LAYER7_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["regexp"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("regexp", "Regexp", FieldKind::Text), COMMENT],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("regexp", "Regexp", FieldKind::Text)],
+    }],
+};
+
+pub static SERVICE_PORT_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["ports"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("name", "Name", FieldKind::Readonly),
+            f!("ports", "Ports", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -869,6 +1117,12 @@ mod tests {
         assert_eq!(create_keys(&FIREWALL_NAT_FORM), ["chain", "action"]);
         assert_eq!(create_keys(&FIREWALL_MANGLE_FORM), ["chain", "action"]);
         assert_eq!(create_keys(&ADDRESS_LIST_FORM), ["list", "address"]);
+        assert_eq!(create_keys(&DHCP_RELAY_FORM), ["name", "interface"]);
+        assert_eq!(create_keys(&DHCP_OPTION_FORM), ["name", "code"]);
+        assert_eq!(create_keys(&DHCP_OPTION_SET_FORM), ["name"]);
+        assert_eq!(create_keys(&FIREWALL_RAW_FORM), ["chain", "action"]);
+        assert_eq!(create_keys(&LAYER7_FORM), ["name", "regexp"]);
+        assert!(SERVICE_PORT_FORM.create_sections.is_empty());
     }
 
     #[test]
@@ -876,6 +1130,7 @@ mod tests {
         status_readonly(&FIREWALL_FILTER_FORM);
         status_readonly(&FIREWALL_NAT_FORM);
         status_readonly(&FIREWALL_MANGLE_FORM);
+        status_readonly(&FIREWALL_RAW_FORM);
         assert!(!FIREWALL_FILTER_FORM.writable_keys().contains(&"packets"));
         assert!(!FIREWALL_FILTER_FORM.writable_keys().contains(&"bytes"));
         assert!(!FIREWALL_FILTER_FORM.writable_keys().contains(&"dynamic"));
@@ -937,6 +1192,14 @@ mod tests {
         }
     }
 
+    fn lookup_multi(resource_id: &'static str, value_key: &'static str) -> FieldKind {
+        FieldKind::Lookup {
+            resource_id,
+            value_key,
+            multiple: true,
+        }
+    }
+
     #[test]
     fn lookup_fields_use_named_resources() {
         let interfaces = lookup("interfaces", "name");
@@ -949,6 +1212,7 @@ mod tests {
             &ADDRESS_FORM,
             &DHCP_CLIENT_FORM,
             &DHCP_SERVER_FORM,
+            &DHCP_RELAY_FORM,
         ] {
             assert_eq!(field_kind(schema, "interface"), interfaces);
             assert_eq!(create_field_kind(schema, "interface"), interfaces);
@@ -982,6 +1246,7 @@ mod tests {
             &FIREWALL_FILTER_FORM,
             &FIREWALL_NAT_FORM,
             &FIREWALL_MANGLE_FORM,
+            &FIREWALL_RAW_FORM,
         ] {
             assert_eq!(field_kind(schema, "in-interface"), interfaces);
             assert_eq!(field_kind(schema, "out-interface"), interfaces);
@@ -992,5 +1257,17 @@ mod tests {
             assert!(!create_keys(schema).contains(&"in-interface"));
             assert!(!create_keys(schema).contains(&"src-address-list"));
         }
+
+        assert_eq!(
+            field_kind(&DHCP_OPTION_SET_FORM, "options"),
+            lookup_multi("dhcp-options", "name")
+        );
+        assert_eq!(field_kind(&DHCP_OPTION_FORM, "code"), FieldKind::Number);
+        assert_eq!(
+            create_field_kind(&DHCP_OPTION_FORM, "code"),
+            FieldKind::Number
+        );
+        assert!(!SERVICE_PORT_FORM.writable_keys().contains(&"name"));
+        assert!(SERVICE_PORT_FORM.writable_keys().contains(&"disabled"));
     }
 }
