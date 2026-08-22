@@ -11,15 +11,18 @@ pub const MASKED_VALUE: &str = "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}
 /// Reports whether `key` names a `RouterOS` field that carries a secret.
 ///
 /// Matches (case-insensitively, treating `_` and `-` as equivalent):
-/// `password`, `secret`, `passphrase`, `private-key`, any key containing
-/// `password`, and any key ending in `-secret`.
+/// `password`, `secret`, `passphrase`, `private-key`, `psk`, `pin`, any key
+/// containing `password` or a pre-shared-key spelling, and any key ending
+/// in `-secret`.
 #[must_use]
 pub fn is_secret_key(key: &str) -> bool {
     let normalized = key.trim().to_lowercase().replace('_', "-");
     matches!(
         normalized.as_str(),
-        "password" | "secret" | "passphrase" | "private-key"
+        "password" | "secret" | "passphrase" | "private-key" | "psk" | "pin"
     ) || normalized.contains("password")
+        || normalized.contains("pre-shared-key")
+        || normalized.contains("preshared-key")
         || normalized.ends_with("-secret")
 }
 
@@ -49,6 +52,12 @@ mod tests {
             "wpa-password",
             "vpn-secret",
             "PSK-SECRET",
+            "psk",
+            "pin",
+            "preshared-key",
+            "pre-shared-key",
+            "wpa2-pre-shared-key",
+            "ipsec-secret",
         ] {
             assert!(is_secret_key(key), "expected {key:?} to be a secret key");
         }

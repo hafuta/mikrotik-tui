@@ -14,12 +14,14 @@ use mtui_core::{
 
 use mtui_routeros::{Client, Resource};
 use mtui_ui::{
-    Command, CommandPalette, DashboardGeometry, FirewallHitChart, InspectorState, LayoutMetrics,
-    LoginForm, NavState, Row, Signal, SignalLevel, TableState, format_bytes,
+    ActionMenuState, Command, CommandPalette, DashboardGeometry, FirewallHitChart, FormSession,
+    InspectorState, LayoutMetrics, LoginForm, NavState, Row, Signal, SignalLevel, TableState,
+    TorchState, format_bytes,
 };
 
 use crate::event::{AppEvent, WorkerMsg};
 use crate::telemetry::{DashboardTelemetry, select_wan_interface};
+use crate::write::{ConfirmSession, MutationOp};
 
 const LOG_BUFFER_CAP: usize = 500;
 const PROFILE_NAME: &str = "default";
@@ -39,11 +41,16 @@ pub enum Pane {
     Inspector,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Overlay {
     None,
     Help,
     Palette,
+    Confirm(ConfirmSession),
+    Form(FormSession),
+    ActionMenu(ActionMenuState),
+    TypePicker(ActionMenuState),
+    Torch(TorchState),
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +74,20 @@ pub enum AppCommand {
     },
     FetchSystem,
     ClearSession,
+    Mutate {
+        request_id: u64,
+        generation: u64,
+        op: MutationOp,
+    },
+    FetchTorch {
+        request_id: u64,
+        generation: u64,
+        interface: String,
+        src: String,
+        dst: String,
+        protocol: String,
+        port: String,
+    },
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -95,6 +116,7 @@ pub struct App {
     pub refreshing: bool,
     pub request_id: u64,
     pub poll_generation: u64,
+    pub torch_generation: u64,
     pub should_quit: bool,
     pub alt_screen: bool,
     pub dash: DashboardTelemetry,
@@ -173,6 +195,7 @@ impl App {
             refreshing: false,
             request_id: 0,
             poll_generation: 0,
+            torch_generation: 0,
             should_quit: false,
             alt_screen,
             dash: DashboardTelemetry::default(),
@@ -348,11 +371,18 @@ impl App {
         if self.screen != Screen::Main || self.client.is_none() {
             return Vec::new();
         }
-        if self.overlay != Overlay::None {
-            return Vec::new();
+        let mut cmds = Vec::new();
+        match &self.overlay {
+            Overlay::None | Overlay::Form(_) | Overlay::Torch(_) => {
+                self.refreshing = true;
+                cmds.extend(self.poll_current());
+            }
+            _ => {}
         }
-        self.refreshing = true;
-        self.poll_current()
+        if matches!(&self.overlay, Overlay::Torch(torch) if torch.running) {
+            cmds.extend(self.torch_sample_command());
+        }
+        cmds
     }
 
     #[allow(clippy::too_many_lines)]
@@ -424,8 +454,14 @@ impl App {
                 if resource_id == "logs" {
                     self.ingest_logs(rows);
                 } else {
-                    let masked: Vec<_> = rows.into_iter().map(|r| r.masked_fields()).collect();
-                    self.apply_table_rows(masked);
+                    let selected_id = self
+                        .table
+                        .selected_row()
+                        .and_then(|row| row.get(".id").cloned());
+                    self.apply_table_rows(Self::row_to_display(rows));
+                    if let Some(id) = selected_id {
+                        self.table.select_id(&id);
+                    }
                 }
                 self.status = if self.refreshing {
                     "Refreshing…".into()
@@ -472,6 +508,12 @@ impl App {
                 }
                 Vec::new()
             }
+            WorkerMsg::MutateResult { .. } => self.apply_mutate_result(msg),
+            WorkerMsg::TorchResult {
+                generation,
+                rows,
+                error,
+            } => self.apply_torch_result(generation, rows, error),
         }
     }
 
@@ -530,6 +572,8 @@ impl App {
 
     pub(crate) fn select_resource(&mut self, id: &str) {
         self.poll_generation = self.poll_generation.wrapping_add(1);
+        self.torch_generation = self.torch_generation.wrapping_add(1);
+        self.overlay = Overlay::None;
         self.current_resource = id.to_string();
         self.refreshing = false;
         let _ = self.nav.select_id(id);
@@ -1007,5 +1051,60 @@ mod palette_catalog_tests {
             assert_eq!(command.title, spec.cli_path());
             assert_eq!(command.description, spec.label);
         }
+    }
+}
+
+#[cfg(test)]
+mod secret_mask_tests {
+    use super::*;
+    use crate::event::{AppEvent, WorkerMsg};
+    use mtui_routeros::{MASKED_VALUE, Resource};
+
+    #[test]
+    fn resource_rows_mask_marker_secrets_before_table_and_inspector() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("wireguard");
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("name".into(), "wg0".into());
+        fields.insert("private-key".into(), "MARKER-SECRET".into());
+        fields.insert("preshared-key".into(), "MARKER-PSK".into());
+        let row = Resource {
+            id: "*1".into(),
+            fields,
+        };
+
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "wireguard".into(),
+            rows: vec![row],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+
+        let table_row = app.table.selected_row().expect("row");
+        assert_eq!(table_row.get("name").map(String::as_str), Some("wg0"));
+        assert_eq!(
+            table_row.get("private-key").map(String::as_str),
+            Some(MASKED_VALUE)
+        );
+        assert_eq!(
+            table_row.get("preshared-key").map(String::as_str),
+            Some(MASKED_VALUE)
+        );
+        assert!(
+            app.inspector
+                .fields
+                .iter()
+                .all(|(key, value)| { key == "name" || value == MASKED_VALUE })
+        );
+        assert!(
+            !app.inspector
+                .fields
+                .iter()
+                .any(|(_, value)| value.contains("MARKER"))
+        );
     }
 }

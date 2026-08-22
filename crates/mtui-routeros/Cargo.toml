@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Read-only RouterOS REST client with TLS pin/CA support"
+description = "RouterOS REST client with TLS pin/CA support"
 
 [dependencies]
 hex = { workspace = true }

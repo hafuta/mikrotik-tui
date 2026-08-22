@@ -6,6 +6,7 @@ mod keys;
 mod render;
 mod runtime;
 mod telemetry;
+mod write;
 
 pub use app::{App, AppCommand, Screen};
 pub use runtime::run;

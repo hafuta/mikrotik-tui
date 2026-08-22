@@ -2,10 +2,12 @@
 //!
 //! Colors resolve through [`mtui_core::Palette`] / the active theme.
 
+mod action_menu;
 mod charts;
 mod chrome;
 mod dashboard;
 mod firewall;
+mod form;
 mod inspector;
 mod layout;
 mod login;
@@ -14,19 +16,22 @@ mod overlay;
 mod palette;
 mod styles;
 mod table;
+mod torch;
 
+pub use action_menu::{ActionMenuItem, ActionMenuState, render_action_menu};
 pub use charts::{
     BrailleSparkline, TrafficChart, TrafficSample, format_bytes, format_rate, format_traffic_rate,
 };
 pub use chrome::{Signal, SignalLevel, footer_hints, header_line, signal_rail, status_line};
 pub use dashboard::{CpuCoreView, DashboardGeometry, DashboardView, dashboard_content};
 pub use firewall::{FirewallHitChart, FirewallRuleMetric, MAX_FIREWALL_RULES};
+pub use form::{COPY_FORM, FormMode, FormSession, render_form_sheet};
 pub use inspector::InspectorState;
 pub use layout::{
     Breakpoint, LayoutMetrics, clip_line, constrain_lines, fit_cell, fit_line, line_plain,
     line_width, lines_plain,
 };
-pub use login::{LoginField, LoginForm};
+pub use login::{LoginField, LoginForm, is_printable_char};
 pub use navigation::{FlatNavEntry, NavState, flatten_nav};
 pub use overlay::{
     Modal, ModalButton, ModalButtonKind, ModalKind, ModalPanel, compact_modal_rect, dim_canvas,
@@ -35,3 +40,4 @@ pub use overlay::{
 pub use palette::{Command, CommandPalette, PALETTE_VISIBLE_ROWS, highlight_match};
 pub use styles::{Styles, rgb_color};
 pub use table::{Row, SortDir, TableState};
+pub use torch::{TorchField, TorchState, render_torch};

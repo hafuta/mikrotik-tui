@@ -923,6 +923,7 @@ dependencies = [
  "mtui-routeros",
  "mtui-ui",
  "ratatui",
+ "serde_json",
  "thiserror",
  "tokio",
  "tracing",

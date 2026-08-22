@@ -127,6 +127,22 @@ impl TableState {
             .and_then(|i| self.rows.get(*i))
     }
 
+    /// Restore selection to the filtered row whose `.id` matches `id`.
+    pub fn select_id(&mut self, id: &str) -> bool {
+        let Some(pos) = self.filtered.iter().position(|&i| {
+            self.rows
+                .get(i)
+                .and_then(|row| row.get(".id"))
+                .map(String::as_str)
+                == Some(id)
+        }) else {
+            return false;
+        };
+        self.selected = pos;
+        self.reconcile_offsets();
+        true
+    }
+
     #[must_use]
     pub fn visible_rows(&self) -> Vec<&Row> {
         self.filtered

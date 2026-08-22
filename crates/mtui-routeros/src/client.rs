@@ -1,11 +1,14 @@
-//! Read-only `RouterOS` REST client.
+//! `RouterOS` REST client.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::time::Duration;
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::error::{Error, ErrorKind, Result};
+use crate::mutate::{encode_fields, is_command_name};
 use crate::resource::Resource;
 use crate::tls;
 
@@ -74,7 +77,7 @@ impl ClientOptions {
     }
 }
 
-/// Read-only `RouterOS` REST client.
+/// `RouterOS` REST client (read and write).
 ///
 /// Cloning a [`Client`] is cheap (it shares the underlying `reqwest::Client`
 /// connection pool).
@@ -131,18 +134,120 @@ impl Client {
         self.get_json(endpoint, "system").await
     }
 
+    /// Updates a single record (`PATCH` / `set`).
+    pub async fn patch(
+        &self,
+        endpoint: &str,
+        id: &str,
+        fields: &BTreeMap<String, String>,
+    ) -> Result<()> {
+        if id.trim().is_empty() {
+            return Err(Error::api("patch", "record id is required"));
+        }
+        if fields.is_empty() {
+            return Err(Error::api("patch", "no fields to update"));
+        }
+        let path = record_endpoint(endpoint, id);
+        self.send_body(reqwest::Method::PATCH, &path, "patch", fields)
+            .await
+            .map(|_| ())
+    }
+
+    /// Updates a singleton resource (`PATCH` / `set` without a record id).
+    pub async fn patch_system(
+        &self,
+        endpoint: &str,
+        fields: &BTreeMap<String, String>,
+    ) -> Result<()> {
+        if fields.is_empty() {
+            return Err(Error::api("patch", "no fields to update"));
+        }
+        self.send_body(reqwest::Method::PATCH, endpoint, "patch", fields)
+            .await
+            .map(|_| ())
+    }
+
+    /// Creates a record (`PUT` / `add`).
+    pub async fn put(&self, endpoint: &str, fields: &BTreeMap<String, String>) -> Result<()> {
+        self.send_body(reqwest::Method::PUT, endpoint, "put", fields)
+            .await
+            .map(|_| ())
+    }
+
+    /// Removes a record (`DELETE` / `remove`).
+    pub async fn delete(&self, endpoint: &str, id: &str) -> Result<()> {
+        if id.trim().is_empty() {
+            return Err(Error::api("delete", "record id is required"));
+        }
+        let path = record_endpoint(endpoint, id);
+        self.send(reqwest::Method::DELETE, &path, "delete", None)
+            .await
+            .map(|_| ())
+    }
+
+    /// Runs a console command through `POST` (`enable`, `copy`, `torch`, ...).
+    pub async fn command(
+        &self,
+        endpoint: &str,
+        command: &str,
+        fields: &BTreeMap<String, String>,
+    ) -> Result<Value> {
+        if !is_command_name(command) {
+            return Err(Error::api("command", "invalid command name"));
+        }
+        validate_endpoint(endpoint, "command")?;
+        let path = format!("{}/{command}", endpoint.trim_end_matches('/'));
+        let bytes = self
+            .send_body(reqwest::Method::POST, &path, "command", fields)
+            .await?;
+        if bytes.is_empty() {
+            return Ok(Value::Null);
+        }
+        serde_json::from_slice(&bytes)
+            .map_err(|err| Error::decode("command", format!("invalid API response: {err}")))
+    }
+
     async fn get_json<T>(&self, endpoint: &str, operation: &'static str) -> Result<T>
     where
         T: for<'de> Deserialize<'de>,
     {
+        let bytes = self
+            .send(reqwest::Method::GET, endpoint, operation, None)
+            .await?;
+        serde_json::from_slice(&bytes)
+            .map_err(|err| Error::decode(operation, format!("invalid API response: {err}")))
+    }
+
+    async fn send_body(
+        &self,
+        method: reqwest::Method,
+        endpoint: &str,
+        operation: &'static str,
+        fields: &BTreeMap<String, String>,
+    ) -> Result<Vec<u8>> {
+        self.send(method, endpoint, operation, Some(encode_fields(fields)))
+            .await
+    }
+
+    async fn send(
+        &self,
+        method: reqwest::Method,
+        endpoint: &str,
+        operation: &'static str,
+        body: Option<Value>,
+    ) -> Result<Vec<u8>> {
         validate_endpoint(endpoint, operation)?;
         let url = format!("{}{endpoint}", self.base_url);
-
-        let response = self
+        let mut request = self
             .http
-            .get(&url)
+            .request(method, &url)
             .header(reqwest::header::ACCEPT, "application/json")
-            .basic_auth(&self.username, Some(&self.password))
+            .basic_auth(&self.username, Some(&self.password));
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+
+        let response = request
             .send()
             .await
             .map_err(|err| self.classify_request_error(operation, &err))?;
@@ -161,9 +266,7 @@ impl Client {
         if bytes.len() > MAX_RESPONSE_BYTES {
             return Err(Error::decode(operation, "response body too large"));
         }
-
-        serde_json::from_slice(&bytes)
-            .map_err(|err| Error::decode(operation, format!("invalid API response: {err}")))
+        Ok(bytes.to_vec())
     }
 
     async fn build_status_error(

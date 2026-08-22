@@ -1,5 +1,11 @@
 //! Login form state.
 
+/// True for runes that may be typed into a text field (not control/modifier noise).
+#[must_use]
+pub fn is_printable_char(ch: char) -> bool {
+    !ch.is_control()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginField {
     Url,
@@ -58,7 +64,7 @@ impl LoginForm {
     }
 
     pub fn insert_char(&mut self, ch: char) {
-        if ch.is_control() {
+        if !is_printable_char(ch) {
             return;
         }
         self.focused_mut().push(ch);

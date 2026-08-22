@@ -8,14 +8,18 @@
 MikroTik TUI is a keyboard-first terminal client for MikroTik RouterOS. It
 connects over HTTPS REST and presents live operational state—interfaces,
 addressing, DHCP, firewall, hardware, and logs—so any RouterOS device can be
-inspected without leaving the terminal. The client is read-only: it does not
-change device configuration.
+inspected without leaving the terminal. Interface screens can create, edit,
+and run per-row actions (enable/disable, copy, remove, torch, reset counters)
+through confirmation dialogs and a sectioned properties sheet. Other resource
+groups remain read-only until they reuse the same action catalog.
 
 ## Features
 
 - Live dashboard for CPU, memory, WAN throughput, and firewall activity
-- Interface, interface-list, Ethernet, PPP session, and PPPoE client views
-- Bridge, port, and VLAN inventory
+- Interface, list, Ethernet, VLAN, tunnel, bonding, WiFi, WireGuard, and VRF views
+- PPP secrets, profiles, AAA, active sessions, and PPPoE/PPTP/L2TP/SSTP/OpenVPN client and server views
+- Bridge, port, host, VLAN, MDB, MSTI, filter, NAT, settings, and port-controller views
+- Switch chip, port, VLAN, host, ACL rule, port-isolation, and L3HW views
 - IP addresses, ARP, DHCP servers, networks, leases, and firewall filter rules
 - Users, RouterBOARD, NTP client, clock, and RouterOS log streaming
 - Search, sorting, detail inspector, command palette, and in-app keyboard help
@@ -25,14 +29,15 @@ change device configuration.
 - Structured, redacted application logs on disk
 
 RouterOS v7 with `www-ssl` and REST access is required. Use a dedicated,
-least-privileged RouterOS account with read and REST API permissions.
+least-privileged RouterOS account. Interface screens require write permission
+for the menus you edit; other views still work with read-only REST access.
 
 ## Crates
 
 | Crate | Role |
 |-------|------|
 | `mtui-core` | Resource catalog, shared types, **pluggable themes** |
-| `mtui-routeros` | Read-only HTTPS REST client (TLS pin / custom CA) |
+| `mtui-routeros` | HTTPS REST client (TLS pin / custom CA; GET plus mutations) |
 | `mtui-config` | Profiles, credentials, env overrides, file logging |
 | `mtui-ui` | Pure widgets/layouts (no networking); styles from theme palette |
 | `mtui-app` | State machine, polling, orchestration |
@@ -97,9 +102,13 @@ machine or `MIKROTIK_TUI_PASSWORD_FILE`.
 ## Keyboard
 
 `↑/↓` or `j/k` moves, `←/→` or `h/l` pans table columns, `tab` / `shift+tab`
-cycle panes, `enter` opens the selected nav item, `/` filters the table, `s`
+cycle panes, `enter` expands a nav category (accordion; first screen opens)
+or opens the selected item. On an Interfaces table, `enter` edits the selected
+row. `/` filters the table, `s`
 cycles sort (not on Logs), `r` refreshes, `g`/`G` or Home/End jump, `pgup`/
-`pgdn` and `ctrl+u`/`ctrl+d` page, `ctrl+k` opens the command palette,
+`pgdn` and `ctrl+u`/`ctrl+d` page, `e` edits, `n` adds, `d` enables or disables,
+`c` copies, `x` removes, `z` resets counters, `t` opens torch, `a` opens the
+action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,
 `ctrl+l` logs out, `?` opens help, `esc` closes overlays or clears the
 filter, and `q` quits. Logging out removes the saved local profile and
 credential; quitting keeps them for automatic reconnection.

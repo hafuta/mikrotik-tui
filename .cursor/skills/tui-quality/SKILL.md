@@ -46,3 +46,12 @@ description: Build and review ratatui TUI behavior for correctness, responsivene
   append raw key characters without filtering them.
 - Add a regression test whenever addressing flicker, bleed, stale redraws, or
   viewport jumps; visual stability is part of correctness.
+
+## Property sheets
+
+Use numbered in-modal tabs (not a left rail, not an accordion). Arrow keys:
+Up/Down move fields and clamp at the ends; Left/Right change tabs and clamp
+at the first/last tab. Field grouping (General / type-specific / Advanced /
+Status, create vs edit) is defined in
+`.cursor/skills/routeros-resource-development/SKILL.md` — follow that skill
+when adding or reshaping entity forms so screens stay consistent.

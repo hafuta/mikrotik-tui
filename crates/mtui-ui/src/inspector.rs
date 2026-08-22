@@ -17,7 +17,11 @@ impl InspectorState {
     pub fn from_row(row: Option<&HashMap<String, String>>) -> Self {
         let mut fields = match row {
             Some(map) => {
-                let mut v: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                let mut v: Vec<_> = map
+                    .iter()
+                    .filter(|(key, _)| !key.starts_with('.'))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
                 v.sort_by(|a, b| a.0.cmp(&b.0));
                 v
             }

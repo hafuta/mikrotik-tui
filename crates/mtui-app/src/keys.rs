@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use mtui_core::{DASHBOARD_ID, resource_by_id};
 use mtui_routeros::Resource;
-use mtui_ui::LoginField;
+use mtui_ui::{COPY_FORM, FormSession, LoginField};
 
 use crate::app::{App, AppCommand, Overlay, Pane, Screen, is_https_router_url};
 
@@ -205,10 +205,26 @@ impl App {
             KeyCode::Enter => {
                 if self.pane == Pane::Nav
                     && let Some(id) = self.nav.selected_id().map(str::to_owned)
-                    && !id.ends_with("-group")
+                    && self.nav.select_id(&id)
+                    && let Some(open_id) = self.nav.selected_id().map(str::to_owned)
                 {
-                    return self.open_resource(&id);
+                    return self.open_resource(&open_id);
                 }
+                if self.pane == Pane::Content
+                    && self.current_resource != "logs"
+                    && !self.status.starts_with("Filter:")
+                {
+                    return self.dispatch_enter_action();
+                }
+            }
+            KeyCode::Char(ch)
+                if self.pane == Pane::Content
+                    && self.current_resource != "logs"
+                    && !self.status.starts_with("Filter:")
+                    && key.modifiers.is_empty()
+                    && self.action_key_consumed(ch) =>
+            {
+                return self.dispatch_key_action(ch);
             }
             KeyCode::Char(ch)
                 if self.pane == Pane::Content && self.status.starts_with("Filter:") =>
@@ -239,7 +255,237 @@ impl App {
         match self.overlay {
             Overlay::Help => self.keys_help(key),
             Overlay::Palette => self.keys_palette(key),
+            Overlay::Confirm(_) => self.keys_confirm(key),
+            Overlay::Form(_) => self.keys_form(key),
+            Overlay::ActionMenu(_) => self.keys_action_menu(key, false),
+            Overlay::TypePicker(_) => self.keys_action_menu(key, true),
+            Overlay::Torch(_) => self.keys_torch(key),
             Overlay::None => Vec::new(),
+        }
+    }
+
+    fn keys_confirm(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('n') => {
+                self.overlay = Overlay::None;
+                Vec::new()
+            }
+            KeyCode::Enter | KeyCode::Char('y') => self.confirm_pending(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn keys_form(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
+            return self.save_form();
+        }
+        let resource_id = match &self.overlay {
+            Overlay::Form(session) => session.resource_id.clone(),
+            _ => return Vec::new(),
+        };
+        let schema = resource_by_id(&resource_id)
+            .and_then(|spec| spec.form)
+            .unwrap_or(&COPY_FORM);
+
+        if let Overlay::Form(session) = &self.overlay
+            && session.confirm_discard
+        {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    self.overlay = Overlay::None;
+                }
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    if let Overlay::Form(session) = &mut self.overlay {
+                        session.confirm_discard = false;
+                    }
+                }
+                _ => {}
+            }
+            return Vec::new();
+        }
+
+        match key.code {
+            KeyCode::Esc => {
+                if let Overlay::Form(session) = &mut self.overlay {
+                    if session.is_dirty() {
+                        session.confirm_discard = true;
+                    } else {
+                        self.overlay = Overlay::None;
+                    }
+                }
+            }
+            KeyCode::Tab => self.with_form(|session| {
+                session.move_field(schema, 1);
+                session.clamp(schema);
+            }),
+            KeyCode::BackTab => self.with_form(|session| {
+                session.move_field(schema, -1);
+                session.clamp(schema);
+            }),
+            KeyCode::Up => self.with_form(|session| {
+                session.move_field(schema, -1);
+                session.clamp(schema);
+            }),
+            KeyCode::Down => self.with_form(|session| {
+                session.move_field(schema, 1);
+                session.clamp(schema);
+            }),
+            KeyCode::Left | KeyCode::Char('[') => {
+                self.with_form(|session| session.move_section(schema, -1));
+            }
+            KeyCode::Right | KeyCode::Char(']') => {
+                self.with_form(|session| session.move_section(schema, 1));
+            }
+            KeyCode::Char('k') if !self.form_editing_text(schema) => {
+                self.with_form(|session| {
+                    session.move_field(schema, -1);
+                    session.clamp(schema);
+                });
+            }
+            KeyCode::Char('j') if !self.form_editing_text(schema) => {
+                self.with_form(|session| {
+                    session.move_field(schema, 1);
+                    session.clamp(schema);
+                });
+            }
+            KeyCode::Char('h') if !self.form_editing_text(schema) => {
+                self.with_form(|session| session.move_section(schema, -1));
+            }
+            KeyCode::Char('l') if !self.form_editing_text(schema) => {
+                self.with_form(|session| session.move_section(schema, 1));
+            }
+            KeyCode::Char(digit) if digit.is_ascii_digit() && digit != '0' => {
+                let index = usize::from(digit as u8 - b'1');
+                self.with_form(|session| session.jump_section(schema, index));
+            }
+            KeyCode::Char(' ') | KeyCode::Enter => {
+                self.with_form(|session| session.activate(schema));
+            }
+            KeyCode::Backspace | KeyCode::Delete => {
+                self.with_form(|session| session.backspace(schema));
+            }
+            KeyCode::Char(ch) if key.modifiers.is_empty() => {
+                self.with_form(|session| session.insert_char(schema, ch));
+            }
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    fn with_form(&mut self, f: impl FnOnce(&mut FormSession)) {
+        if let Overlay::Form(session) = &mut self.overlay {
+            f(session);
+        }
+    }
+
+    fn form_editing_text(&self, schema: &mtui_core::FormSchema) -> bool {
+        let Overlay::Form(session) = &self.overlay else {
+            return false;
+        };
+        session.focused_spec(schema).is_some_and(|field| {
+            matches!(
+                field.kind,
+                mtui_core::FieldKind::Text
+                    | mtui_core::FieldKind::Number
+                    | mtui_core::FieldKind::Secret
+            )
+        })
+    }
+
+    fn keys_action_menu(&mut self, key: KeyEvent, type_picker: bool) -> Vec<AppCommand> {
+        match key.code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                Vec::new()
+            }
+            KeyCode::Enter => {
+                let id = match &self.overlay {
+                    Overlay::ActionMenu(menu) | Overlay::TypePicker(menu) => menu.confirm(),
+                    _ => None,
+                };
+                self.overlay = Overlay::None;
+                if type_picker {
+                    if let Some(id) = id {
+                        return self.open_create(&id);
+                    }
+                    Vec::new()
+                } else if let Some(id) = id {
+                    self.dispatch_named_action(&id)
+                } else {
+                    Vec::new()
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(menu) = self.menu_mut() {
+                    menu.move_selection(-1);
+                }
+                Vec::new()
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(menu) = self.menu_mut() {
+                    menu.move_selection(1);
+                }
+                Vec::new()
+            }
+            KeyCode::Backspace | KeyCode::Delete => {
+                if let Some(menu) = self.menu_mut() {
+                    menu.backspace();
+                }
+                Vec::new()
+            }
+            KeyCode::Char(ch) if key.modifiers.is_empty() => {
+                if let Some(menu) = self.menu_mut() {
+                    menu.insert_char(ch);
+                }
+                Vec::new()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn menu_mut(&mut self) -> Option<&mut mtui_ui::ActionMenuState> {
+        match &mut self.overlay {
+            Overlay::ActionMenu(menu) | Overlay::TypePicker(menu) => Some(menu),
+            _ => None,
+        }
+    }
+
+    fn keys_torch(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        match key.code {
+            KeyCode::Esc => {
+                self.torch_generation = self.torch_generation.wrapping_add(1);
+                self.overlay = Overlay::None;
+                Vec::new()
+            }
+            KeyCode::Char(' ') => {
+                if let Overlay::Torch(torch) = &mut self.overlay {
+                    torch.running = !torch.running;
+                    torch.error = None;
+                    if torch.running {
+                        return self.torch_sample_command();
+                    }
+                }
+                Vec::new()
+            }
+            KeyCode::Tab => {
+                if let Overlay::Torch(torch) = &mut self.overlay {
+                    torch.focus = torch.focus.next();
+                }
+                Vec::new()
+            }
+            KeyCode::Backspace | KeyCode::Delete => {
+                if let Overlay::Torch(torch) = &mut self.overlay {
+                    torch.backspace();
+                }
+                Vec::new()
+            }
+            KeyCode::Char(ch) if key.modifiers.is_empty() => {
+                if let Overlay::Torch(torch) = &mut self.overlay {
+                    torch.insert_char(ch);
+                }
+                Vec::new()
+            }
+            _ => Vec::new(),
         }
     }
 
@@ -691,6 +937,7 @@ mod palette_tests {
         assert!(!app.palette.visible);
         assert_eq!(app.current_resource, "firewall-filter");
         assert_eq!(app.nav.selected_id(), Some("firewall-filter"));
+        assert_eq!(app.nav.expanded.as_deref(), Some("ip-group"));
         assert!(
             cmds.iter().any(|cmd| matches!(
                 cmd,
@@ -727,5 +974,69 @@ mod palette_tests {
         let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
         assert_eq!(app.overlay, Overlay::Help);
         assert!(!app.palette.visible);
+    }
+}
+
+#[cfg(test)]
+mod nav_accordion_tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use crate::app::{App, Pane, Screen};
+    use crate::event::AppEvent;
+
+    fn press(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn main_app() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.pane = Pane::Nav;
+        app
+    }
+
+    #[test]
+    fn enter_on_category_opens_first_screen_and_collapses_others() {
+        let mut app = main_app();
+        assert!(app.nav.expanded.is_none());
+        assert_eq!(app.nav.selected_id(), Some("dashboard"));
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        assert_eq!(app.nav.selected_id(), Some("interfaces-group"));
+
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert_eq!(app.current_resource, "interfaces");
+        assert_eq!(app.nav.selected_id(), Some("interfaces"));
+        assert_eq!(app.nav.expanded.as_deref(), Some("interfaces-group"));
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                crate::app::AppCommand::FetchResource { resource_id, .. }
+                    if resource_id == "interfaces"
+            )),
+            "expected interfaces resource load, got {cmds:?}"
+        );
+        assert!(app.nav.entries.iter().any(|entry| entry.id == "ethernet"));
+
+        app.pane = Pane::Nav;
+        let ppp = app
+            .nav
+            .entries
+            .iter()
+            .position(|entry| entry.id == "ppp-group")
+            .expect("ppp group");
+        app.nav.selected = ppp;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert_eq!(app.current_resource, "ppp-secrets");
+        assert_eq!(app.nav.expanded.as_deref(), Some("ppp-group"));
+        assert!(app.nav.entries.iter().all(|entry| entry.id != "ethernet"));
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                crate::app::AppCommand::FetchResource { resource_id, .. }
+                    if resource_id == "ppp-secrets"
+            )),
+            "expected PPP secrets load, got {cmds:?}"
+        );
     }
 }

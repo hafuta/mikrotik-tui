@@ -17,6 +17,7 @@ use tokio::sync::mpsc;
 use crate::app::{App, AppCommand};
 use crate::event::{AppEvent, WorkerMsg};
 use crate::render;
+use crate::write::{MutationOp, json_rows};
 
 pub fn run(alt_screen: bool) -> anyhow::Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -87,6 +88,7 @@ pub fn run(alt_screen: bool) -> anyhow::Result<()> {
     result
 }
 
+#[allow(clippy::too_many_lines)]
 fn dispatch_commands(
     rt: &tokio::runtime::Runtime,
     tx: &mpsc::UnboundedSender<WorkerMsg>,
@@ -156,6 +158,46 @@ fn dispatch_commands(
                 });
             }
             AppCommand::ClearSession => app.clear_saved_session(),
+            AppCommand::Mutate {
+                request_id,
+                generation,
+                op,
+            } => {
+                let Some(client) = app.client.clone() else {
+                    continue;
+                };
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let error = match run_mutation(&client, op).await {
+                        Ok(()) => None,
+                        Err(err) => Some(err.to_string()),
+                    };
+                    let _ = tx.send(WorkerMsg::MutateResult {
+                        request_id,
+                        generation,
+                        error,
+                    });
+                });
+            }
+            AppCommand::FetchTorch {
+                generation,
+                interface,
+                src,
+                dst,
+                protocol,
+                port,
+                ..
+            } => {
+                let Some(client) = app.client.clone() else {
+                    continue;
+                };
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let msg =
+                        fetch_torch(client, generation, interface, src, dst, protocol, port).await;
+                    let _ = tx.send(msg);
+                });
+            }
         }
     }
 }
@@ -281,5 +323,69 @@ async fn fetch_dashboard(client: Arc<Client>, request_id: u64, generation: u64) 
         interface_error,
         firewall,
         firewall_error,
+    }
+}
+
+async fn run_mutation(client: &Client, op: MutationOp) -> mtui_routeros::Result<()> {
+    match op {
+        MutationOp::Patch {
+            endpoint,
+            id,
+            fields,
+        } => {
+            if let Some(id) = id {
+                client.patch(&endpoint, &id, &fields).await
+            } else {
+                client.patch_system(&endpoint, &fields).await
+            }
+        }
+        MutationOp::Put { endpoint, fields } => client.put(&endpoint, &fields).await,
+        MutationOp::Delete { endpoint, id } => client.delete(&endpoint, &id).await,
+        MutationOp::Command {
+            endpoint,
+            command,
+            fields,
+        } => client
+            .command(&endpoint, &command, &fields)
+            .await
+            .map(|_| ()),
+    }
+}
+
+async fn fetch_torch(
+    client: std::sync::Arc<Client>,
+    generation: u64,
+    interface: String,
+    src: String,
+    dst: String,
+    protocol: String,
+    port: String,
+) -> WorkerMsg {
+    let mut fields = std::collections::BTreeMap::new();
+    fields.insert("interface".into(), interface);
+    fields.insert("duration".into(), "2s".into());
+    if !src.trim().is_empty() {
+        fields.insert("src-address".into(), src);
+    }
+    if !dst.trim().is_empty() {
+        fields.insert("dst-address".into(), dst);
+    }
+    if !protocol.trim().is_empty() {
+        fields.insert("ip-protocol".into(), protocol);
+    }
+    if !port.trim().is_empty() {
+        fields.insert("port".into(), port);
+    }
+    match client.command("/rest/tool", "torch", &fields).await {
+        Ok(value) => WorkerMsg::TorchResult {
+            generation,
+            rows: json_rows(value),
+            error: None,
+        },
+        Err(err) => WorkerMsg::TorchResult {
+            generation,
+            rows: Vec::new(),
+            error: Some(err.to_string()),
+        },
     }
 }

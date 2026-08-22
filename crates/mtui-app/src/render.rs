@@ -4,7 +4,7 @@ use mtui_core::DASHBOARD_ID;
 use mtui_ui::{
     CpuCoreView, DashboardView, LayoutMetrics, Modal, ModalButton, ModalButtonKind, ModalPanel,
     constrain_lines, dashboard_content, fit_line, footer_hints, format_fingerprint, header_line,
-    render_modal, signal_rail, status_line,
+    render_action_menu, render_form_sheet, render_modal, render_torch, signal_rail, status_line,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -33,6 +33,39 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                 }
                 Overlay::Palette => {
                     app.palette.render(frame, area, &styles);
+                }
+                Overlay::Confirm(ref session) => {
+                    let buttons = [
+                        ModalButton {
+                            label: "Confirm",
+                            keys: "y / enter",
+                            kind: ModalButtonKind::Primary,
+                        },
+                        ModalButton {
+                            label: "Cancel",
+                            keys: "n / esc",
+                            kind: ModalButtonKind::Secondary,
+                        },
+                    ];
+                    let modal = Modal::new(&session.title, &session.body)
+                        .alert()
+                        .buttons(&buttons);
+                    render_modal(frame, area, &modal, &styles);
+                }
+                Overlay::Form(ref session) => {
+                    if let Some(schema) =
+                        mtui_core::resource_by_id(&session.resource_id).and_then(|spec| spec.form)
+                    {
+                        render_form_sheet(frame, area, session, schema, &styles);
+                    } else {
+                        render_form_sheet(frame, area, session, &mtui_ui::COPY_FORM, &styles);
+                    }
+                }
+                Overlay::ActionMenu(ref menu) | Overlay::TypePicker(ref menu) => {
+                    render_action_menu(frame, area, menu, &styles);
+                }
+                Overlay::Torch(ref torch) => {
+                    render_torch(frame, area, torch, &styles);
                 }
                 Overlay::None => {}
             }
@@ -184,43 +217,25 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
         app.status.clone()
     };
     frame.render_widget(Paragraph::new(status_line(&status, &styles)), chunks[2]);
-    frame.render_widget(
-        Paragraph::new(footer_hints(
-            &[
-                ("?", "help"),
-                ("ctrl+k", "commands"),
-                ("r", "refresh"),
-                ("tab", "pane"),
-                ("q", "quit"),
-            ],
-            &styles,
-        )),
-        chunks[3],
-    );
+    let hints = app.footer_action_hints();
+    let hint_refs: Vec<(&str, &str)> = hints
+        .iter()
+        .map(|(key, label)| (key.as_str(), label.as_str()))
+        .collect();
+    frame.render_widget(Paragraph::new(footer_hints(&hint_refs, &styles)), chunks[3]);
 }
 
 fn draw_nav(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
     let items: Vec<ListItem> = app
         .nav
-        .entries
-        .iter()
-        .enumerate()
-        .map(|(i, e)| {
-            let prefix = if e.depth > 0 { "  " } else { "" };
-            let marker = if i == app.nav.selected { "› " } else { "  " };
-            let style = if i == app.nav.selected {
-                styles.focus
-            } else if e.is_group {
-                styles.muted
-            } else {
-                styles.text
-            };
-            ListItem::new(Line::from(Span::styled(
-                format!("{marker}{prefix}{}", e.label),
-                style,
-            )))
-        })
+        .render_lines(
+            app.pane == Pane::Nav,
+            Some(app.current_resource.as_str()),
+            &styles,
+        )
+        .into_iter()
+        .map(ListItem::new)
         .collect();
     let border = if app.pane == Pane::Nav {
         styles.focus
@@ -347,14 +362,26 @@ pgup/pgdn   page
 g / G       first / last
 h / l       columns
 tab         cycle panes
-enter       open / inspect
+enter       open / expand category; edit row
 /           filter
 s           cycle sort
 r           refresh
+e           edit
+n           add
+d           enable / disable
+c           copy
+x           remove
+z           reset counters
+t           torch
+a           action menu
+ctrl+s      save properties
+[ / ]       previous / next properties tab
+1-9         jump to a properties tab
 ctrl+k      command palette
 ctrl+l      log out
 ?           help
 q           quit
 
 Logs: space pause · f follow · e severity · c clear local
+Destructive actions ask for confirmation.
 ";

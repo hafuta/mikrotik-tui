@@ -46,4 +46,14 @@ pub enum WorkerMsg {
         system: Option<Resource>,
         error: Option<String>,
     },
+    MutateResult {
+        request_id: u64,
+        generation: u64,
+        error: Option<String>,
+    },
+    TorchResult {
+        generation: u64,
+        rows: Vec<std::collections::HashMap<String, String>>,
+        error: Option<String>,
+    },
 }

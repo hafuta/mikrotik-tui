@@ -23,7 +23,9 @@ networking or persistence. `mtui-routeros` contains no terminal code.
   with a replaceable interface for future OS keyrings.
 - Application logging is file-only while ratatui owns stdout. Redaction is
   applied before records reach the handler.
-- The initial product has no mutation methods or destructive key bindings.
+- The client mutates RouterOS only through confirmed actions and property
+  sheets. Destructive commands (remove, reset counters) use an alert overlay.
+  Secrets stay masked in tables and inspectors.
 
 ## Resource extension
 

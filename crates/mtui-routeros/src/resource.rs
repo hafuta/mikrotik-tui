@@ -37,6 +37,16 @@ impl Resource {
             .map(|(key, value)| (key.clone(), mask_value(key, value)))
             .collect()
     }
+
+    /// Display row for tables: masked fields plus the opaque `.id` when present.
+    #[must_use]
+    pub fn display_row(&self) -> HashMap<String, String> {
+        let mut fields = self.masked_fields();
+        if !self.id.is_empty() {
+            fields.insert(".id".to_string(), self.id.clone());
+        }
+        fields
+    }
 }
 
 impl<'de> Deserialize<'de> for Resource {
@@ -101,5 +111,19 @@ mod tests {
             serde_json::from_str(r#"{"enabled":"true"}"#).expect("valid resource JSON");
         assert_eq!(resource.id, "");
         assert_eq!(resource.field("enabled"), Some("true"));
+    }
+
+    #[test]
+    fn display_row_includes_id_and_masks_secrets() {
+        let resource: Resource =
+            serde_json::from_str(r#"{".id":"*1","name":"wlan1","password":"hunter2"}"#)
+                .expect("valid resource JSON");
+        let row = resource.display_row();
+        assert_eq!(row.get(".id").map(String::as_str), Some("*1"));
+        assert_eq!(row.get("name").map(String::as_str), Some("wlan1"));
+        assert_eq!(
+            row.get("password").map(String::as_str),
+            Some(crate::secret::MASKED_VALUE)
+        );
     }
 }
