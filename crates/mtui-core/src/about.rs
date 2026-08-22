@@ -871,8 +871,11 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "files",
         "Router filesystem: backups, scripts, images, and uploaded files.",
-        "Save a named backup or load a `.backup` file (that replaces the running configuration \
-         and reboots). Removing a file here deletes it on the router.",
+        "Save a named backup or load a `.backup` file from the action menu (that replaces the \
+         running configuration and reboots). Upload a local UTF-8 file (`u`, 1 MiB REST cap), \
+         download the selected file (`w`), or fetch a URL onto the router with /tool/fetch (`f`). \
+         Larger or binary files should be fetched by URL. Removing a file here deletes it on the \
+         router.",
         "name, type, size, creation-time. Contents are not shown in the table."
     ),
     guide!(

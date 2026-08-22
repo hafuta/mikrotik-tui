@@ -102,6 +102,25 @@ pub enum AppCommand {
     CopyToClipboard {
         text: String,
     },
+    ReadLocalFile {
+        request_id: u64,
+        generation: u64,
+        path: String,
+        remote_name: String,
+    },
+    WriteLocalFile {
+        request_id: u64,
+        generation: u64,
+        path: String,
+        contents: String,
+    },
+    FetchRecord {
+        request_id: u64,
+        generation: u64,
+        endpoint: String,
+        id: String,
+        local_path: String,
+    },
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -579,6 +598,9 @@ impl App {
                 rows,
                 error,
             } => self.apply_torch_result(generation, rows, error),
+            WorkerMsg::ReadLocalFileResult { .. } => self.apply_read_local_file(msg),
+            WorkerMsg::WriteLocalFileResult { .. } => self.apply_write_local_file(msg),
+            WorkerMsg::RecordResult { .. } => self.apply_record_result(msg),
         }
     }
 

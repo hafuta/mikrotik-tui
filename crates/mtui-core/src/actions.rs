@@ -33,6 +33,9 @@ pub enum ActionCommand {
     MoveUp,
     MoveDown,
     MakeStatic,
+    Upload,
+    Download,
+    Fetch,
 }
 
 impl ActionCommand {
@@ -50,6 +53,9 @@ impl ActionCommand {
             Self::BackupLoad => "load",
             Self::MoveUp | Self::MoveDown => "move",
             Self::MakeStatic => "make-static",
+            Self::Upload => "upload",
+            Self::Download => "download",
+            Self::Fetch => "fetch",
         }
     }
 }
@@ -289,7 +295,7 @@ pub const ACTION_BACKUP_SAVE: ActionSpec = ActionSpec {
 pub const ACTION_BACKUP_LOAD: ActionSpec = ActionSpec {
     id: "backup-load",
     label: "Load backup",
-    key: Some('u'),
+    key: None,
     enter: false,
     needs_selection: true,
     danger: true,
@@ -300,12 +306,6 @@ pub const ACTION_BACKUP_LOAD: ActionSpec = ActionSpec {
 };
 
 pub const RESOURCE_LIFECYCLE_ACTIONS: &[ActionSpec] = &[ACTION_REBOOT, ACTION_SHUTDOWN];
-
-pub const FILE_ACTIONS: &[ActionSpec] = &[
-    ACTION_BACKUP_SAVE,
-    ACTION_BACKUP_LOAD,
-    ACTION_REMOVE_SELECTED,
-];
 
 pub const ACTION_MOVE_UP: ActionSpec = ActionSpec {
     id: "move-up",
@@ -414,6 +414,55 @@ pub const FILTER_ACTIONS: &[ActionSpec] = &[
     ACTION_MOVE_DOWN,
     ACTION_REMOVE,
     ACTION_RESET,
+];
+
+pub const ACTION_FILE_UPLOAD: ActionSpec = ActionSpec {
+    id: "upload",
+    label: "Upload",
+    key: Some('u'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Upload,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_FILE_FETCH: ActionSpec = ActionSpec {
+    id: "fetch",
+    label: "Fetch URL",
+    key: Some('f'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Fetch,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_FILE_DOWNLOAD: ActionSpec = ActionSpec {
+    id: "download",
+    label: "Download",
+    key: Some('w'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Download,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+/// Files: backup, upload/download/fetch, and remove. No property sheet.
+pub const FILE_ACTIONS: &[ActionSpec] = &[
+    ACTION_BACKUP_SAVE,
+    ACTION_BACKUP_LOAD,
+    ACTION_FILE_UPLOAD,
+    ACTION_FILE_FETCH,
+    ACTION_FILE_DOWNLOAD,
+    ACTION_REMOVE_SELECTED,
 ];
 
 /// Disconnect a live session or drop an FDB/lease row.
@@ -552,5 +601,30 @@ mod tests {
             .map(|action| action.id)
             .collect();
         assert_eq!(ids, ["reboot", "shutdown"]);
+    }
+
+    #[test]
+    fn files_actions_document_u_f_w_and_remove() {
+        let keys: Vec<_> = FILE_ACTIONS
+            .iter()
+            .filter_map(|action| action.key)
+            .collect();
+        assert_eq!(keys, ['b', 'u', 'f', 'w', 'x']);
+        let ids: Vec<_> = FILE_ACTIONS.iter().map(|action| action.id).collect();
+        assert_eq!(
+            ids,
+            [
+                "backup-save",
+                "backup-load",
+                "upload",
+                "fetch",
+                "download",
+                "remove"
+            ]
+        );
+        assert!(!FILE_ACTIONS[2].needs_selection);
+        assert!(!FILE_ACTIONS[3].needs_selection);
+        assert!(FILE_ACTIONS[4].needs_selection);
+        assert!(FILE_ACTIONS[5].needs_selection);
     }
 }

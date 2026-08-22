@@ -203,6 +203,74 @@ fn dispatch_commands(
                     app.status = format!("Clipboard copy failed: {err}");
                 }
             },
+            AppCommand::ReadLocalFile {
+                request_id,
+                generation,
+                path,
+                remote_name,
+            } => {
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        crate::files_io::read_utf8_upload(std::path::Path::new(&path))
+                    })
+                    .await;
+                    let (contents, error) = match result {
+                        Ok(Ok(contents)) => (Some(contents), None),
+                        Ok(Err(err)) => (None, Some(err)),
+                        Err(err) => (None, Some(err.to_string())),
+                    };
+                    let _ = tx.send(WorkerMsg::ReadLocalFileResult {
+                        request_id,
+                        generation,
+                        remote_name,
+                        contents,
+                        error,
+                    });
+                });
+            }
+            AppCommand::WriteLocalFile {
+                request_id,
+                generation,
+                path,
+                contents,
+            } => {
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        crate::files_io::write_download(std::path::Path::new(&path), &contents)
+                    })
+                    .await;
+                    let error = match result {
+                        Ok(Ok(())) => None,
+                        Ok(Err(err)) => Some(err),
+                        Err(err) => Some(err.to_string()),
+                    };
+                    let _ = tx.send(WorkerMsg::WriteLocalFileResult {
+                        request_id,
+                        generation,
+                        error,
+                    });
+                });
+            }
+            AppCommand::FetchRecord {
+                request_id,
+                generation,
+                endpoint,
+                id,
+                local_path,
+            } => {
+                let Some(client) = app.client.clone() else {
+                    continue;
+                };
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let msg =
+                        fetch_file_record(client, request_id, generation, endpoint, id, local_path)
+                            .await;
+                    let _ = tx.send(msg);
+                });
+            }
         }
     }
 }
@@ -421,6 +489,32 @@ async fn fetch_torch(
         Err(err) => WorkerMsg::TorchResult {
             generation,
             rows: Vec::new(),
+            error: Some(err.to_string()),
+        },
+    }
+}
+
+async fn fetch_file_record(
+    client: std::sync::Arc<Client>,
+    request_id: u64,
+    generation: u64,
+    endpoint: String,
+    id: String,
+    local_path: String,
+) -> WorkerMsg {
+    match client.get(&endpoint, &id).await {
+        Ok(resource) => WorkerMsg::RecordResult {
+            request_id,
+            generation,
+            local_path,
+            contents: resource.fields.get("contents").cloned(),
+            error: None,
+        },
+        Err(err) => WorkerMsg::RecordResult {
+            request_id,
+            generation,
+            local_path,
+            contents: None,
             error: Some(err.to_string()),
         },
     }

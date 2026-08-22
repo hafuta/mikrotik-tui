@@ -60,4 +60,23 @@ pub enum WorkerMsg {
         rows: Vec<std::collections::HashMap<String, String>>,
         error: Option<String>,
     },
+    ReadLocalFileResult {
+        request_id: u64,
+        generation: u64,
+        remote_name: String,
+        contents: Option<String>,
+        error: Option<String>,
+    },
+    WriteLocalFileResult {
+        request_id: u64,
+        generation: u64,
+        error: Option<String>,
+    },
+    RecordResult {
+        request_id: u64,
+        generation: u64,
+        local_path: String,
+        contents: Option<String>,
+        error: Option<String>,
+    },
 }
