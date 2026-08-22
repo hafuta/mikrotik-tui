@@ -430,6 +430,9 @@ e           edit
 n           add
 d           enable / disable
 c           copy · console: copy focused log
+g           certificates: sign (Home still jumps to first row)
+p           certificates: import (file already on the router)
+w           certificates: export
 x           remove
 u           Files: upload local file
 f           Files: fetch URL · logs: follow · console: fullscreen

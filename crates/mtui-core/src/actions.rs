@@ -36,6 +36,9 @@ pub enum ActionCommand {
     Upload,
     Download,
     Fetch,
+    Sign,
+    Import,
+    ExportCertificate,
 }
 
 impl ActionCommand {
@@ -56,6 +59,9 @@ impl ActionCommand {
             Self::Upload => "upload",
             Self::Download => "download",
             Self::Fetch => "fetch",
+            Self::Sign => "sign",
+            Self::Import => "import",
+            Self::ExportCertificate => "export-certificate",
         }
     }
 }
@@ -407,6 +413,55 @@ pub const VIRTUAL_IFACE_ACTIONS: &[ActionSpec] = &[
 
 pub const LIST_ACTIONS: &[ActionSpec] = &[ACTION_ADD, ACTION_EDIT, ACTION_COPY, ACTION_REMOVE];
 
+pub const ACTION_SIGN: ActionSpec = ActionSpec {
+    id: "sign",
+    label: "Sign",
+    key: Some('g'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Sign,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_IMPORT: ActionSpec = ActionSpec {
+    id: "import",
+    label: "Import",
+    key: Some('p'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Import,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_EXPORT_CERT: ActionSpec = ActionSpec {
+    id: "export",
+    label: "Export",
+    key: Some('w'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::ExportCertificate,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const CERTIFICATE_ACTIONS: &[ActionSpec] = &[
+    ACTION_ADD,
+    ACTION_EDIT,
+    ACTION_COPY,
+    ACTION_REMOVE,
+    ACTION_SIGN,
+    ACTION_IMPORT,
+    ACTION_EXPORT_CERT,
+];
+
 pub const MEMBER_ACTIONS: &[ActionSpec] = &[
     ACTION_ADD,
     ACTION_EDIT,
@@ -579,6 +634,36 @@ mod tests {
         let ids: Vec<_> = LEASE_ACTIONS.iter().map(|action| action.id).collect();
         assert!(ids.contains(&"make-static"));
         assert_eq!(ActionCommand::MakeStatic.rest_name(), "make-static");
+    }
+
+    #[test]
+    fn certificate_import_does_not_require_selection() {
+        let ids: Vec<_> = resolve_actions(CERTIFICATE_ACTIONS, false, None)
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert!(ids.contains(&"import"));
+        assert!(ids.contains(&"add"));
+        assert!(!ids.contains(&"sign"));
+        assert!(!ids.contains(&"export"));
+        assert!(!ids.contains(&"copy"));
+
+        let mut row = HashMap::new();
+        row.insert("name".into(), "web".into());
+        let with_row: Vec<_> = resolve_actions(CERTIFICATE_ACTIONS, false, Some(&row))
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(
+            with_row,
+            ["add", "edit", "copy", "remove", "sign", "import", "export"]
+        );
+        assert_eq!(ActionCommand::Sign.rest_name(), "sign");
+        assert_eq!(ActionCommand::Import.rest_name(), "import");
+        assert_eq!(
+            ActionCommand::ExportCertificate.rest_name(),
+            "export-certificate"
+        );
     }
 
     #[test]

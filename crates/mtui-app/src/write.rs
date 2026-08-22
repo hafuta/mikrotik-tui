@@ -5,12 +5,13 @@ use std::fmt;
 use std::path::Path;
 
 use mtui_core::{
-    ActionCommand, ActionKind, ActionSpec, DASHBOARD_ID, INTERFACE_CREATE_TARGETS, action_label,
-    patch_body, resource_by_id, truthy,
+    ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
+    CERT_SIGN_PROMPT, DASHBOARD_ID, INTERFACE_CREATE_TARGETS, action_label, patch_body,
+    resource_by_id, truthy,
 };
 use mtui_routeros::MASKED_VALUE;
 use mtui_ui::{
-    ActionMenuItem, ActionMenuState, FormSession, ProbeKind, ProbeState, Row, TorchState,
+    ActionMenuItem, ActionMenuState, COPY_FORM, FormSession, ProbeKind, ProbeState, Row, TorchState,
 };
 
 use crate::app::{App, AppCommand, Overlay, Pane};
@@ -289,7 +290,11 @@ impl App {
             ActionCommand::Upload => self.open_file_upload_prompt(),
             ActionCommand::Download => self.open_file_download_prompt(),
             ActionCommand::Fetch => self.open_file_fetch_prompt(),
-            other => self.open_copy_prompt(other),
+            ActionCommand::Copy
+            | ActionCommand::Sign
+            | ActionCommand::Import
+            | ActionCommand::ExportCertificate => self.open_schema_prompt(command),
+            _ => Vec::new(),
         }
     }
 
@@ -343,21 +348,41 @@ impl App {
         Vec::new()
     }
 
-    fn open_copy_prompt(&mut self, command: ActionCommand) -> Vec<AppCommand> {
-        let Some(row) = self.table.selected_row() else {
-            return Vec::new();
+    fn open_schema_prompt(&mut self, command: ActionCommand) -> Vec<AppCommand> {
+        let (schema, needs_row) = match command {
+            ActionCommand::Copy => (&COPY_FORM, true),
+            ActionCommand::Sign => (&CERT_SIGN_PROMPT, true),
+            ActionCommand::Import => (&CERT_IMPORT_PROMPT, false),
+            ActionCommand::ExportCertificate => (&CERT_EXPORT_PROMPT, true),
+            _ => return Vec::new(),
         };
-        let id = row.get(".id").cloned().unwrap_or_default();
-        let name = row
-            .get("name")
-            .or_else(|| row.get("interface"))
-            .cloned()
-            .unwrap_or_else(|| id.clone());
-        self.overlay = Overlay::Form(FormSession::prompt(
+        let (id, name) = if needs_row {
+            let Some(row) = self.table.selected_row() else {
+                return Vec::new();
+            };
+            let id = row.get(".id").cloned().unwrap_or_default();
+            let name = row
+                .get("name")
+                .or_else(|| row.get("interface"))
+                .cloned()
+                .unwrap_or_else(|| id.clone());
+            (id, name)
+        } else {
+            (String::new(), String::new())
+        };
+        let mut values = HashMap::new();
+        if command == ActionCommand::Copy {
+            values.insert("new-name".into(), format!("{name}-copy"));
+        }
+        if command == ActionCommand::ExportCertificate {
+            values.insert("type".into(), "pem".into());
+        }
+        self.overlay = Overlay::Form(FormSession::prompt_with(
             self.current_resource.clone(),
             id,
             command.rest_name(),
-            &name,
+            schema,
+            values,
         ));
         Vec::new()
     }
@@ -595,15 +620,25 @@ impl App {
     }
 
     pub(crate) fn save_form(&mut self) -> Vec<AppCommand> {
+        let (saving, is_prompt) = match &self.overlay {
+            Overlay::Form(session) => (session.saving, session.prompt_command.is_some()),
+            _ => return Vec::new(),
+        };
+        if saving {
+            return Vec::new();
+        }
+        if is_prompt {
+            let Overlay::Form(session) = &self.overlay else {
+                return Vec::new();
+            };
+            let Some(command) = session.prompt_command else {
+                return Vec::new();
+            };
+            return self.save_prompt(command);
+        }
         let Overlay::Form(session) = &self.overlay else {
             return Vec::new();
         };
-        if session.saving {
-            return Vec::new();
-        }
-        if let Some(command) = session.prompt_command {
-            return self.save_prompt(command);
-        }
         let Some(spec) = resource_by_id(&session.resource_id) else {
             return Vec::new();
         };
@@ -656,6 +691,7 @@ impl App {
             "upload" => self.save_upload_prompt(),
             "download" => self.save_download_prompt(),
             "fetch" => self.save_fetch_prompt(),
+            "sign" | "import" | "export-certificate" => self.save_cert_prompt(),
             _ => self.save_prompt_form(command),
         }
     }
@@ -807,6 +843,76 @@ impl App {
             command: "fetch".into(),
             fields,
         })]
+    }
+
+    fn save_cert_prompt(&mut self) -> Vec<AppCommand> {
+        let (command, schema, record_id, values, resource_id) = match &self.overlay {
+            Overlay::Form(session) => {
+                let Some(command) = session.prompt_command else {
+                    return Vec::new();
+                };
+                (
+                    command,
+                    session.prompt_schema.unwrap_or(&COPY_FORM),
+                    session.record_id.clone(),
+                    session.values.clone(),
+                    session.resource_id.clone(),
+                )
+            }
+            _ => return Vec::new(),
+        };
+        let mut fields = BTreeMap::new();
+        if command != "import" {
+            if record_id.is_empty() {
+                self.form_error("Selected row has no id");
+                return Vec::new();
+            }
+            fields.insert(".id".into(), record_id);
+        }
+        for key in schema.writable_keys() {
+            let Some(value) = values.get(key) else {
+                continue;
+            };
+            if value == MASKED_VALUE || value.is_empty() {
+                continue;
+            }
+            fields.insert(key.to_string(), value.clone());
+        }
+        let missing = match command {
+            "sign" if !fields.contains_key("ca") => Some("CA name is required"),
+            "import" | "export-certificate" if !fields.contains_key("file-name") => {
+                Some("File name is required")
+            }
+            _ => None,
+        };
+        if let Some(error) = missing {
+            self.form_error(error);
+            return Vec::new();
+        }
+        let Some(spec) = resource_by_id(&resource_id) else {
+            return Vec::new();
+        };
+        if let Overlay::Form(session) = &mut self.overlay {
+            session.saving = true;
+            session.error = None;
+        }
+        self.status = match command {
+            "sign" => "Signing…".into(),
+            "import" => "Importing…".into(),
+            "export-certificate" => "Exporting…".into(),
+            _ => "Copying…".into(),
+        };
+        vec![self.mutate_command(MutationOp::Command {
+            endpoint: spec.endpoint().to_string(),
+            command: command.to_string(),
+            fields,
+        })]
+    }
+
+    fn form_error(&mut self, error: &str) {
+        if let Overlay::Form(session) = &mut self.overlay {
+            session.error = Some(error.into());
+        }
     }
 
     pub(crate) fn confirm_pending(&mut self) -> Vec<AppCommand> {
@@ -1419,6 +1525,164 @@ mod tests {
         app.pane = Pane::Content;
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('c'))));
         assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    fn certificates_loaded() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("certificates");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "web".into());
+        fields.insert("common-name".into(), "web.example".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "certificates".into(),
+            rows: vec![Resource {
+                id: "*c1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        app
+    }
+
+    fn command_fields(cmds: &[AppCommand]) -> (&str, &str, &BTreeMap<String, String>) {
+        match cmds.first() {
+            Some(AppCommand::Mutate {
+                op:
+                    MutationOp::Command {
+                        endpoint,
+                        command,
+                        fields,
+                    },
+                ..
+            }) => (endpoint.as_str(), command.as_str(), fields),
+            other => panic!("expected command mutate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn certificate_sign_prompt_saves_id_and_ca() {
+        let mut app = certificates_loaded();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('g'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected sign prompt, got {:?}", app.overlay);
+        };
+        assert_eq!(session.prompt_command, Some("sign"));
+        assert!(session.values.contains_key("ca"));
+        assert_eq!(session.record_id, "*c1");
+        if let Overlay::Form(session) = &mut app.overlay {
+            session.values.insert("ca".into(), "root-ca".into());
+        }
+        let cmds = app.save_form();
+        let (endpoint, command, fields) = command_fields(&cmds);
+        assert_eq!(endpoint, "/rest/certificate");
+        assert_eq!(command, "sign");
+        assert_eq!(fields.get(".id").map(String::as_str), Some("*c1"));
+        assert_eq!(fields.get("ca").map(String::as_str), Some("root-ca"));
+    }
+
+    #[test]
+    fn certificate_import_does_not_need_a_row() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("certificates");
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('p'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected import prompt, got {:?}", app.overlay);
+        };
+        assert_eq!(session.prompt_command, Some("import"));
+        assert!(session.record_id.is_empty());
+        if let Overlay::Form(session) = &mut app.overlay {
+            session.values.insert("file-name".into(), "web.p12".into());
+            session
+                .values
+                .insert("passphrase".into(), MASKED_VALUE.into());
+            session.values.insert("name".into(), "web".into());
+        }
+        let cmds = app.save_form();
+        let (endpoint, command, fields) = command_fields(&cmds);
+        assert_eq!(endpoint, "/rest/certificate");
+        assert_eq!(command, "import");
+        assert!(!fields.contains_key(".id"));
+        assert_eq!(fields.get("file-name").map(String::as_str), Some("web.p12"));
+        assert_eq!(fields.get("name").map(String::as_str), Some("web"));
+        assert!(!fields.contains_key("passphrase"));
+    }
+
+    #[test]
+    fn certificate_export_includes_file_name() {
+        let mut app = certificates_loaded();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('w'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected export prompt, got {:?}", app.overlay);
+        };
+        assert_eq!(session.prompt_command, Some("export-certificate"));
+        if let Overlay::Form(session) = &mut app.overlay {
+            session
+                .values
+                .insert("file-name".into(), "web-export".into());
+            session.values.insert("type".into(), "pkcs12".into());
+            session
+                .values
+                .insert("export-passphrase".into(), "hunter2".into());
+        }
+        let cmds = app.save_form();
+        let (endpoint, command, fields) = command_fields(&cmds);
+        assert_eq!(endpoint, "/rest/certificate");
+        assert_eq!(command, "export-certificate");
+        assert_eq!(fields.get(".id").map(String::as_str), Some("*c1"));
+        assert_eq!(
+            fields.get("file-name").map(String::as_str),
+            Some("web-export")
+        );
+        assert_eq!(fields.get("type").map(String::as_str), Some("pkcs12"));
+        assert_eq!(
+            fields.get("export-passphrase").map(String::as_str),
+            Some("hunter2")
+        );
+    }
+
+    #[test]
+    fn vlan_copy_prompt_still_sends_new_name() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("vlan");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "vlan10".into());
+        fields.insert("vlan-id".into(), "10".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "vlan".into(),
+            rows: vec![Resource {
+                id: "*3".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('c'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected copy prompt, got {:?}", app.overlay);
+        };
+        assert_eq!(session.prompt_command, Some("copy"));
+        assert_eq!(
+            session.values.get("new-name").map(String::as_str),
+            Some("vlan10-copy")
+        );
+        let cmds = app.save_form();
+        let (endpoint, command, fields) = command_fields(&cmds);
+        assert_eq!(endpoint, "/rest/interface/vlan");
+        assert_eq!(command, "copy");
+        assert_eq!(fields.get(".id").map(String::as_str), Some("*3"));
+        assert_eq!(
+            fields.get("new-name").map(String::as_str),
+            Some("vlan10-copy")
+        );
     }
 
     #[test]

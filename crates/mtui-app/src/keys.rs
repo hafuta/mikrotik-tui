@@ -225,7 +225,8 @@ impl App {
             }
             KeyCode::PageUp => self.page_content(-1),
             KeyCode::PageDown => self.page_content(1),
-            KeyCode::Home | KeyCode::Char('g') => self.jump_content_home(),
+            KeyCode::Home => self.jump_content_home(),
+            KeyCode::Char('g') if !self.action_key_consumed('g') => self.jump_content_home(),
             KeyCode::End | KeyCode::Char('G') => self.jump_content_end(),
             KeyCode::Char('h') if self.on_table_content() => {
                 self.table.scroll_columns(-1);

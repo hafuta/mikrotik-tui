@@ -102,6 +102,22 @@ impl FormSession {
     ) -> Self {
         let mut values = HashMap::new();
         values.insert("new-name".into(), format!("{name}-copy"));
+        Self::prompt_with(resource_id, record_id, command, &COPY_FORM, values)
+    }
+
+    #[must_use]
+    pub fn prompt_with(
+        resource_id: impl Into<String>,
+        record_id: impl Into<String>,
+        command: &'static str,
+        schema: &'static FormSchema,
+        mut values: HashMap<String, String>,
+    ) -> Self {
+        for section in schema.sections_for(true) {
+            for field in section.fields {
+                values.entry(field.key.to_string()).or_default();
+            }
+        }
         Self {
             resource_id: resource_id.into(),
             record_id: record_id.into(),
@@ -116,7 +132,7 @@ impl FormSession {
             saving: false,
             confirm_discard: false,
             prompt_command: Some(command),
-            prompt_schema: Some(&COPY_FORM),
+            prompt_schema: Some(schema),
         }
     }
 
@@ -672,6 +688,20 @@ fn visible_tabs(tabs: &[String], selected: usize, width: usize) -> (Vec<&String>
     (tabs[start..end].iter().collect(), selected - start)
 }
 
+fn prompt_title(command: &str) -> &'static str {
+    match command {
+        "save" => "Save backup",
+        "upload" => "Upload",
+        "download" => "Download",
+        "fetch" => "Fetch URL",
+        "copy" => "Copy",
+        "sign" => "Sign",
+        "import" => "Import",
+        "export-certificate" => "Export",
+        _ => "Command",
+    }
+}
+
 fn tabs_width<'a>(tabs: impl Iterator<Item = &'a str>) -> usize {
     let mut width = 0usize;
     for (i, tab) in tabs.enumerate() {
@@ -685,13 +715,7 @@ fn tabs_width<'a>(tabs: impl Iterator<Item = &'a str>) -> usize {
 
 fn sheet_title(session: &FormSession, schema: &FormSchema) -> String {
     if let Some(command) = session.prompt_command {
-        return match command {
-            "save" => "Save backup".into(),
-            "upload" => "Upload".into(),
-            "download" => "Download".into(),
-            "fetch" => "Fetch URL".into(),
-            _ => "Copy".into(),
-        };
+        return prompt_title(command).into();
     }
     let name = session
         .values
@@ -1133,6 +1157,47 @@ mod tests {
         assert!(rendered.contains("text"));
         assert!(rendered.contains('['));
         assert!(!rendered.contains("[1 Copy]"));
+        assert_eq!(
+            session.values.get("new-name").map(String::as_str),
+            Some("vlan10-copy")
+        );
+        assert_eq!(session.prompt_command, Some("copy"));
+    }
+
+    #[test]
+    fn sign_prompt_shows_ca_field() {
+        let session = FormSession::prompt_with(
+            "certificates",
+            "*1",
+            "sign",
+            &mtui_core::CERT_SIGN_PROMPT,
+            HashMap::new(),
+        );
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(
+                    frame,
+                    frame.area(),
+                    &session,
+                    &mtui_core::CERT_SIGN_PROMPT,
+                    &styles,
+                );
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(rendered.contains("CA"));
+        assert!(session.values.contains_key("ca"));
+        assert!(rendered.contains("Sign"));
     }
 
     #[test]

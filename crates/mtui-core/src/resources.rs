@@ -2228,7 +2228,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("fingerprint", "Fingerprint", 20),
         ],
         refresh: Duration::from_secs(30),
-        actions: crate::actions::LIST_ACTIONS,
+        actions: crate::actions::CERTIFICATE_ACTIONS,
         form: Some(&crate::system_write::CERTIFICATE_FORM),
     },
     ResourceSpec {
