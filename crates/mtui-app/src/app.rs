@@ -16,7 +16,8 @@ use mtui_routeros::{Client, Resource};
 use mtui_ui::{
     ActionMenuState, Command, CommandPalette, ConsoleEntry, ConsoleLevel, ConsoleState,
     DashboardGeometry, FirewallHitChart, FormSession, InspectorState, LayoutMetrics, LoginForm,
-    NavState, Row, Signal, SignalLevel, TableState, TorchState, console_pane_height, format_rate,
+    NavState, Row, Signal, SignalLevel, TableState, ToggleHidden, TorchState, console_pane_height,
+    format_rate,
 };
 
 use crate::event::{AppEvent, WorkerMsg};
@@ -48,6 +49,11 @@ pub enum Overlay {
     Help,
     Palette,
     Confirm(ConfirmSession),
+    HideMenu {
+        id: String,
+        title: String,
+        body: String,
+    },
     Form(FormSession),
     ActionMenu(ActionMenuState),
     TypePicker(ActionMenuState),
@@ -257,6 +263,8 @@ impl App {
             let _ = self.themes.set_active(theme_id);
             self.theme = ThemeSet::from_theme(self.themes.active().as_ref());
         }
+        self.nav.set_hidden_ids(profile.hidden_nav_ids());
+        self.rebuild_palette();
         if !profile.certificate_fingerprint.is_empty() {
             self.saved_fingerprint = Some(profile.certificate_fingerprint.clone());
             self.saved_url = Some(normalize_router_url(&profile.url));
@@ -332,17 +340,19 @@ impl App {
     fn persist_connected_session(&mut self) {
         let url = normalize_router_url(&self.login.url);
         let fingerprint = self.pin_for_url(&url).unwrap_or_default();
-        let mut profile = Profile {
+        let mut profile = self.named_profile().unwrap_or_else(|| Profile {
             name: PROFILE_NAME.into(),
-            url: url.clone(),
-            username: self.login.username.trim().to_string(),
-            certificate_fingerprint: fingerprint.clone(),
             ..Profile::default()
-        };
+        });
+        profile.name = PROFILE_NAME.into();
+        profile.url.clone_from(&url);
+        profile.username = self.login.username.trim().to_string();
+        profile.certificate_fingerprint.clone_from(&fingerprint);
         if let Some(pem) = &self.custom_ca {
             profile.custom_ca = String::from_utf8_lossy(pem).into_owned();
         }
         profile.set_theme_id(self.theme.id.as_str());
+        profile.set_hidden_nav_ids(self.nav.hidden.iter().cloned());
         let password = self.pending_password.clone().unwrap_or_default();
         if self
             .profiles
@@ -460,13 +470,13 @@ impl App {
                 }
                 self.screen = Screen::Main;
                 self.status = "Connected".into();
-                self.poll_generation = self.poll_generation.wrapping_add(1);
-                self.select_resource(DASHBOARD_ID);
+                let start = self
+                    .nav
+                    .first_openable_id()
+                    .unwrap_or_else(|| DASHBOARD_ID.to_string());
+                self.select_resource(&start);
                 self.persist_connected_session();
-                vec![AppCommand::FetchDashboard {
-                    request_id: self.next_request(),
-                    generation: self.poll_generation,
-                }]
+                self.poll_current()
             }
             WorkerMsg::ResourceResult {
                 request_id,
@@ -981,15 +991,143 @@ impl App {
         self.dash.update_system(&system);
         self.router = system;
     }
+
+    fn named_profile(&self) -> Option<Profile> {
+        self.profiles.load().ok().and_then(|list| {
+            list.into_iter()
+                .find(|profile| profile.name == PROFILE_NAME)
+        })
+    }
+
+    pub(crate) fn rebuild_palette(&mut self) {
+        self.palette.commands = palette_commands_filtered(&self.nav.hidden, self.nav.show_hidden);
+    }
+
+    fn persist_nav_hidden(&mut self) {
+        if cfg!(test) {
+            return;
+        }
+        let Some(mut profile) = self.named_profile() else {
+            return;
+        };
+        profile.set_hidden_nav_ids(self.nav.hidden.iter().cloned());
+        let _ = self.profiles.upsert(profile);
+    }
+
+    pub(crate) fn toggle_show_hidden_menus(&mut self) {
+        let showing = self.nav.toggle_show_hidden();
+        self.rebuild_palette();
+        self.status = if showing {
+            "Showing hidden menus · − restore · . done".into()
+        } else if self.nav.hidden.is_empty() {
+            "No menus are hidden".into()
+        } else {
+            "Hidden menus tucked away".into()
+        };
+    }
+
+    pub(crate) fn toggle_selected_nav_hidden(&mut self) {
+        let Some(id) = self.nav.selected_id().map(str::to_owned) else {
+            return;
+        };
+        let label = self
+            .nav
+            .entries
+            .get(self.nav.selected)
+            .map_or_else(|| id.clone(), |entry| entry.label.clone());
+        let already_hidden = self
+            .nav
+            .entries
+            .get(self.nav.selected)
+            .is_some_and(|entry| entry.hidden);
+        if already_hidden {
+            self.apply_toggle_hidden(&id, &label);
+            return;
+        }
+        if self.nav.would_hide_last_leaf(&id) {
+            self.status = "Keep at least one menu visible".into();
+            return;
+        }
+        let is_group = self
+            .nav
+            .entries
+            .get(self.nav.selected)
+            .is_some_and(|entry| entry.is_group);
+        let body = if let Some(parent_id) = self.nav.hide_collapses_parent(&id) {
+            let parent = self.nav.label_of(parent_id).unwrap_or(parent_id);
+            format!(
+                "Hide {label} from the sidebar?\n\n{parent} will hide too because no screens would remain."
+            )
+        } else if is_group {
+            format!("Hide {label} and its screens from the sidebar?")
+        } else {
+            format!("Hide {label} from the sidebar?")
+        };
+        self.overlay = Overlay::HideMenu {
+            id,
+            title: format!("Hide {label}"),
+            body,
+        };
+        tracing::trace!(overlay = "hide-menu", "opened pane");
+    }
+
+    pub(crate) fn confirm_hide_menu(&mut self) {
+        let Overlay::HideMenu { id, title, .. } = &self.overlay else {
+            return;
+        };
+        let id = id.clone();
+        let label = title.strip_prefix("Hide ").unwrap_or(title).to_string();
+        self.overlay = Overlay::None;
+        self.apply_toggle_hidden(&id, &label);
+    }
+
+    fn apply_toggle_hidden(&mut self, id: &str, label: &str) {
+        match self.nav.toggle_hidden(id) {
+            ToggleHidden::Hidden => {
+                self.status = format!("Hidden {label}");
+                self.rebuild_palette();
+                self.persist_nav_hidden();
+            }
+            ToggleHidden::Restored => {
+                self.status = format!("Restored {label}");
+                self.rebuild_palette();
+                self.persist_nav_hidden();
+            }
+            ToggleHidden::LastVisible => {
+                self.status = "Keep at least one menu visible".into();
+            }
+        }
+    }
+
+    pub(crate) fn reset_hidden_menus(&mut self) {
+        self.nav.set_hidden_ids(Vec::new());
+        self.nav.set_show_hidden(false);
+        self.rebuild_palette();
+        self.persist_nav_hidden();
+        self.status = "All menus restored".into();
+    }
 }
 
 pub(crate) fn palette_commands() -> Vec<Command> {
+    palette_commands_filtered(&HashSet::new(), true)
+}
+
+fn palette_commands_filtered(hidden: &HashSet<String>, show_hidden: bool) -> Vec<Command> {
+    let show_title = if show_hidden {
+        "Done showing hidden menus"
+    } else {
+        "Show hidden menus"
+    };
     let mut commands = vec![
         Command::new("refresh", "Refresh").with_description("reload the current resource"),
         Command::new("logout", "Log out").with_description("forget this router session"),
         Command::new("help", "Keyboard help").with_description("show all shortcuts"),
         Command::new("console", "Toggle console")
             .with_description("show or hide the application log console"),
+        Command::new("show-hidden-menus", show_title)
+            .with_description("reveal tucked-away sidebar items so they can be restored"),
+        Command::new("reset-hidden-menus", "Restore all menus")
+            .with_description("put every hidden sidebar item back"),
         Command::new("dashboard", "Dashboard").with_description("live WAN overview"),
     ];
     commands.extend(ALL_RESOURCES.iter().map(|spec| {
@@ -997,7 +1135,20 @@ pub(crate) fn palette_commands() -> Vec<Command> {
             .with_description(spec.label)
             .with_path(spec.cli_path())
     }));
+    if show_hidden {
+        return commands;
+    }
     commands
+        .into_iter()
+        .filter(|command| !palette_target_hidden(&command.id, hidden))
+        .collect()
+}
+
+fn palette_target_hidden(id: &str, hidden: &HashSet<String>) -> bool {
+    if hidden.contains(id) {
+        return true;
+    }
+    resource_by_id(id).is_some_and(|spec| hidden.contains(spec.group))
 }
 
 fn nonempty_field<'src>(resource: &'src Resource, key: &str) -> Option<&'src str> {

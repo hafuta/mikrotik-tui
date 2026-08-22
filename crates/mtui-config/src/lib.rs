@@ -29,5 +29,8 @@ pub use error::{ConfigError, Result};
 pub use log_store::{DEFAULT_LOG_CAPACITY, LogLevel, LogRecord, LogStore};
 pub use logging::{LOG_FILE_NAME, init_file_logging, shared_log_store};
 pub use paths::{APPLICATION, config_dir, state_dir};
-pub use profile::{PROFILE_FILE_NAME, Preferences, Profile, ProfileStore, THEME_PREFERENCE_KEY};
+pub use profile::{
+    HIDDEN_NAV_PREFERENCE_KEY, PROFILE_FILE_NAME, Preferences, Profile, ProfileStore,
+    THEME_PREFERENCE_KEY,
+};
 pub use redact::redact;

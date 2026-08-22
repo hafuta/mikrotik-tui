@@ -51,6 +51,26 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                         .buttons(&buttons);
                     render_modal(frame, area, &modal, &styles);
                 }
+                Overlay::HideMenu {
+                    ref title,
+                    ref body,
+                    ..
+                } => {
+                    let buttons = [
+                        ModalButton {
+                            label: "Hide",
+                            keys: "y / enter",
+                            kind: ModalButtonKind::Primary,
+                        },
+                        ModalButton {
+                            label: "Cancel",
+                            keys: "n / esc",
+                            kind: ModalButtonKind::Secondary,
+                        },
+                    ];
+                    let modal = Modal::new(title, body).alert().buttons(&buttons);
+                    render_modal(frame, area, &modal, &styles);
+                }
                 Overlay::Form(ref session) => {
                     if let Some(schema) =
                         mtui_core::resource_by_id(&session.resource_id).and_then(|spec| spec.form)
@@ -409,6 +429,8 @@ ctrl+s      save properties
 1-9         jump to a properties tab
 ctrl+k      command palette
 ctrl+l      log out
+-           hide menu (confirm) / restore (nav)
+.           show hidden menus / done
 ?           help
 q           quit
 

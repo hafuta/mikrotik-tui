@@ -169,6 +169,14 @@ impl App {
                 tracing::trace!(overlay = "help", "opened pane");
                 return Vec::new();
             }
+            KeyCode::Char('.') if !self.status.starts_with("Filter:") => {
+                self.toggle_show_hidden_menus();
+                return Vec::new();
+            }
+            KeyCode::Char('-') if self.pane == Pane::Nav && !self.status.starts_with("Filter:") => {
+                self.toggle_selected_nav_hidden();
+                return Vec::new();
+            }
             KeyCode::Tab => self.cycle_pane(true),
             KeyCode::BackTab => self.cycle_pane(false),
             KeyCode::Char('r') => return self.refresh_now(),
@@ -272,7 +280,7 @@ impl App {
         match self.overlay {
             Overlay::Help => self.keys_help(key),
             Overlay::Palette => self.keys_palette(key),
-            Overlay::Confirm(_) => self.keys_confirm(key),
+            Overlay::Confirm(_) | Overlay::HideMenu { .. } => self.keys_confirm(key),
             Overlay::Form(_) => self.keys_form(key),
             Overlay::ActionMenu(_) => self.keys_action_menu(key, false),
             Overlay::TypePicker(_) => self.keys_action_menu(key, true),
@@ -421,7 +429,14 @@ impl App {
                 self.overlay = Overlay::None;
                 Vec::new()
             }
-            KeyCode::Enter | KeyCode::Char('y') => self.confirm_pending(),
+            KeyCode::Enter | KeyCode::Char('y') => {
+                if matches!(self.overlay, Overlay::HideMenu { .. }) {
+                    self.confirm_hide_menu();
+                    Vec::new()
+                } else {
+                    self.confirm_pending()
+                }
+            }
             _ => Vec::new(),
         }
     }
@@ -798,6 +813,14 @@ impl App {
                 self.toggle_console();
                 Vec::new()
             }
+            "show-hidden-menus" => {
+                self.toggle_show_hidden_menus();
+                Vec::new()
+            }
+            "reset-hidden-menus" => {
+                self.reset_hidden_menus();
+                Vec::new()
+            }
             "dashboard" => self.open_resource(DASHBOARD_ID),
             other => {
                 if resource_by_id(other).is_some() {
@@ -1152,6 +1175,8 @@ mod nav_accordion_tests {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;
         app.pane = Pane::Nav;
+        app.nav.set_hidden_ids(Vec::new());
+        app.nav.set_show_hidden(false);
         app
     }
 
@@ -1198,6 +1223,73 @@ mod nav_accordion_tests {
             )),
             "expected PPP secrets load, got {cmds:?}"
         );
+    }
+
+    #[test]
+    fn minus_hides_the_selected_nav_item_and_dot_reveals_it() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        assert_eq!(app.nav.selected_id(), Some("interfaces-group"));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('-'))));
+        assert!(
+            matches!(app.overlay, crate::app::Overlay::HideMenu { ref id, .. } if id == "interfaces-group"),
+            "minus should ask before hiding: {:?}",
+            app.overlay
+        );
+        assert!(!app.nav.hidden.contains("interfaces-group"));
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('n'))));
+        assert!(matches!(app.overlay, crate::app::Overlay::None));
+        assert!(!app.nav.hidden.contains("interfaces-group"));
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('-'))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        assert!(app.nav.hidden.contains("interfaces-group"));
+        assert!(
+            app.nav
+                .entries
+                .iter()
+                .all(|entry| entry.id != "interfaces-group")
+        );
+        assert_eq!(app.nav.selected_id(), Some("wireguard-group"));
+        assert!(app.status.contains("Hidden"));
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('.'))));
+        assert!(app.nav.show_hidden);
+        assert!(
+            app.nav
+                .entries
+                .iter()
+                .any(|entry| entry.id == "interfaces-group" && entry.hidden)
+        );
+        assert!(
+            app.palette
+                .commands
+                .iter()
+                .any(|cmd| cmd.id == "interfaces")
+        );
+
+        app.pane = Pane::Nav;
+        let idx = app
+            .nav
+            .entries
+            .iter()
+            .position(|entry| entry.id == "interfaces-group")
+            .expect("hidden group visible");
+        app.nav.selected = idx;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('-'))));
+        assert!(!app.nav.hidden.contains("interfaces-group"));
+        assert!(app.status.contains("Restored"));
+    }
+
+    #[test]
+    fn palette_omits_hidden_resources_until_they_are_revealed() {
+        let mut app = main_app();
+        app.nav.set_hidden_ids(vec!["vlan".into()]);
+        app.rebuild_palette();
+        assert!(app.palette.commands.iter().all(|cmd| cmd.id != "vlan"));
+        app.toggle_show_hidden_menus();
+        assert!(app.palette.commands.iter().any(|cmd| cmd.id == "vlan"));
     }
 }
 

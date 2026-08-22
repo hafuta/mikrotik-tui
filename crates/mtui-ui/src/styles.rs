@@ -20,6 +20,7 @@ pub struct Styles {
     pub data: Style,
     pub muted: Style,
     pub quiet: Style,
+    pub hidden: Style,
     pub focus: Style,
     pub key: Style,
     pub signal: Style,
@@ -43,6 +44,7 @@ impl Styles {
             data: Style::default().fg(rgb_color(p.data)),
             muted: Style::default().fg(rgb_color(p.muted)),
             quiet: Style::default().fg(rgb_color(p.muted.blend(p.void, 0.32))),
+            hidden: Style::default().fg(rgb_color(p.muted.blend(p.void, 0.55))),
             focus: Style::default()
                 .fg(rgb_color(p.focus))
                 .add_modifier(Modifier::BOLD),
@@ -74,8 +76,10 @@ mod tests {
         assert_eq!(styles.focus.fg, Some(rgb_color(theme.palette().focus)));
         assert!(styles.text.bg.is_none());
         assert!(styles.muted.bg.is_none());
+        assert!(styles.hidden.bg.is_none());
         assert_ne!(styles.quiet.fg, styles.muted.fg);
         assert_ne!(styles.quiet.fg, styles.text.fg);
+        assert_ne!(styles.hidden.fg, styles.quiet.fg);
         assert_eq!(styles.band, rgb_color(theme.palette().band));
         assert_eq!(styles.selection, rgb_color(theme.palette().selection));
     }
