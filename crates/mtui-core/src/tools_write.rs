@@ -19,9 +19,17 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_SCRIPT: FieldKind = FieldKind::Lookup {
+    resource_id: "scripts",
+    value_key: "name",
+    multiple: false,
+};
+
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
 const HOST: FieldSpec = f!("host", "Host", FieldKind::Text);
+const UP_SCRIPT: FieldSpec = f!("up-script", "Up script", LOOKUP_SCRIPT);
+const DOWN_SCRIPT: FieldSpec = f!("down-script", "Down script", LOOKUP_SCRIPT);
 
 pub static NETWATCH_FORM: FormSchema = FormSchema {
     title_key: "host",
@@ -37,8 +45,8 @@ pub static NETWATCH_FORM: FormSchema = FormSchema {
                 f!("interval", "Interval", FieldKind::Text),
                 f!("timeout", "Timeout", FieldKind::Text),
                 f!("start-delay", "Start delay", FieldKind::Text),
-                f!("up-script", "Up script", FieldKind::Text),
-                f!("down-script", "Down script", FieldKind::Text),
+                UP_SCRIPT,
+                DOWN_SCRIPT,
                 COMMENT,
                 DISABLED,
             ],
@@ -96,12 +104,38 @@ mod tests {
             .collect()
     }
 
+    fn assert_lookup(
+        schema: &FormSchema,
+        key: &str,
+        resource_id: &'static str,
+        value_key: &'static str,
+    ) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key,
+                multiple: false,
+            })
+        );
+    }
+
     #[test]
     fn netwatch_create_is_host_only() {
         assert_eq!(create_keys(&NETWATCH_FORM), ["host"]);
         assert!(!NETWATCH_FORM.writable_keys().contains(&"status"));
         assert!(!NETWATCH_FORM.writable_keys().contains(&"done-tests"));
         assert!(NETWATCH_FORM.writable_keys().contains(&"up-script"));
+        assert_lookup(&NETWATCH_FORM, "up-script", "scripts", "name");
+        assert_lookup(&NETWATCH_FORM, "down-script", "scripts", "name");
+        assert_eq!(
+            NETWATCH_FORM.field("host").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            NETWATCH_FORM.field("interval").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
     }
 
     #[test]

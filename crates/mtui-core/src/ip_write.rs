@@ -239,22 +239,97 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_INTERFACES: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_POOLS: FieldKind = FieldKind::Lookup {
+    resource_id: "pools",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_DHCP_SERVERS: FieldKind = FieldKind::Lookup {
+    resource_id: "dhcp-servers",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_ROUTING_TABLES: FieldKind = FieldKind::Lookup {
+    resource_id: "routing-tables",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_CERTIFICATES: FieldKind = FieldKind::Lookup {
+    resource_id: "certificates",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_INTERFACE_LISTS: FieldKind = FieldKind::Lookup {
+    resource_id: "interface-lists",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_ADDRESS_LIST_NAMES: FieldKind = FieldKind::Lookup {
+    resource_id: "address-list",
+    value_key: "list",
+    multiple: false,
+};
+
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
-const INTERFACE: FieldSpec = f!("interface", "Interface", FieldKind::Text);
+const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_INTERFACES);
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Text);
 const MAC: FieldSpec = f!("mac-address", "MAC address", FieldKind::Text);
 const GATEWAY: FieldSpec = f!("gateway", "Gateway", FieldKind::Text);
-const CHAIN: FieldSpec = f!("chain", "Chain", FieldKind::Text);
+const FILTER_CHAIN: FieldSpec = f!(
+    "chain",
+    "Chain",
+    FieldKind::Enum {
+        values: &["input", "forward", "output"],
+    }
+);
+const NAT_CHAIN: FieldSpec = f!(
+    "chain",
+    "Chain",
+    FieldKind::Enum {
+        values: &["srcnat", "dstnat"],
+    }
+);
 const ACTION: FieldSpec = f!("action", "Action", FieldKind::Text);
 const PROTOCOL: FieldSpec = f!("protocol", "Protocol", FieldKind::Text);
 const SRC_ADDRESS: FieldSpec = f!("src-address", "Source", FieldKind::Text);
 const DST_ADDRESS: FieldSpec = f!("dst-address", "Destination", FieldKind::Text);
 const SRC_PORT: FieldSpec = f!("src-port", "Src port", FieldKind::Text);
 const DST_PORT: FieldSpec = f!("dst-port", "Dst port", FieldKind::Text);
-const IN_INTERFACE: FieldSpec = f!("in-interface", "In interface", FieldKind::Text);
-const OUT_INTERFACE: FieldSpec = f!("out-interface", "Out interface", FieldKind::Text);
+const SRC_ADDRESS_LIST: FieldSpec = f!(
+    "src-address-list",
+    "Src address list",
+    LOOKUP_ADDRESS_LIST_NAMES
+);
+const DST_ADDRESS_LIST: FieldSpec = f!(
+    "dst-address-list",
+    "Dst address list",
+    LOOKUP_ADDRESS_LIST_NAMES
+);
+const IN_INTERFACE: FieldSpec = f!("in-interface", "In interface", LOOKUP_INTERFACES);
+const OUT_INTERFACE: FieldSpec = f!("out-interface", "Out interface", LOOKUP_INTERFACES);
+const IN_INTERFACE_LIST: FieldSpec = f!(
+    "in-interface-list",
+    "In interface list",
+    LOOKUP_INTERFACE_LISTS
+);
+const OUT_INTERFACE_LIST: FieldSpec = f!(
+    "out-interface-list",
+    "Out interface list",
+    LOOKUP_INTERFACE_LISTS
+);
+const ADDRESS_POOL: FieldSpec = f!("address-pool", "Address pool", LOOKUP_POOLS);
+const DHCP_SERVER: FieldSpec = f!("server", "Server", LOOKUP_DHCP_SERVERS);
+const NEXT_POOL: FieldSpec = f!("next-pool", "Next pool", LOOKUP_POOLS);
+const ROUTING_TABLE: FieldSpec = f!("routing-table", "Routing table", LOOKUP_ROUTING_TABLES);
+const CERTIFICATE: FieldSpec = f!("certificate", "Certificate", LOOKUP_CERTIFICATES);
+const ADDRESS_LIST_NAME: FieldSpec = f!("list", "List", LOOKUP_ADDRESS_LIST_NAMES);
 const PACKETS: FieldSpec = f!("packets", "Packets", FieldKind::Readonly);
 const BYTES: FieldSpec = f!("bytes", "Bytes", FieldKind::Readonly);
 const DYNAMIC: FieldSpec = f!("dynamic", "Dynamic", FieldKind::Readonly);
@@ -323,7 +398,7 @@ pub static DHCP_SERVER_FORM: FormSchema = FormSchema {
             fields: &[
                 NAME,
                 INTERFACE,
-                f!("address-pool", "Address pool", FieldKind::Text),
+                ADDRESS_POOL,
                 f!("lease-time", "Lease time", FieldKind::Text),
                 COMMENT,
                 DISABLED,
@@ -340,11 +415,7 @@ pub static DHCP_SERVER_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[
-            NAME,
-            INTERFACE,
-            f!("address-pool", "Address pool", FieldKind::Text),
-        ],
+        fields: &[NAME, INTERFACE, ADDRESS_POOL],
     }],
 };
 
@@ -379,13 +450,7 @@ pub static DHCP_LEASE_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[
-                ADDRESS,
-                MAC,
-                f!("server", "Server", FieldKind::Text),
-                COMMENT,
-                DISABLED,
-            ],
+            fields: &[ADDRESS, MAC, DHCP_SERVER, COMMENT, DISABLED],
         },
         FormSection {
             id: "status",
@@ -416,15 +481,19 @@ pub static FIREWALL_FILTER_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                CHAIN,
+                FILTER_CHAIN,
                 ACTION,
                 PROTOCOL,
                 SRC_ADDRESS,
+                SRC_ADDRESS_LIST,
                 SRC_PORT,
                 DST_ADDRESS,
+                DST_ADDRESS_LIST,
                 DST_PORT,
                 IN_INTERFACE,
+                IN_INTERFACE_LIST,
                 OUT_INTERFACE,
+                OUT_INTERFACE_LIST,
                 COMMENT,
                 DISABLED,
             ],
@@ -440,7 +509,7 @@ pub static FIREWALL_FILTER_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[CHAIN, ACTION],
+        fields: &[FILTER_CHAIN, ACTION],
     }],
 };
 
@@ -538,7 +607,7 @@ pub static ROUTE_FORM: FormSchema = FormSchema {
                 f!("dst-address", "Dst address", FieldKind::Text),
                 GATEWAY,
                 f!("distance", "Distance", FieldKind::Number),
-                f!("routing-table", "Routing table", FieldKind::Text),
+                ROUTING_TABLE,
                 COMMENT,
                 DISABLED,
             ],
@@ -573,7 +642,7 @@ pub static POOL_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             f!("ranges", "Ranges", FieldKind::Text),
-            f!("next-pool", "Next pool", FieldKind::Text),
+            NEXT_POOL,
             COMMENT,
         ],
     }],
@@ -597,7 +666,7 @@ pub static SERVICE_FORM: FormSchema = FormSchema {
                 f!("name", "Name", FieldKind::Readonly),
                 f!("port", "Port", FieldKind::Number),
                 ADDRESS,
-                f!("certificate", "Certificate", FieldKind::Text),
+                CERTIFICATE,
                 DISABLED,
             ],
         },
@@ -641,16 +710,20 @@ pub static FIREWALL_NAT_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                CHAIN,
+                NAT_CHAIN,
                 ACTION,
                 PROTOCOL,
                 SRC_ADDRESS,
+                SRC_ADDRESS_LIST,
                 DST_ADDRESS,
+                DST_ADDRESS_LIST,
                 DST_PORT,
                 f!("to-addresses", "To addresses", FieldKind::Text),
                 f!("to-ports", "To ports", FieldKind::Text),
                 IN_INTERFACE,
+                IN_INTERFACE_LIST,
                 OUT_INTERFACE,
+                OUT_INTERFACE_LIST,
                 COMMENT,
                 DISABLED,
             ],
@@ -666,7 +739,7 @@ pub static FIREWALL_NAT_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[CHAIN, ACTION],
+        fields: &[NAT_CHAIN, ACTION],
     }],
 };
 
@@ -679,13 +752,17 @@ pub static FIREWALL_MANGLE_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                CHAIN,
+                FILTER_CHAIN,
                 ACTION,
                 PROTOCOL,
                 SRC_ADDRESS,
+                SRC_ADDRESS_LIST,
                 DST_ADDRESS,
+                DST_ADDRESS_LIST,
                 IN_INTERFACE,
+                IN_INTERFACE_LIST,
                 OUT_INTERFACE,
+                OUT_INTERFACE_LIST,
                 f!("new-routing-mark", "Routing mark", FieldKind::Text),
                 f!("passthrough", "Passthrough", FieldKind::Toggle),
                 COMMENT,
@@ -703,7 +780,7 @@ pub static FIREWALL_MANGLE_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[CHAIN, ACTION],
+        fields: &[FILTER_CHAIN, ACTION],
     }],
 };
 
@@ -716,7 +793,7 @@ pub static ADDRESS_LIST_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                f!("list", "List", FieldKind::Text),
+                ADDRESS_LIST_NAME,
                 ADDRESS,
                 f!("timeout", "Timeout", FieldKind::Text),
                 COMMENT,
@@ -737,7 +814,7 @@ pub static ADDRESS_LIST_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[f!("list", "List", FieldKind::Text), ADDRESS],
+        fields: &[ADDRESS_LIST_NAME, ADDRESS],
     }],
 };
 
@@ -830,5 +907,90 @@ mod tests {
         assert!(!SERVICE_FORM.writable_keys().contains(&"name"));
         assert!(SERVICE_FORM.writable_keys().contains(&"disabled"));
         status_readonly(&SERVICE_FORM);
+    }
+
+    fn field_kind(schema: &FormSchema, key: &str) -> FieldKind {
+        schema
+            .sections
+            .iter()
+            .flat_map(|section| section.fields)
+            .find(|field| field.key == key)
+            .unwrap_or_else(|| panic!("missing field {key}"))
+            .kind
+    }
+
+    fn create_field_kind(schema: &FormSchema, key: &str) -> FieldKind {
+        schema
+            .create_sections
+            .iter()
+            .flat_map(|section| section.fields)
+            .find(|field| field.key == key)
+            .unwrap_or_else(|| panic!("missing create field {key}"))
+            .kind
+    }
+
+    fn lookup(resource_id: &'static str, value_key: &'static str) -> FieldKind {
+        FieldKind::Lookup {
+            resource_id,
+            value_key,
+            multiple: false,
+        }
+    }
+
+    #[test]
+    fn lookup_fields_use_named_resources() {
+        let interfaces = lookup("interfaces", "name");
+        let pools = lookup("pools", "name");
+        let address_list_names = lookup("address-list", "list");
+        let interface_lists = lookup("interface-lists", "name");
+
+        for schema in [
+            &ARP_FORM,
+            &ADDRESS_FORM,
+            &DHCP_CLIENT_FORM,
+            &DHCP_SERVER_FORM,
+        ] {
+            assert_eq!(field_kind(schema, "interface"), interfaces);
+            assert_eq!(create_field_kind(schema, "interface"), interfaces);
+        }
+
+        assert_eq!(field_kind(&DHCP_SERVER_FORM, "address-pool"), pools);
+        assert_eq!(create_field_kind(&DHCP_SERVER_FORM, "address-pool"), pools);
+
+        assert_eq!(
+            field_kind(&DHCP_LEASE_FORM, "server"),
+            lookup("dhcp-servers", "name")
+        );
+
+        assert_eq!(field_kind(&POOL_FORM, "next-pool"), pools);
+        assert_eq!(
+            field_kind(&ROUTE_FORM, "routing-table"),
+            lookup("routing-tables", "name")
+        );
+        assert_eq!(
+            field_kind(&SERVICE_FORM, "certificate"),
+            lookup("certificates", "name")
+        );
+
+        assert_eq!(field_kind(&ADDRESS_LIST_FORM, "list"), address_list_names);
+        assert_eq!(
+            create_field_kind(&ADDRESS_LIST_FORM, "list"),
+            address_list_names
+        );
+
+        for schema in [
+            &FIREWALL_FILTER_FORM,
+            &FIREWALL_NAT_FORM,
+            &FIREWALL_MANGLE_FORM,
+        ] {
+            assert_eq!(field_kind(schema, "in-interface"), interfaces);
+            assert_eq!(field_kind(schema, "out-interface"), interfaces);
+            assert_eq!(field_kind(schema, "in-interface-list"), interface_lists);
+            assert_eq!(field_kind(schema, "out-interface-list"), interface_lists);
+            assert_eq!(field_kind(schema, "src-address-list"), address_list_names);
+            assert_eq!(field_kind(schema, "dst-address-list"), address_list_names);
+            assert!(!create_keys(schema).contains(&"in-interface"));
+            assert!(!create_keys(schema).contains(&"src-address-list"));
+        }
     }
 }

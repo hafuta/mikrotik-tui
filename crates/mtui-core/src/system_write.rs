@@ -27,12 +27,37 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_USER_GROUP: FieldKind = FieldKind::Lookup {
+    resource_id: "user-groups",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_SCRIPT: FieldKind = FieldKind::Lookup {
+    resource_id: "scripts",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_CERTIFICATE: FieldKind = FieldKind::Lookup {
+    resource_id: "certificates",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_FILE: FieldKind = FieldKind::Lookup {
+    resource_id: "files",
+    value_key: "name",
+    multiple: false,
+};
+
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
 const POLICY: FieldSpec = f!("policy", "Policy", FieldKind::Text);
 const PASSWORD: FieldSpec = f!("password", "Password", FieldKind::Secret);
 const SOURCE: FieldSpec = f!("source", "Source", FieldKind::Text);
+const GROUP: FieldSpec = f!("group", "Group", LOOKUP_USER_GROUP);
+const ON_EVENT: FieldSpec = f!("on-event", "On event", LOOKUP_SCRIPT);
+const CA: FieldSpec = f!("ca", "CA", LOOKUP_CERTIFICATE);
+const FILE_NAME: FieldSpec = f!("file-name", "File name", LOOKUP_FILE);
 
 pub static USER_FORM: FormSchema = FormSchema {
     title_key: "name",
@@ -42,13 +67,7 @@ pub static USER_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[
-                NAME,
-                f!("group", "Group", FieldKind::Text),
-                PASSWORD,
-                COMMENT,
-                DISABLED,
-            ],
+            fields: &[NAME, GROUP, PASSWORD, COMMENT, DISABLED],
         },
         FormSection {
             id: "status",
@@ -61,7 +80,7 @@ pub static USER_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, f!("group", "Group", FieldKind::Text), PASSWORD],
+        fields: &[NAME, GROUP, PASSWORD],
     }],
 };
 
@@ -158,7 +177,7 @@ pub static SCHEDULER_FORM: FormSchema = FormSchema {
                 f!("start-date", "Start date", FieldKind::Text),
                 f!("start-time", "Start time", FieldKind::Text),
                 f!("interval", "Interval", FieldKind::Text),
-                f!("on-event", "On event", FieldKind::Text),
+                ON_EVENT,
                 COMMENT,
                 DISABLED,
             ],
@@ -177,7 +196,7 @@ pub static SCHEDULER_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, f!("on-event", "On event", FieldKind::Text)],
+        fields: &[NAME, ON_EVENT],
     }],
 };
 
@@ -334,13 +353,13 @@ pub static CERT_SIGN_PROMPT: FormSchema = FormSchema {
         id: "sign",
         label: "Sign",
         read_only: false,
-        fields: &[f!("ca", "CA", FieldKind::Text)],
+        fields: &[CA],
     }],
     create_sections: &[FormSection {
         id: "sign",
         label: "Sign",
         read_only: false,
-        fields: &[f!("ca", "CA", FieldKind::Text)],
+        fields: &[CA],
     }],
 };
 
@@ -352,7 +371,7 @@ pub static CERT_IMPORT_PROMPT: FormSchema = FormSchema {
         label: "Import",
         read_only: false,
         fields: &[
-            f!("file-name", "File name", FieldKind::Text),
+            FILE_NAME,
             f!("passphrase", "Passphrase", FieldKind::Secret),
             NAME,
         ],
@@ -362,7 +381,7 @@ pub static CERT_IMPORT_PROMPT: FormSchema = FormSchema {
         label: "Import",
         read_only: false,
         fields: &[
-            f!("file-name", "File name", FieldKind::Text),
+            FILE_NAME,
             f!("passphrase", "Passphrase", FieldKind::Secret),
             NAME,
         ],
@@ -377,7 +396,7 @@ pub static CERT_EXPORT_PROMPT: FormSchema = FormSchema {
         label: "Export",
         read_only: false,
         fields: &[
-            f!("file-name", "File name", FieldKind::Text),
+            FILE_NAME,
             FieldSpec {
                 key: "type",
                 label: "Type",
@@ -393,7 +412,7 @@ pub static CERT_EXPORT_PROMPT: FormSchema = FormSchema {
         label: "Export",
         read_only: false,
         fields: &[
-            f!("file-name", "File name", FieldKind::Text),
+            FILE_NAME,
             FieldSpec {
                 key: "type",
                 label: "Type",
@@ -480,6 +499,22 @@ mod tests {
             .collect()
     }
 
+    fn assert_lookup(
+        schema: &FormSchema,
+        key: &str,
+        resource_id: &'static str,
+        value_key: &'static str,
+    ) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key,
+                multiple: false,
+            })
+        );
+    }
+
     fn no_advanced(schema: &FormSchema) -> bool {
         schema
             .sections
@@ -499,6 +534,7 @@ mod tests {
         );
         assert!(!USER_FORM.writable_keys().contains(&"last-logged-in"));
         assert_eq!(create_keys(&USER_FORM), ["name", "group", "password"]);
+        assert_lookup(&USER_FORM, "group", "user-groups", "name");
         assert!(no_advanced(&USER_FORM));
 
         let mut original = HashMap::new();
@@ -565,6 +601,11 @@ mod tests {
     #[test]
     fn scheduler_create_is_name_and_on_event() {
         assert_eq!(create_keys(&SCHEDULER_FORM), ["name", "on-event"]);
+        assert_lookup(&SCHEDULER_FORM, "on-event", "scripts", "name");
+        assert_eq!(
+            SCHEDULER_FORM.field("interval").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
         assert!(!SCHEDULER_FORM.writable_keys().contains(&"next-run"));
         assert!(!SCHEDULER_FORM.writable_keys().contains(&"run-count"));
     }
@@ -651,7 +692,7 @@ mod tests {
     #[test]
     fn certificate_prompts_cover_sign_import_export() {
         assert_eq!(CERT_SIGN_PROMPT.writable_keys(), ["ca"]);
-        assert!(CERT_SIGN_PROMPT.field("ca").is_some());
+        assert_lookup(&CERT_SIGN_PROMPT, "ca", "certificates", "name");
         assert_eq!(
             CERT_IMPORT_PROMPT.writable_keys(),
             ["file-name", "passphrase", "name"]
@@ -672,6 +713,8 @@ mod tests {
                 .map(|field| field.kind),
             Some(FieldKind::Secret)
         );
+        assert_lookup(&CERT_IMPORT_PROMPT, "file-name", "files", "name");
+        assert_lookup(&CERT_EXPORT_PROMPT, "file-name", "files", "name");
 
         let mut original = HashMap::new();
         original.insert("file-name".into(), "web.p12".into());
@@ -701,6 +744,10 @@ mod tests {
         assert!(NOTE_FORM.create_sections.is_empty());
         assert!(WATCHDOG_FORM.writable_keys().contains(&"watch-address"));
         assert!(WATCHDOG_FORM.writable_keys().contains(&"automatic-supout"));
+        assert_eq!(
+            WATCHDOG_FORM.field("send-email-to").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
         assert_eq!(NOTE_FORM.writable_keys(), ["show-at-login", "note"]);
     }
 

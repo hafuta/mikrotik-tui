@@ -24,6 +24,39 @@ const SLAVE: FieldSpec = f!("slave", "Slave", FieldKind::Readonly);
 const IFACE_TYPE: FieldSpec = f!("type", "Type", FieldKind::Readonly);
 const DEFAULT_NAME: FieldSpec = f!("default-name", "Default name", FieldKind::Readonly);
 
+const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_IFACES: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
+    multiple: true,
+};
+const LOOKUP_IFACE_LIST: FieldKind = FieldKind::Lookup {
+    resource_id: "interface-lists",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_IFACE_LISTS: FieldKind = FieldKind::Lookup {
+    resource_id: "interface-lists",
+    value_key: "name",
+    multiple: true,
+};
+const LOOKUP_VRF: FieldKind = FieldKind::Lookup {
+    resource_id: "vrf",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_MACSEC_PROFILE: FieldKind = FieldKind::Lookup {
+    resource_id: "macsec-profiles",
+    value_key: "name",
+    multiple: false,
+};
+
+const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
+
 pub static INTERFACES_FORM: FormSchema = FormSchema {
     title_key: "name",
     subtitle_keys: &["type"],
@@ -118,7 +151,7 @@ pub static VLAN_FORM: FormSchema = FormSchema {
             fields: &[
                 NAME,
                 f!("vlan-id", "VLAN ID", FieldKind::Number),
-                f!("interface", "Interface", FieldKind::Text),
+                INTERFACE,
                 COMMENT,
                 DISABLED,
             ],
@@ -149,7 +182,7 @@ pub static VLAN_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             f!("vlan-id", "VLAN ID", FieldKind::Number),
-            f!("interface", "Interface", FieldKind::Text),
+            INTERFACE,
             COMMENT,
         ],
     }],
@@ -311,8 +344,8 @@ pub static VXLAN_FORM: FormSchema = FormSchema {
                 f!("port", "Port", FieldKind::Number),
                 f!("group", "Group", FieldKind::Text),
                 f!("local", "Local", FieldKind::Text),
-                f!("interface", "Interface", FieldKind::Text),
-                f!("vrf", "VRF", FieldKind::Text),
+                INTERFACE,
+                f!("vrf", "VRF", LOOKUP_VRF),
                 COMMENT,
                 DISABLED,
             ],
@@ -334,11 +367,7 @@ pub static VXLAN_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[
-            NAME,
-            f!("vni", "VNI", FieldKind::Number),
-            f!("interface", "Interface", FieldKind::Text),
-        ],
+        fields: &[NAME, f!("vni", "VNI", FieldKind::Number), INTERFACE],
     }],
 };
 
@@ -352,7 +381,7 @@ pub static VRRP_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 NAME,
-                f!("interface", "Interface", FieldKind::Text),
+                INTERFACE,
                 f!("vrid", "VRID", FieldKind::Number),
                 f!("priority", "Priority", FieldKind::Number),
                 f!("interval", "Interval", FieldKind::Text),
@@ -379,11 +408,7 @@ pub static VRRP_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[
-            NAME,
-            f!("interface", "Interface", FieldKind::Text),
-            f!("vrid", "VRID", FieldKind::Number),
-        ],
+        fields: &[NAME, INTERFACE, f!("vrid", "VRID", FieldKind::Number)],
     }],
 };
 
@@ -397,9 +422,9 @@ pub static BONDING_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 NAME,
-                f!("slaves", "Slaves", FieldKind::Text),
+                f!("slaves", "Slaves", LOOKUP_IFACES),
                 f!("mode", "Mode", FieldKind::Text),
-                f!("primary", "Primary", FieldKind::Text),
+                f!("primary", "Primary", LOOKUP_IFACE),
                 COMMENT,
                 DISABLED,
             ],
@@ -430,7 +455,7 @@ pub static BONDING_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("slaves", "Slaves", FieldKind::Text),
+            f!("slaves", "Slaves", LOOKUP_IFACES),
             f!("mode", "Mode", FieldKind::Text),
         ],
     }],
@@ -446,7 +471,7 @@ pub static MACVLAN_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 NAME,
-                f!("interface", "Interface", FieldKind::Text),
+                INTERFACE,
                 f!("mode", "Mode", FieldKind::Text),
                 MAC,
                 COMMENT,
@@ -470,7 +495,7 @@ pub static MACVLAN_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, f!("interface", "Interface", FieldKind::Text)],
+        fields: &[NAME, INTERFACE],
     }],
 };
 
@@ -484,8 +509,8 @@ pub static MACSEC_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 NAME,
-                f!("interface", "Interface", FieldKind::Text),
-                f!("profile", "Profile", FieldKind::Text),
+                INTERFACE,
+                f!("profile", "Profile", LOOKUP_MACSEC_PROFILE),
                 MTU,
                 f!("cak", "CAK", FieldKind::Secret),
                 f!("ckn", "CKN", FieldKind::Text),
@@ -504,7 +529,7 @@ pub static MACSEC_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, f!("interface", "Interface", FieldKind::Text)],
+        fields: &[NAME, INTERFACE],
     }],
 };
 
@@ -537,8 +562,8 @@ pub static LIST_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("include", "Include", FieldKind::Text),
-            f!("exclude", "Exclude", FieldKind::Text),
+            f!("include", "Include", LOOKUP_IFACE_LISTS),
+            f!("exclude", "Exclude", LOOKUP_IFACE_LISTS),
             COMMENT,
         ],
     }],
@@ -549,8 +574,8 @@ pub static LIST_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             COMMENT,
-            f!("include", "Include", FieldKind::Text),
-            f!("exclude", "Exclude", FieldKind::Text),
+            f!("include", "Include", LOOKUP_IFACE_LISTS),
+            f!("exclude", "Exclude", LOOKUP_IFACE_LISTS),
         ],
     }],
 };
@@ -563,8 +588,8 @@ pub static MEMBER_FORM: FormSchema = FormSchema {
         label: "General",
         read_only: false,
         fields: &[
-            f!("list", "List", FieldKind::Text),
-            f!("interface", "Interface", FieldKind::Text),
+            f!("list", "List", LOOKUP_IFACE_LIST),
+            INTERFACE,
             COMMENT,
             DISABLED,
         ],
@@ -575,8 +600,8 @@ pub static MEMBER_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             DISABLED,
-            f!("list", "List", FieldKind::Text),
-            f!("interface", "Interface", FieldKind::Text),
+            f!("list", "List", LOOKUP_IFACE_LIST),
+            INTERFACE,
             COMMENT,
         ],
     }],
@@ -589,17 +614,13 @@ pub static VRF_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[
-            NAME,
-            f!("interfaces", "Interfaces", FieldKind::Text),
-            COMMENT,
-        ],
+        fields: &[NAME, f!("interfaces", "Interfaces", LOOKUP_IFACES), COMMENT],
     }],
     create_sections: &[FormSection {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, f!("interfaces", "Interfaces", FieldKind::Text)],
+        fields: &[NAME, f!("interfaces", "Interfaces", LOOKUP_IFACES)],
     }],
 };
 
@@ -612,10 +633,10 @@ pub static DETECT_INTERNET_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                f!("detect-interface-list", "Detect", FieldKind::Text),
-                f!("lan-interface-list", "LAN", FieldKind::Text),
-                f!("wan-interface-list", "WAN", FieldKind::Text),
-                f!("internet-interface-list", "Internet", FieldKind::Text),
+                f!("detect-interface-list", "Detect", LOOKUP_IFACE_LIST),
+                f!("lan-interface-list", "LAN", LOOKUP_IFACE_LIST),
+                f!("wan-interface-list", "WAN", LOOKUP_IFACE_LIST),
+                f!("internet-interface-list", "Internet", LOOKUP_IFACE_LIST),
             ],
         },
         FormSection {
@@ -670,7 +691,7 @@ pub static WIFI_FORM: FormSchema = FormSchema {
             fields: &[
                 NAME,
                 f!("configuration", "Configuration", FieldKind::Text),
-                f!("master-interface", "Master", FieldKind::Text),
+                f!("master-interface", "Master", LOOKUP_IFACE),
                 f!("ssid", "SSID", FieldKind::Text),
                 COMMENT,
                 DISABLED,
@@ -700,7 +721,7 @@ pub static WIFI_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("master-interface", "Master", FieldKind::Text),
+            f!("master-interface", "Master", LOOKUP_IFACE),
             f!("ssid", "SSID", FieldKind::Text),
         ],
     }],
@@ -809,6 +830,72 @@ mod tests {
             MACSEC_PROFILE_FORM.known_keys(),
             ["name", "server-priority"]
         );
+    }
+
+    fn lookup(resource_id: &'static str, multiple: bool) -> FieldKind {
+        FieldKind::Lookup {
+            resource_id,
+            value_key: "name",
+            multiple,
+        }
+    }
+
+    fn assert_lookup(schema: &FormSchema, key: &str, resource_id: &'static str, multiple: bool) {
+        let expected = lookup(resource_id, multiple);
+        let fields: Vec<_> = schema
+            .sections
+            .iter()
+            .chain(schema.create_sections.iter())
+            .flat_map(|section| section.fields)
+            .filter(|field| field.key == key)
+            .collect();
+        assert!(!fields.is_empty(), "missing field {key}");
+        for field in fields {
+            assert_eq!(field.kind, expected, "{key}");
+        }
+    }
+
+    #[test]
+    fn interface_lookups_use_interfaces_resource() {
+        for schema in [
+            &VLAN_FORM,
+            &MACVLAN_FORM,
+            &VRRP_FORM,
+            &MACSEC_FORM,
+            &VXLAN_FORM,
+            &MEMBER_FORM,
+        ] {
+            assert_lookup(schema, "interface", "interfaces", false);
+        }
+        assert_lookup(&WIFI_FORM, "master-interface", "interfaces", false);
+        assert_lookup(&BONDING_FORM, "slaves", "interfaces", true);
+        assert_lookup(&BONDING_FORM, "primary", "interfaces", false);
+        assert_lookup(&VRF_FORM, "interfaces", "interfaces", true);
+        assert_eq!(
+            VXLAN_FORM.field("group").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            BONDING_FORM.field("mode").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+    }
+
+    #[test]
+    fn list_and_vrf_lookups() {
+        assert_lookup(&MEMBER_FORM, "list", "interface-lists", false);
+        assert_lookup(&LIST_FORM, "include", "interface-lists", true);
+        assert_lookup(&LIST_FORM, "exclude", "interface-lists", true);
+        assert_lookup(&VXLAN_FORM, "vrf", "vrf", false);
+        assert_lookup(&MACSEC_FORM, "profile", "macsec-profiles", false);
+        for key in [
+            "detect-interface-list",
+            "lan-interface-list",
+            "wan-interface-list",
+            "internet-interface-list",
+        ] {
+            assert_lookup(&DETECT_INTERNET_FORM, key, "interface-lists", false);
+        }
     }
 
     #[test]

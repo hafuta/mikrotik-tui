@@ -12,13 +12,29 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_SWITCH: FieldKind = FieldKind::Lookup {
+    resource_id: "switch",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_SWITCH_PORT: FieldKind = FieldKind::Lookup {
+    resource_id: "switch-port",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_SWITCH_PORTS: FieldKind = FieldKind::Lookup {
+    resource_id: "switch-port",
+    value_key: "name",
+    multiple: true,
+};
+
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const NAME_RO: FieldSpec = f!("name", "Name", FieldKind::Readonly);
-const SWITCH: FieldSpec = f!("switch", "Switch", FieldKind::Text);
+const SWITCH: FieldSpec = f!("switch", "Switch", LOOKUP_SWITCH);
 const SWITCH_RO: FieldSpec = f!("switch", "Switch", FieldKind::Readonly);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
-const PORTS: FieldSpec = f!("ports", "Ports", FieldKind::Text);
+const PORTS: FieldSpec = f!("ports", "Ports", LOOKUP_SWITCH_PORTS);
 const VLAN_ID: FieldSpec = f!("vlan-id", "VLAN ID", FieldKind::Number);
 const L3HW: FieldSpec = f!("l3-hw-offloading", "L3 HW", FieldKind::Toggle);
 
@@ -32,9 +48,9 @@ pub static SWITCH_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 NAME,
-                f!("mirror-source", "Mirror source", FieldKind::Text),
-                f!("mirror-target", "Mirror target", FieldKind::Text),
-                f!("mirror-egress-target", "Mirror egress", FieldKind::Text),
+                f!("mirror-source", "Mirror source", LOOKUP_SWITCH_PORT),
+                f!("mirror-target", "Mirror target", LOOKUP_SWITCH_PORT),
+                f!("mirror-egress-target", "Mirror egress", LOOKUP_SWITCH_PORT),
                 f!("cpu-flow-control", "CPU flow", FieldKind::Toggle),
                 L3HW,
                 f!("switch-all-ports", "All ports", FieldKind::Toggle),
@@ -130,7 +146,7 @@ pub static SWITCH_RULE_FORM: FormSchema = FormSchema {
                 f!("src-port", "Src port", FieldKind::Text),
                 f!("dst-port", "Dst port", FieldKind::Text),
                 VLAN_ID,
-                f!("new-dst-ports", "New dst", FieldKind::Text),
+                f!("new-dst-ports", "New dst", LOOKUP_SWITCH_PORTS),
                 f!("redirect-to-cpu", "Redirect CPU", FieldKind::Toggle),
                 f!("mirror", "Mirror", FieldKind::Toggle),
             ],
@@ -160,7 +176,7 @@ pub static SWITCH_PORT_ISOLATION_FORM: FormSchema = FormSchema {
         fields: &[
             NAME_RO,
             SWITCH_RO,
-            f!("forwarding-override", "Forward to", FieldKind::Text),
+            f!("forwarding-override", "Forward to", LOOKUP_SWITCH_PORTS),
         ],
     }],
     create_sections: &[],
@@ -413,5 +429,82 @@ mod tests {
         row.insert("dynamic".into(), "true".into());
         let extras = extra_status_fields(&SWITCH_RULE_FORM, &row);
         assert_eq!(extras, vec![("dynamic".into(), "true".into())]);
+    }
+
+    fn assert_lookup(
+        schema: &FormSchema,
+        key: &str,
+        resource_id: &'static str,
+        value_key: &'static str,
+        multiple: bool,
+    ) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key,
+                multiple,
+            })
+        );
+    }
+
+    #[test]
+    fn switch_lookups_target_catalog_resources() {
+        assert_lookup(&SWITCH_FORM, "mirror-source", "switch-port", "name", false);
+        assert_lookup(&SWITCH_FORM, "mirror-target", "switch-port", "name", false);
+        assert_lookup(
+            &SWITCH_FORM,
+            "mirror-egress-target",
+            "switch-port",
+            "name",
+            false,
+        );
+        assert_eq!(
+            SWITCH_FORM.field("name").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+
+        assert_lookup(&SWITCH_VLAN_FORM, "switch", "switch", "name", false);
+        assert_lookup(&SWITCH_VLAN_FORM, "ports", "switch-port", "name", true);
+        assert_eq!(
+            SWITCH_VLAN_FORM.field("vlan-id").map(|field| field.kind),
+            Some(FieldKind::Number)
+        );
+
+        assert_lookup(&SWITCH_RULE_FORM, "switch", "switch", "name", false);
+        assert_lookup(&SWITCH_RULE_FORM, "ports", "switch-port", "name", true);
+        assert_lookup(
+            &SWITCH_RULE_FORM,
+            "new-dst-ports",
+            "switch-port",
+            "name",
+            true,
+        );
+        assert_eq!(
+            SWITCH_RULE_FORM.field("src-port").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            SWITCH_RULE_FORM.field("comment").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+
+        assert_lookup(
+            &SWITCH_PORT_ISOLATION_FORM,
+            "forwarding-override",
+            "switch-port",
+            "name",
+            true,
+        );
+        assert_eq!(
+            SWITCH_PORT_FORM.field("switch").map(|field| field.kind),
+            Some(FieldKind::Readonly)
+        );
+        assert_eq!(
+            SWITCH_PORT_FORM
+                .field("ingress-rate")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
     }
 }
