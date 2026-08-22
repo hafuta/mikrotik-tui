@@ -139,22 +139,16 @@ fn dispatch_commands(
                     let _ = tx.send(msg);
                 });
             }
-            AppCommand::FetchSystem => {
+            AppCommand::FetchHeader {
+                request_id,
+                generation,
+            } => {
                 let Some(client) = app.client.clone() else {
                     continue;
                 };
                 let tx = tx.clone();
                 rt.spawn(async move {
-                    let msg = match client.system("/rest/system/resource").await {
-                        Ok(system) => WorkerMsg::SystemResult {
-                            system: Some(system),
-                            error: None,
-                        },
-                        Err(err) => WorkerMsg::SystemResult {
-                            system: None,
-                            error: Some(err.to_string()),
-                        },
-                    };
+                    let msg = fetch_header(client, request_id, generation).await;
                     let _ = tx.send(msg);
                 });
             }
@@ -301,6 +295,31 @@ async fn fetch_resource(
             rows: Vec::new(),
             error: Some(err.to_string()),
         },
+    }
+}
+
+async fn fetch_header(client: Arc<Client>, request_id: u64, generation: u64) -> WorkerMsg {
+    let (sys, interfaces) = tokio::join!(
+        client.system("/rest/system/resource"),
+        client.list("/rest/interface"),
+    );
+
+    let (system, system_error) = match sys {
+        Ok(record) => (Some(record), None),
+        Err(err) => (None, Some(err.to_string())),
+    };
+    let (interfaces, interface_error) = match interfaces {
+        Ok(rows) => (rows, None),
+        Err(err) => (Vec::new(), Some(err.to_string())),
+    };
+
+    WorkerMsg::HeaderResult {
+        request_id,
+        generation,
+        system,
+        system_error,
+        interfaces,
+        interface_error,
     }
 }
 

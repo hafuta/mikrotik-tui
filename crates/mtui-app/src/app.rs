@@ -79,7 +79,10 @@ pub enum AppCommand {
         request_id: u64,
         generation: u64,
     },
-    FetchSystem,
+    FetchHeader {
+        request_id: u64,
+        generation: u64,
+    },
     ClearSession,
     Mutate {
         request_id: u64,
@@ -555,13 +558,17 @@ impl App {
                 );
                 Vec::new()
             }
-            WorkerMsg::SystemResult { system, error: _ } => {
-                if self.screen != Screen::Main {
+            WorkerMsg::HeaderResult {
+                generation,
+                system,
+                interfaces,
+                interface_error,
+                ..
+            } => {
+                if generation != self.poll_generation || self.screen != Screen::Main {
                     return Vec::new();
                 }
-                if let Some(system) = system {
-                    self.apply_system_resource(system);
-                }
+                self.apply_header_telemetry(system, &interfaces, interface_error.as_deref());
                 Vec::new()
             }
             WorkerMsg::MutateResult { .. } => self.apply_mutate_result(msg),
@@ -634,12 +641,15 @@ impl App {
     }
 
     fn cpu_percent(&self) -> Option<f64> {
-        if !self.dash.cpu_core_loads.is_empty() {
-            let total: f64 = self.dash.cpu_core_loads.values().copied().sum();
-            let count = f64::from(u32::try_from(self.dash.cpu_core_loads.len()).unwrap_or(1));
-            return Some(total / count.max(1.0));
+        if let Some(load) = nonempty_field(&self.router, "cpu-load").and_then(parse_percent) {
+            return Some(load);
         }
-        nonempty_field(&self.router, "cpu-load").and_then(parse_percent)
+        if self.dash.cpu_core_loads.is_empty() {
+            return None;
+        }
+        let total: f64 = self.dash.cpu_core_loads.values().copied().sum();
+        let count = f64::from(u32::try_from(self.dash.cpu_core_loads.len()).unwrap_or(1));
+        Some(total / count.max(1.0))
     }
 
     pub(crate) fn poll_current(&mut self) -> Vec<AppCommand> {
@@ -656,7 +666,10 @@ impl App {
                     generation,
                     resource_id: self.current_resource.clone(),
                 },
-                AppCommand::FetchSystem,
+                AppCommand::FetchHeader {
+                    request_id: self.next_request(),
+                    generation,
+                },
             ]
         }
     }
@@ -992,6 +1005,23 @@ impl App {
         self.router = system;
     }
 
+    fn apply_header_telemetry(
+        &mut self,
+        system: Option<Resource>,
+        interfaces: &[Resource],
+        interface_error: Option<&str>,
+    ) {
+        if let Some(system) = system {
+            self.apply_system_resource(system);
+        }
+        if interface_error.is_some() {
+            return;
+        }
+        if let Ok(iface) = select_wan_interface(interfaces) {
+            self.dash.update_wan(iface, Instant::now());
+        }
+    }
+
     fn named_profile(&self) -> Option<Profile> {
         self.profiles.load().ok().and_then(|list| {
             list.into_iter()
@@ -1269,6 +1299,73 @@ mod dashboard_tests {
         app
     }
 
+    fn header_labels(app: &App) -> Vec<String> {
+        app.header_signals()
+            .into_iter()
+            .map(|signal| {
+                format!("{} {}", signal.label, signal.value)
+                    .trim()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    fn system_resource(cpu_load: &str) -> Resource {
+        let mut system = Resource::default();
+        system.fields.insert("board-name".into(), "hEX S".into());
+        system.fields.insert("cpu-load".into(), cpu_load.into());
+        system.fields.insert("uptime".into(), "2h".into());
+        system
+            .fields
+            .insert("total-memory".into(), "268435456".into());
+        system
+            .fields
+            .insert("free-memory".into(), "134217728".into());
+        system
+    }
+
+    fn wan_interface(rx_byte: &str) -> Resource {
+        let mut iface = Resource::default();
+        iface.id = "*1".into();
+        iface.fields.insert("name".into(), "pppoe-out1".into());
+        iface.fields.insert("type".into(), "pppoe-out".into());
+        iface.fields.insert("running".into(), "true".into());
+        iface.fields.insert("rx-byte".into(), rx_byte.into());
+        iface.fields.insert("tx-byte".into(), "1000".into());
+        iface
+    }
+
+    fn header_result(
+        generation: u64,
+        system: Option<Resource>,
+        interfaces: Vec<Resource>,
+        interface_error: Option<String>,
+    ) -> WorkerMsg {
+        WorkerMsg::HeaderResult {
+            request_id: 1,
+            generation,
+            system,
+            system_error: None,
+            interfaces,
+            interface_error,
+        }
+    }
+
+    fn is_fetch_dashboard(cmd: &AppCommand) -> bool {
+        matches!(cmd, AppCommand::FetchDashboard { .. })
+    }
+
+    fn is_fetch_header(cmd: &AppCommand) -> bool {
+        matches!(cmd, AppCommand::FetchHeader { .. })
+    }
+
+    fn is_fetch_resource(cmd: &AppCommand, resource_id: &str) -> bool {
+        matches!(
+            cmd,
+            AppCommand::FetchResource { resource_id: id, .. } if id == resource_id
+        )
+    }
+
     #[test]
     fn stale_dashboard_generation_is_ignored() {
         let mut app = dashboard_app();
@@ -1291,44 +1388,118 @@ mod dashboard_tests {
     }
 
     #[test]
-    fn system_result_updates_header_memory_off_dashboard() {
+    fn tick_poll_requests_header_off_dashboard_and_dashboard_only_on_dashboard() {
+        let mut app = dashboard_app();
+        let on_dashboard = app.poll_current();
+        assert_eq!(on_dashboard.len(), 1);
+        assert!(is_fetch_dashboard(&on_dashboard[0]));
+        assert!(!on_dashboard.iter().any(is_fetch_header));
+
+        app.current_resource = "interfaces".into();
+        let off_dashboard = app.poll_current();
+        assert_eq!(off_dashboard.len(), 2);
+        assert!(is_fetch_resource(&off_dashboard[0], "interfaces"));
+        assert!(is_fetch_header(&off_dashboard[1]));
+        assert!(!off_dashboard.iter().any(is_fetch_dashboard));
+    }
+
+    #[test]
+    fn header_result_updates_cpu_memory_and_wan_off_dashboard() {
         let mut app = dashboard_app();
         app.current_resource = "interfaces".into();
         app.screen = Screen::Main;
         app.login.url = "https://192.0.2.1".into();
-        let mut system = Resource::default();
-        system.fields.insert("board-name".into(), "hEX S".into());
-        system.fields.insert("cpu-load".into(), "18".into());
-        system.fields.insert("uptime".into(), "2h".into());
-        system
-            .fields
-            .insert("total-memory".into(), "268435456".into());
-        system
-            .fields
-            .insert("free-memory".into(), "134217728".into());
+        app.status = "interfaces".into();
+        let t0 = Instant::now()
+            .checked_sub(std::time::Duration::from_secs(2))
+            .expect("monotonic clock can go back two seconds");
+        app.dash.update_wan(&wan_interface("1000"), t0);
 
-        let cmds = app.update(AppEvent::Worker(WorkerMsg::SystemResult {
-            system: Some(system),
-            error: None,
-        }));
+        let cmds = app.update(AppEvent::Worker(header_result(
+            app.poll_generation,
+            Some(system_resource("18")),
+            vec![wan_interface("125000")],
+            None,
+        )));
         assert!(cmds.is_empty());
+        assert_eq!(app.status, "interfaces");
         assert_eq!(app.dash.memory_used_bytes, 134_217_728);
         assert_eq!(app.dash.memory_total_bytes, 268_435_456);
-        let header = app
-            .header_signals()
-            .into_iter()
-            .map(|signal| {
-                format!("{} {}", signal.label, signal.value)
-                    .trim()
-                    .to_string()
-            })
-            .collect::<Vec<_>>();
+        let header = header_labels(&app);
         assert!(
             header.iter().any(|part| part == "MEM 50%"),
             "memory percent missing: {header:?}"
         );
         assert!(header.iter().any(|part| part == "CPU 18%"));
+        assert!(app.dash.traffic_has_base);
+        assert!(app.dash.traffic_rx_rate > 0.0);
+        assert!(header.iter().any(|part| part.starts_with("WAN ")));
         assert_eq!(app.session_identity(), "hEX S · 192.0.2.1");
+        assert!(app.dash.cpu_core_order.is_empty());
+    }
+
+    #[test]
+    fn header_cpu_prefers_system_load_over_stale_cores() {
+        let mut app = dashboard_app();
+        app.current_resource = "interfaces".into();
+        app.dash.cpu_core_loads.insert("cpu0".into(), 90.0);
+        app.dash.cpu_core_loads.insert("cpu1".into(), 80.0);
+        app.dash.cpu_core_order = vec!["cpu0".into(), "cpu1".into()];
+
+        let cmds = app.update(AppEvent::Worker(header_result(
+            app.poll_generation,
+            Some(system_resource("22")),
+            Vec::new(),
+            Some("WAN unavailable".into()),
+        )));
+        assert!(cmds.is_empty());
+        let header = header_labels(&app);
+        assert!(
+            header.iter().any(|part| part == "CPU 22%"),
+            "stale core average still used: {header:?}"
+        );
+        assert_eq!(app.dash.cpu_core_loads["cpu0"], 90.0);
+    }
+
+    #[test]
+    fn stale_header_generation_is_ignored_after_select_resource() {
+        let mut app = dashboard_app();
+        app.current_resource = "interfaces".into();
+        let stale_generation = app.poll_generation;
+        app.select_resource("logs");
+        let cmds = app.update(AppEvent::Worker(header_result(
+            stale_generation,
+            Some(system_resource("41")),
+            vec![wan_interface("5000")],
+            None,
+        )));
+        assert!(cmds.is_empty());
+        assert!(app.router.fields.get("cpu-load").is_none());
+        assert_eq!(app.dash.memory_total_bytes, 0);
+        assert!(!app.dash.traffic_has_base);
+    }
+
+    #[test]
+    fn dashboard_result_ignored_when_not_on_dashboard() {
+        let mut app = dashboard_app();
+        app.current_resource = "interfaces".into();
+        app.status = "interfaces".into();
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::DashboardResult {
+            request_id: 1,
+            generation: app.poll_generation,
+            cpu: Vec::new(),
+            cpu_error: None,
+            system: Some(system_resource("77")),
+            system_error: None,
+            interfaces: vec![wan_interface("9000")],
+            interface_error: None,
+            firewall: Vec::new(),
+            firewall_error: None,
+        }));
+        assert!(cmds.is_empty());
+        assert_eq!(app.status, "interfaces");
+        assert!(app.router.fields.get("cpu-load").is_none());
+        assert!(!app.dash.traffic_has_base);
     }
 
     #[test]

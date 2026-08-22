@@ -42,9 +42,13 @@ pub enum WorkerMsg {
         firewall: Vec<Resource>,
         firewall_error: Option<String>,
     },
-    SystemResult {
+    HeaderResult {
+        request_id: u64,
+        generation: u64,
         system: Option<Resource>,
-        error: Option<String>,
+        system_error: Option<String>,
+        interfaces: Vec<Resource>,
+        interface_error: Option<String>,
     },
     MutateResult {
         request_id: u64,
