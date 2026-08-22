@@ -324,4 +324,19 @@ mod tests {
         row.insert("disabled".into(), "false".into());
         assert_eq!(action_label(&ACTION_TOGGLE, Some(&row)), "Disable");
     }
+
+    #[test]
+    fn wireguard_peer_dynamic_hides_remove_and_copy() {
+        let mut row = HashMap::new();
+        row.insert("interface".into(), "wg1".into());
+        row.insert("dynamic".into(), "true".into());
+        let ids: Vec<_> = resolve_actions(MEMBER_ACTIONS, false, Some(&row))
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert!(!ids.contains(&"remove"));
+        assert!(!ids.contains(&"copy"));
+        assert!(ids.contains(&"edit"));
+        assert!(ids.contains(&"add"));
+    }
 }

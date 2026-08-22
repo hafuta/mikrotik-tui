@@ -544,7 +544,7 @@ mod tests {
     use crate::app::Screen;
     use crate::event::AppEvent;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use mtui_routeros::Resource;
+    use mtui_routeros::{MASKED_VALUE, Resource};
 
     fn press(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -635,6 +635,58 @@ mod tests {
             panic!("expected form");
         };
         assert_eq!(session.section, 0);
+    }
+
+    #[test]
+    fn wireguard_enter_opens_edit_and_n_opens_create() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("wireguard");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "wg1".into());
+        fields.insert("listen-port".into(), "13231".into());
+        fields.insert("private-key".into(), "MARKER-SECRET".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "wireguard".into(),
+            rows: vec![Resource {
+                id: "*8".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected wireguard editor, got {:?}", app.overlay);
+        };
+        assert_eq!(session.resource_id, "wireguard");
+        assert_eq!(session.mode, mtui_ui::FormMode::Edit);
+        assert_eq!(
+            session.values.get("private-key").map(String::as_str),
+            Some(MASKED_VALUE)
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('n'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected wireguard create, got {:?}", app.overlay);
+        };
+        assert_eq!(session.mode, mtui_ui::FormMode::Create);
+    }
+
+    #[test]
+    fn wireguard_peer_add_opens_create() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("wireguard-peers");
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('n'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected peer create, got {:?}", app.overlay);
+        };
+        assert_eq!(session.resource_id, "wireguard-peers");
+        assert_eq!(session.mode, mtui_ui::FormMode::Create);
     }
 
     #[test]
