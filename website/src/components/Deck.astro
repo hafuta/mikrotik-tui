@@ -1,0 +1,237 @@
+---
+const rows = [
+  { name: "ether1", type: "ether", status: "running", rx: "84.2 Mb/s", sel: true },
+  { name: "ether2", type: "ether", status: "running", rx: "1.1 Mb/s", sel: false },
+  { name: "wg0", type: "wg", status: "running", rx: "412 Kb/s", sel: false },
+  { name: "vlan10", type: "vlan", status: "running", rx: "96 Kb/s", sel: false },
+  { name: "bridge1", type: "bridge", status: "running", rx: "85.8 Mb/s", sel: false },
+];
+---
+
+<figure class="deck">
+  <figcaption class="visually-hidden">
+    Simulated MikroTik TUI session showing live interface traffic on a CCR2004.
+  </figcaption>
+  <div class="window">
+    <header class="chrome">
+      <span class="title">mikrotik-tui</span>
+      <span class="host">CCR2004 · 192.0.2.1</span>
+      <span class="metrics">
+        CPU 18%
+        <i></i>
+        MEM 41%
+        <i></i>
+        <em>WAN 84.2 Mb/s</em>
+      </span>
+    </header>
+    <div class="body">
+      <aside class="navpane">
+        <p>Dashboard</p>
+        <p class="on">Interfaces</p>
+        <p>PPP</p>
+        <p>Bridge</p>
+        <p>IP</p>
+        <p>System</p>
+        <p>Logs</p>
+      </aside>
+      <div class="table">
+        <div class="thead">
+          <span>Name</span><span>Type</span><span>Status</span><span>Rx</span>
+        </div>
+        {
+          rows.map((row) => (
+            <div class:list={["trow", row.sel && "trow--sel", row.sel && "row-live"]}>
+              <span>{row.name}</span>
+              <span>{row.type}</span>
+              <span class="ok">{row.status}</span>
+              <span class="rx">{row.rx}</span>
+            </div>
+          ))
+        }
+      </div>
+      <aside class="inspect">
+        <dl>
+          <dt>name</dt>
+          <dd>ether1</dd>
+          <dt>type</dt>
+          <dd>ether</dd>
+          <dt>running</dt>
+          <dd class="ok">true</dd>
+          <dt>mac</dt>
+          <dd>DC:2C:6E:12:9A:01</dd>
+          <dt>comment</dt>
+          <dd>WAN uplink</dd>
+        </dl>
+      </aside>
+    </div>
+    <footer class="hints">
+      <span><b>↑↓</b> move</span>
+      <span><b>enter</b> edit</span>
+      <span><b>/</b> filter</span>
+      <span><b>t</b> torch</span>
+      <span><b>?</b> help</span>
+      <span><b>q</b> quit</span>
+    </footer>
+  </div>
+</figure>
+
+<style>
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .deck {
+    margin: 0 auto;
+    max-width: 58rem;
+  }
+
+  .window {
+    overflow: hidden;
+    border-radius: 1.35rem;
+    background: #0c1118;
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, white 8%, transparent),
+      0 40px 80px -24px #000c,
+      0 0 80px color-mix(in srgb, var(--focus) 12%, transparent);
+    font-family: var(--font-mono);
+    font-size: clamp(0.68rem, 1.2vw, 0.8rem);
+    line-height: 1.4;
+    text-align: left;
+  }
+
+  .chrome,
+  .hints {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem 0.9rem;
+    padding: 0.7rem 1rem;
+  }
+
+  .chrome {
+    background: color-mix(in srgb, white 3.5%, transparent);
+  }
+
+  .title {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .host,
+  .metrics {
+    color: var(--quiet);
+  }
+
+  .metrics {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .metrics i {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: color-mix(in srgb, white 22%, transparent);
+  }
+
+  .metrics em {
+    font-style: normal;
+    color: var(--signal);
+  }
+
+  .body {
+    display: grid;
+    grid-template-columns: 0.72fr 1.45fr 0.95fr;
+    min-height: 15rem;
+  }
+
+  @media (max-width: 720px) {
+    .body {
+      grid-template-columns: 1fr;
+    }
+
+    .inspect,
+    .navpane,
+    .metrics {
+      display: none;
+    }
+  }
+
+  .navpane,
+  .table,
+  .inspect {
+    padding: 0.85rem 1rem 1rem;
+  }
+
+  .navpane p {
+    margin: 0.2rem 0;
+    color: var(--quiet);
+  }
+
+  .navpane .on {
+    color: var(--text);
+  }
+
+  .thead,
+  .trow {
+    display: grid;
+    grid-template-columns: 1.1fr 0.7fr 0.9fr 1fr;
+    gap: 0.35rem;
+    padding: 0.18rem 0.4rem;
+    border-radius: 0.35rem;
+  }
+
+  .thead {
+    color: var(--quiet);
+    font-size: 0.72em;
+  }
+
+  .trow--sel {
+    background: color-mix(in srgb, var(--focus) 16%, transparent);
+    color: var(--text);
+  }
+
+  .ok {
+    color: var(--signal);
+  }
+
+  .rx {
+    color: #c9d4e2;
+  }
+
+  .row-live .rx {
+    color: var(--alert);
+  }
+
+  .inspect dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.28rem 0.8rem;
+    margin: 0;
+  }
+
+  .inspect dt {
+    color: var(--quiet);
+  }
+
+  .inspect dd {
+    margin: 0;
+  }
+
+  .hints {
+    color: var(--quiet);
+    background: color-mix(in srgb, white 2.5%, transparent);
+  }
+
+  .hints b {
+    color: var(--focus);
+    font-weight: 500;
+    margin-right: 0.15rem;
+  }
+</style>

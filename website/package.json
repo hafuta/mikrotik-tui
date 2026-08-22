@@ -1,0 +1,13 @@
+{
+  "name": "mikrotik-tui-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --host",
+    "build": "astro build",
+    "preview": "astro preview --host"
+  },
+  "devDependencies": {
+    "astro": "^7.2.4"
+  }
+}

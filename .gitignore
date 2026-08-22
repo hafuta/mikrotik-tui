@@ -1,6 +1,9 @@
 /target/
 bin/
 dist/
+website/node_modules/
+website/dist/
+website/.astro/
 coverage.out
 *.exe
 *.log

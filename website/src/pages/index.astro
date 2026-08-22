@@ -1,0 +1,140 @@
+---
+import Base from "../layouts/Base.astro";
+import Deck from "../components/Deck.astro";
+
+const repo = "https://github.com/hafuta/mikrotik-tui";
+const releases = `${repo}/releases`;
+---
+
+<Base
+  title="MikroTik TUI — keyboard-first RouterOS"
+  description="Keyboard-first, cross-platform terminal for managing MikroTik RouterOS — an alternative to WebFig and WinBox."
+>
+  <div class="wrap">
+    <header class="site-head">
+      <a class="brand" href={import.meta.env.BASE_URL}>
+        mikrotik-tui
+        <small>preview</small>
+      </a>
+      <nav class="nav" aria-label="Page">
+        <a href="#surfaces">What it covers</a>
+        <a href="#keys">Keys</a>
+        <a href="#get">Install</a>
+        <a href={repo}>GitHub</a>
+      </nav>
+    </header>
+
+    <main id="content">
+      <section class="hero">
+        <p class="kicker">Cross-platform terminal for MikroTik RouterOS</p>
+        <h1>RouterOS management, without leaving the keyboard.</h1>
+        <p class="lede">
+          A keyboard-first application for managing RouterOS devices from Linux,
+          macOS, and Windows. Built for operators who outgrow WebFig and WinBox
+          because neither is designed around the keyboard.
+        </p>
+        <div class="btn-row">
+          <a class="btn btn--primary" href={releases}>Download</a>
+          <a class="btn" href={repo}>GitHub</a>
+        </div>
+      </section>
+
+      <div class="stage">
+        <Deck />
+        <p class="hint">Early preview — tested on current RouterOS long-term. Not for production changes yet.</p>
+      </div>
+
+      <section class="section section--split" id="surfaces">
+        <div>
+          <h2>The menus you already type, as a live table.</h2>
+          <p class="prose">
+            Interface rows can be created, edited, copied, enabled, disabled,
+            torched, or removed — with a confirmation first. Other groups stay
+            read-only until they grow the same actions.
+          </p>
+        </div>
+        <ul class="paths">
+          <li class="path">
+            <code>/interface</code>
+            <span>Ethernet, VLAN, bonding, WiFi, WireGuard, tunnels, VRF — plus torch and counters.</span>
+          </li>
+          <li class="path">
+            <code>/ip</code>
+            <span>Addresses, ARP, DHCP servers, networks, leases, and firewall filter rules.</span>
+          </li>
+          <li class="path">
+            <code>/ppp</code>
+            <span>Secrets, profiles, AAA, active sessions, and PPPoE/L2TP/SSTP/OpenVPN.</span>
+          </li>
+          <li class="path">
+            <code>/interface/bridge</code>
+            <span>Ports, hosts, VLANs, MDB, MSTI, filter, NAT, and port controller.</span>
+          </li>
+          <li class="path">
+            <code>/interface/ethernet/switch</code>
+            <span>Chip, ports, VLAN, host, ACL, isolation, and L3HW.</span>
+          </li>
+          <li class="path">
+            <code>/system</code>
+            <span>Users, RouterBOARD, NTP, clock, and a bounded live log stream.</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="section section--split" id="keys">
+        <div>
+          <h2>Built for people who already live on j and k.</h2>
+          <p class="prose">
+            Filter, sort, inspect, and jump with the command palette. The footer
+            is the cheat sheet; <code>?</code> opens the full map.
+          </p>
+        </div>
+        <ul class="keys">
+          <li class="key"><b>j k ↑ ↓</b><span>Move</span></li>
+          <li class="key"><b>enter</b><span>Open or edit</span></li>
+          <li class="key"><b>/</b><span>Filter</span></li>
+          <li class="key"><b>ctrl+k</b><span>Palette</span></li>
+          <li class="key"><b>t</b><span>Torch</span></li>
+          <li class="key"><b>`</b><span>App logs</span></li>
+          <li class="key"><b>?</b><span>Help</span></li>
+          <li class="key"><b>q</b><span>Quit</span></li>
+        </ul>
+      </section>
+
+      <section class="section" id="get">
+        <h2>Run it next to the router.</h2>
+        <div class="install">
+          <div>
+            <p class="prose">
+              Linux binaries ship from GitHub Releases. Docker needs an
+              interactive TTY and a path to the device. First launch asks for the
+              HTTPS URL, username, and password.
+            </p>
+            <pre class="term"><code><span class="cmt"># unpack a release, then</span>
+./mikrotik-tui
+
+<span class="cmt"># docker on linux</span>
+docker build -t mikrotik-tui .
+docker run --rm -it --network host \
+  -v mikrotik-tui-data:/data \
+  mikrotik-tui</code></pre>
+          </div>
+          <p class="note">
+            Needs RouterOS v7 with REST over HTTPS. Saved files live under your
+            OS config directory (<code>~/.config/mikrotik-tui</code> on Linux).
+            See <a href={`${repo}#run`}>first launch</a> for certificate pinning.
+          </p>
+        </div>
+        <div class="btn-row btn-row--start">
+          <a class="btn btn--primary" href={releases}>Download a release</a>
+          <a class="btn" href={repo}>Source</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-foot">
+      <span>MIT · experimental preview</span>
+      <a href={repo}>github.com/hafuta/mikrotik-tui</a>
+    </footer>
+  </div>
+</Base>

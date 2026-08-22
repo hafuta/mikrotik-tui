@@ -66,10 +66,23 @@ release:
 [unix]
 clean:
     cargo clean
-    rm -rf bin dist
+    rm -rf bin dist website/dist website/node_modules website/.astro
 
 [windows]
 clean:
     cargo clean
     if (Test-Path bin) { Remove-Item -Recurse -Force bin }
     if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+    if (Test-Path website/dist) { Remove-Item -Recurse -Force website/dist }
+    if (Test-Path website/node_modules) { Remove-Item -Recurse -Force website/node_modules }
+    if (Test-Path website/.astro) { Remove-Item -Recurse -Force website/.astro }
+
+# Build the end-user landing page (static Astro site → website/dist)
+site:
+    npm --prefix website install
+    npm --prefix website run build
+
+# Serve the landing page locally (http://localhost:4321/mikrotik-tui/)
+site-dev:
+    npm --prefix website install
+    npm --prefix website run dev
