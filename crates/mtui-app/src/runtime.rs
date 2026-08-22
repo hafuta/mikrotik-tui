@@ -193,6 +193,49 @@ fn dispatch_commands(
                     let _ = tx.send(msg);
                 });
             }
+            AppCommand::FetchPing {
+                generation,
+                address,
+                count,
+                src,
+                ..
+            } => {
+                let Some(client) = app.client.clone() else {
+                    continue;
+                };
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let msg =
+                        fetch_probe(client, generation, "ping", address, count, src, None).await;
+                    let _ = tx.send(msg);
+                });
+            }
+            AppCommand::FetchTraceroute {
+                generation,
+                address,
+                count,
+                src,
+                protocol,
+                ..
+            } => {
+                let Some(client) = app.client.clone() else {
+                    continue;
+                };
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let msg = fetch_probe(
+                        client,
+                        generation,
+                        "traceroute",
+                        address,
+                        count,
+                        src,
+                        Some(protocol),
+                    )
+                    .await;
+                    let _ = tx.send(msg);
+                });
+            }
             AppCommand::CopyToClipboard { text } => match copy_to_clipboard(&text) {
                 Ok(()) => {
                     tracing::info!("copied log to clipboard");
@@ -345,6 +388,7 @@ async fn fetch_resource(
         };
     };
     let result = match spec.fetch {
+        FetchKind::Local => Ok(Vec::new()),
         FetchKind::List { endpoint } => client.list(endpoint).await,
         FetchKind::System { endpoint } => client.system(endpoint).await.map(|r| vec![r]),
     };
@@ -515,6 +559,40 @@ async fn fetch_file_record(
             generation,
             local_path,
             contents: None,
+            error: Some(err.to_string()),
+        },
+    }
+}
+
+async fn fetch_probe(
+    client: std::sync::Arc<Client>,
+    generation: u64,
+    command: &str,
+    address: String,
+    count: String,
+    src: String,
+    protocol: Option<String>,
+) -> WorkerMsg {
+    let mut fields = std::collections::BTreeMap::new();
+    fields.insert("address".into(), address);
+    fields.insert("count".into(), count);
+    if !src.trim().is_empty() {
+        fields.insert("src-address".into(), src);
+    }
+    if let Some(protocol) = protocol
+        && !protocol.trim().is_empty()
+    {
+        fields.insert("protocol".into(), protocol);
+    }
+    match client.command("/rest/tool", command, &fields).await {
+        Ok(value) => WorkerMsg::PingTraceResult {
+            generation,
+            rows: json_rows(value),
+            error: None,
+        },
+        Err(err) => WorkerMsg::PingTraceResult {
+            generation,
+            rows: Vec::new(),
             error: Some(err.to_string()),
         },
     }

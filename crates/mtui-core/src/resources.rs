@@ -21,6 +21,8 @@ pub enum FetchKind {
     List { endpoint: &'static str },
     /// Singleton system resource.
     System { endpoint: &'static str },
+    /// Overlay-driven screen; never polled over HTTP.
+    Local,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,12 +42,22 @@ impl ResourceSpec {
     pub fn endpoint(&self) -> &'static str {
         match self.fetch {
             FetchKind::List { endpoint } | FetchKind::System { endpoint } => endpoint,
+            FetchKind::Local => "",
         }
     }
 
     #[must_use]
     pub fn cli_path(&self) -> &str {
-        self.endpoint().trim_start_matches("/rest")
+        match self.fetch {
+            FetchKind::Local => match self.id {
+                "ping" => "/tool/ping",
+                "traceroute" => "/tool/traceroute",
+                other => other,
+            },
+            FetchKind::List { endpoint } | FetchKind::System { endpoint } => {
+                endpoint.trim_start_matches("/rest")
+            }
+        }
     }
 
     #[must_use]
@@ -2582,6 +2594,37 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::tools_write::EMAIL_FORM),
     },
     ResourceSpec {
+        id: "ping",
+        group: "tools-group",
+        label: "Ping",
+        fetch: FetchKind::Local,
+        columns: &[
+            col!("seq", "Seq", 6),
+            col!("host", "Host", 22),
+            col!("time", "Time", 12),
+            col!("ttl", "TTL", 6),
+            col!("status", "Status", 12),
+        ],
+        refresh: Duration::from_secs(3600),
+        actions: crate::actions::PING_ACTIONS,
+        form: None,
+    },
+    ResourceSpec {
+        id: "traceroute",
+        group: "tools-group",
+        label: "Traceroute",
+        fetch: FetchKind::Local,
+        columns: &[
+            col!("hop", "Hop", 6),
+            col!("address", "Address", 22),
+            col!("status", "Status", 12),
+            col!("time", "Time", 12),
+        ],
+        refresh: Duration::from_secs(3600),
+        actions: crate::actions::TRACEROUTE_ACTIONS,
+        form: None,
+    },
+    ResourceSpec {
         id: "radius",
         group: "radius-group",
         label: "RADIUS",
@@ -2729,6 +2772,18 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), ALL_RESOURCES.len());
+    }
+
+    #[test]
+    fn ping_and_traceroute_are_local_fetch() {
+        let ping = resource_by_id("ping").expect("ping");
+        let traceroute = resource_by_id("traceroute").expect("traceroute");
+        assert!(matches!(ping.fetch, FetchKind::Local));
+        assert!(matches!(traceroute.fetch, FetchKind::Local));
+        assert!(ping.form.is_none());
+        assert!(traceroute.form.is_none());
+        assert_eq!(ping.cli_path(), "/tool/ping");
+        assert_eq!(traceroute.cli_path(), "/tool/traceroute");
     }
 
     #[test]
@@ -3225,7 +3280,10 @@ mod tests {
             ]
         );
         assert_eq!(group_ids("files-group"), ["files"]);
-        assert_eq!(group_ids("tools-group"), ["netwatch", "email"]);
+        assert_eq!(
+            group_ids("tools-group"),
+            ["netwatch", "email", "ping", "traceroute"]
+        );
         assert_eq!(group_ids("radius-group"), ["radius"]);
         for group in [
             "ipv6-group",
@@ -3253,6 +3311,10 @@ mod tests {
                 continue;
             }
             let ids: Vec<_> = spec.actions.iter().map(|action| action.id).collect();
+            let overlay_only = spec
+                .actions
+                .iter()
+                .all(|action| matches!(action.kind, crate::actions::ActionKind::Overlay { .. }));
             if ids == ["remove"] {
                 assert!(spec.form.is_none(), "{} should be remove-only", spec.id);
                 continue;
@@ -3261,6 +3323,14 @@ mod tests {
                 assert!(
                     spec.form.is_none(),
                     "files uses transfer prompts, not a sheet"
+                );
+                continue;
+            }
+            if overlay_only {
+                assert!(
+                    spec.form.is_none(),
+                    "{} is overlay-only and should not have a form",
+                    spec.id
                 );
                 continue;
             }
@@ -3297,6 +3367,7 @@ mod tests {
         let endpoints: Vec<_> = ALL_RESOURCES
             .iter()
             .filter(|spec| spec.group == group)
+            .filter(|spec| !matches!(spec.fetch, FetchKind::Local))
             .map(ResourceSpec::endpoint)
             .collect();
         let mut unique = endpoints.clone();

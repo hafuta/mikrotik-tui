@@ -293,6 +293,7 @@ impl App {
             Overlay::ActionMenu(_) => self.keys_action_menu(key, false),
             Overlay::TypePicker(_) => self.keys_action_menu(key, true),
             Overlay::Torch(_) => self.keys_torch(key),
+            Overlay::Probe(_) => self.keys_probe(key),
             Overlay::None => Vec::new(),
         }
     }
@@ -653,6 +654,36 @@ impl App {
             KeyCode::Char(ch) if key.modifiers.is_empty() => {
                 if let Overlay::Torch(torch) = &mut self.overlay {
                     torch.insert_char(ch);
+                }
+                Vec::new()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn keys_probe(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        match key.code {
+            KeyCode::Esc => {
+                self.probe_generation = self.probe_generation.wrapping_add(1);
+                self.overlay = Overlay::None;
+                Vec::new()
+            }
+            KeyCode::Enter => self.start_probe(),
+            KeyCode::Tab => {
+                if let Overlay::Probe(probe) = &mut self.overlay {
+                    probe.cycle_focus();
+                }
+                Vec::new()
+            }
+            KeyCode::Backspace | KeyCode::Delete => {
+                if let Overlay::Probe(probe) = &mut self.overlay {
+                    probe.backspace();
+                }
+                Vec::new()
+            }
+            KeyCode::Char(ch) if key.modifiers.is_empty() => {
+                if let Overlay::Probe(probe) = &mut self.overlay {
+                    probe.insert_char(ch);
                 }
                 Vec::new()
             }

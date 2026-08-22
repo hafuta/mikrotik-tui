@@ -892,6 +892,22 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "server, port, from, user, password, tls (yes/starttls/no)."
     ),
     guide!(
+        "ping",
+        "One-shot ICMP (or similar) reachability check from the router to an address.",
+        "Confirm a host is reachable from this router, not from your workstation. Default \
+         count is 4 so the REST command finishes within the client timeout.",
+        "address (required), count, src-address. Results appear in the Ping overlay; this \
+         screen is not a live poll of /tool/ping."
+    ),
+    guide!(
+        "traceroute",
+        "Hop-by-hop path discovery from the router toward an address.",
+        "See where packets leave this device on the way to a destination. Default hop count \
+         is 8 so the REST command stays within the client timeout.",
+        "address (required), src-address, protocol (icmp by default), count/max hops. Open \
+         the overlay with Enter; t is reserved for interface torch elsewhere."
+    ),
+    guide!(
         "radius",
         "RADIUS clients: where to send AAA for login, PPP, Hotspot, DHCP, wireless, and \
          similar services.",

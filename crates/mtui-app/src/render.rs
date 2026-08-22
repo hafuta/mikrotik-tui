@@ -4,8 +4,8 @@ use mtui_core::{DASHBOARD_ID, WHEN_YOU_NEED_IT};
 use mtui_ui::{
     CpuCoreView, DashboardView, LayoutMetrics, Modal, ModalButton, ModalButtonKind, ModalPanel,
     constrain_lines, dashboard_content, fill_rect, footer_bar, format_fingerprint, header_line,
-    modal_max_scroll, render_action_menu, render_form_sheet, render_modal, render_torch,
-    session_header,
+    modal_max_scroll, render_action_menu, render_form_sheet, render_modal, render_probe,
+    render_torch, session_header,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -89,6 +89,9 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                 }
                 Overlay::Torch(ref torch) => {
                     render_torch(frame, area, torch, &styles);
+                }
+                Overlay::Probe(ref probe) => {
+                    render_probe(frame, area, probe, &styles);
                 }
                 Overlay::None => {}
             }
@@ -437,6 +440,8 @@ m           make DHCP lease static
 t           torch
 b           reboot (Resources) · save backup (Files)
 o           shutdown (Resources; power off)
+p           ping (Tools · Ping)
+enter       traceroute (Tools · Traceroute)
 a           action menu (Files: load backup)
 ctrl+s      save properties
 1-9         jump to a properties tab (when not typing)
