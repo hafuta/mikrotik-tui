@@ -47,6 +47,25 @@ RouterOS v7 with `www-ssl` and REST access is required. Use a dedicated,
 least-privileged RouterOS account. Screens you edit require write permission
 for those menus; inspect-only views still work with read-only REST access.
 
+## Roadmap
+
+Work is tracked as GitHub milestones, in this order. Open issues and
+acceptance notes live on each milestone; the full list is
+[hafuta/mikrotik-tui milestones](https://github.com/hafuta/mikrotik-tui/milestones).
+
+1. [Operator completeness](https://github.com/hafuta/mikrotik-tui/milestone/1) -
+   remaining WebFig menus and row actions for a stock RouterOS 7 router
+2. [Session, profiles, and login](https://github.com/hafuta/mikrotik-tui/milestone/2) -
+   named device profiles, remember password / TOTP, and explicit forget vs re-auth
+3. [Classic TCP API](https://github.com/hafuta/mikrotik-tui/milestone/3) -
+   replace HTTPS REST with `api-ssl` so tables can `.listen` and tools can stream
+4. [Safe operations and session health](https://github.com/hafuta/mikrotik-tui/milestone/6) -
+   reconnect and stale-data cues, permission-aware inspect-only, keyring, undo-lite
+5. [Everyday operator UX](https://github.com/hafuta/mikrotik-tui/milestone/7) -
+   per-screen action hints, save preview, copy/export, bulk select, demo profile
+6. [Distribution and adoption](https://github.com/hafuta/mikrotik-tui/milestone/8) -
+   signed releases, install channels, and a documented RouterOS version matrix
+
 ## Crates
 
 | Crate | Role |
