@@ -137,6 +137,12 @@ pub enum AppCommand {
         id: String,
         local_path: String,
     },
+    FetchLookup {
+        request_id: u64,
+        generation: u64,
+        resource_id: String,
+        value_key: String,
+    },
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -624,6 +630,17 @@ impl App {
                 rows,
                 error,
             } => self.apply_probe_result(generation, rows, error),
+            WorkerMsg::LookupResult {
+                request_id,
+                generation,
+                options,
+                error,
+            } => {
+                if let Overlay::Form(session) = &mut self.overlay {
+                    session.apply_lookup_result(request_id, generation, options, error);
+                }
+                Vec::new()
+            }
         }
     }
 

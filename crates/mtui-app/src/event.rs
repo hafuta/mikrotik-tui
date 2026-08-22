@@ -84,4 +84,10 @@ pub enum WorkerMsg {
         rows: Vec<std::collections::HashMap<String, String>>,
         error: Option<String>,
     },
+    LookupResult {
+        request_id: u64,
+        generation: u64,
+        options: Vec<String>,
+        error: Option<String>,
+    },
 }

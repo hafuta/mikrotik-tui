@@ -480,6 +480,10 @@ impl App {
             return Vec::new();
         }
 
+        if matches!(&self.overlay, Overlay::Form(session) if session.lookup_open()) {
+            return self.keys_lookup(key);
+        }
+
         match key.code {
             KeyCode::Esc => {
                 if let Overlay::Form(session) = &mut self.overlay {
@@ -538,6 +542,7 @@ impl App {
             }
             KeyCode::Char(' ') | KeyCode::Enter => {
                 self.with_form(|session| session.activate(schema));
+                return self.lookup_fetch_command();
             }
             KeyCode::Backspace | KeyCode::Delete => {
                 self.with_form(|session| session.backspace(schema));
@@ -548,6 +553,51 @@ impl App {
             _ => {}
         }
         Vec::new()
+    }
+
+    fn keys_lookup(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        match key.code {
+            KeyCode::Esc => self.with_form(FormSession::close_lookup),
+            KeyCode::Up => self.with_form(|session| session.lookup_move(-1)),
+            KeyCode::Down => self.with_form(|session| session.lookup_move(1)),
+            KeyCode::Enter => self.with_form(FormSession::lookup_confirm),
+            KeyCode::Char(' ') => self.with_form(FormSession::lookup_toggle_focused),
+            KeyCode::Backspace | KeyCode::Delete => {
+                self.with_form(FormSession::lookup_backspace);
+            }
+            KeyCode::Char(ch) if key.modifiers.is_empty() => {
+                self.with_form(|session| session.lookup_insert_char(ch));
+            }
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    fn lookup_fetch_command(&mut self) -> Vec<AppCommand> {
+        let Overlay::Form(session) = &self.overlay else {
+            return Vec::new();
+        };
+        let Some(picker) = &session.lookup else {
+            return Vec::new();
+        };
+        if !picker.loading || picker.request_id != 0 {
+            return Vec::new();
+        }
+        let resource_id = picker.resource_id.to_string();
+        let value_key = picker.value_key.to_string();
+        let generation = picker.generation;
+        let request_id = self.next_request();
+        if let Overlay::Form(session) = &mut self.overlay
+            && let Some(picker) = &mut session.lookup
+        {
+            picker.request_id = request_id;
+        }
+        vec![AppCommand::FetchLookup {
+            request_id,
+            generation,
+            resource_id,
+            value_key,
+        }]
     }
 
     fn with_form(&mut self, f: impl FnOnce(&mut FormSession)) {
@@ -1722,5 +1772,161 @@ mod console_tests {
         assert_eq!(app.console_layout_height(), 6);
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));
         assert_eq!(app.console_layout_height(), 22);
+    }
+}
+
+#[cfg(test)]
+mod lookup_picker_tests {
+    use std::collections::HashMap;
+
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use crate::app::{App, AppCommand, Overlay, Screen};
+    use crate::event::{AppEvent, WorkerMsg};
+    use mtui_ui::{FormSession, LOOKUP_TEST_FORM};
+
+    fn press(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn lookup_app() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        let mut values = HashMap::new();
+        values.insert("interface".into(), String::new());
+        values.insert("ports".into(), "ether1".into());
+        app.overlay = Overlay::Form(FormSession::prompt_fields(
+            "bridge",
+            "",
+            "copy",
+            &LOOKUP_TEST_FORM,
+            values,
+        ));
+        if let Overlay::Form(session) = &mut app.overlay {
+            session.original = session.values.clone();
+        }
+        app
+    }
+
+    #[test]
+    fn space_opens_lookup_and_returns_fetch() {
+        let mut app = lookup_app();
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed");
+        };
+        let picker = session.lookup.as_ref().expect("picker");
+        assert!(picker.loading);
+        assert_eq!(picker.resource_id, "interfaces");
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                AppCommand::FetchLookup {
+                    resource_id,
+                    value_key,
+                    ..
+                } if resource_id == "interfaces" && value_key == "name"
+            )),
+            "expected FetchLookup, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn worker_lookup_result_applies_and_ignores_stale() {
+        let mut app = lookup_app();
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        let Some(AppCommand::FetchLookup {
+            request_id,
+            generation,
+            ..
+        }) = cmds.into_iter().next()
+        else {
+            panic!("expected fetch");
+        };
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::LookupResult {
+            request_id: request_id.wrapping_add(1),
+            generation,
+            options: vec!["stale".into()],
+            error: None,
+        }));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed");
+        };
+        assert!(session.lookup.as_ref().unwrap().options.is_empty());
+        assert!(session.lookup.as_ref().unwrap().loading);
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::LookupResult {
+            request_id,
+            generation,
+            options: vec!["ether1".into(), "ether2".into()],
+            error: None,
+        }));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed");
+        };
+        assert_eq!(
+            session.lookup.as_ref().unwrap().options,
+            ["ether1", "ether2"]
+        );
+        assert!(!session.lookup.as_ref().unwrap().loading);
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::LookupResult {
+            request_id,
+            generation,
+            options: Vec::new(),
+            error: Some("timeout".into()),
+        }));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed");
+        };
+        assert_eq!(
+            session.lookup.as_ref().unwrap().error.as_deref(),
+            Some("timeout")
+        );
+    }
+
+    #[test]
+    fn enter_selects_single_lookup_value() {
+        let mut app = lookup_app();
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        let Some(AppCommand::FetchLookup {
+            request_id,
+            generation,
+            ..
+        }) = cmds.into_iter().next()
+        else {
+            panic!("expected fetch");
+        };
+        let _ = app.update(AppEvent::Worker(WorkerMsg::LookupResult {
+            request_id,
+            generation,
+            options: vec!["ether1".into(), "bridge".into()],
+            error: None,
+        }));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed");
+        };
+        assert!(session.lookup.is_none());
+        assert_eq!(
+            session.values.get("interface").map(String::as_str),
+            Some("bridge")
+        );
+    }
+
+    #[test]
+    fn esc_closes_lookup_picker_not_form() {
+        let mut app = lookup_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert!(matches!(app.overlay, Overlay::Form(_)));
+        let Overlay::Form(session) = &app.overlay else {
+            unreachable!();
+        };
+        assert!(session.lookup.is_none());
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert_eq!(app.overlay, Overlay::None);
     }
 }

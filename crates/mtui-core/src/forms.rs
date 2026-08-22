@@ -16,9 +16,16 @@ pub enum FieldKind {
     Text,
     Number,
     Toggle,
-    Enum { values: &'static [&'static str] },
+    Enum {
+        values: &'static [&'static str],
+    },
     Readonly,
     Secret,
+    Lookup {
+        resource_id: &'static str,
+        value_key: &'static str,
+        multiple: bool,
+    },
 }
 
 impl FieldKind {
@@ -37,6 +44,7 @@ impl FieldKind {
             Self::Enum { .. } => "select",
             Self::Readonly => "read",
             Self::Secret => "secret",
+            Self::Lookup { .. } => "lookup",
         }
     }
 
@@ -48,13 +56,17 @@ impl FieldKind {
             Self::Toggle => "space toggle",
             Self::Enum { .. } => "space cycle",
             Self::Readonly => "read only",
+            Self::Lookup { .. } => "space pick",
         }
     }
 
     /// Whether printable keys, including digits, should go into this field.
     #[must_use]
     pub fn takes_typed_input(self) -> bool {
-        matches!(self, Self::Text | Self::Number | Self::Secret)
+        matches!(
+            self,
+            Self::Text | Self::Number | Self::Secret | Self::Lookup { .. }
+        )
     }
 }
 
@@ -264,13 +276,47 @@ mod tests {
         );
         assert_eq!(FieldKind::Readonly.tag(), "read");
         assert_eq!(FieldKind::Secret.tag(), "secret");
+        assert_eq!(
+            FieldKind::Lookup {
+                resource_id: "interfaces",
+                value_key: "name",
+                multiple: false,
+            }
+            .tag(),
+            "lookup"
+        );
         assert_eq!(FieldKind::Text.edit_hint(), "type value");
         assert_eq!(FieldKind::Toggle.edit_hint(), "space toggle");
         assert_eq!(
             FieldKind::Enum { values: &["a"] }.edit_hint(),
             "space cycle"
         );
+        assert_eq!(
+            FieldKind::Lookup {
+                resource_id: "interfaces",
+                value_key: "name",
+                multiple: true,
+            }
+            .edit_hint(),
+            "space pick"
+        );
         assert!(FieldKind::Number.takes_typed_input());
+        assert!(
+            FieldKind::Lookup {
+                resource_id: "interfaces",
+                value_key: "name",
+                multiple: false,
+            }
+            .takes_typed_input()
+        );
+        assert!(
+            FieldKind::Lookup {
+                resource_id: "interfaces",
+                value_key: "name",
+                multiple: false,
+            }
+            .writable()
+        );
         assert!(!FieldKind::Toggle.takes_typed_input());
     }
 }
