@@ -8,6 +8,7 @@ mod forms;
 mod interface_write;
 mod resources;
 mod theme;
+mod wireguard_write;
 
 pub use actions::{
     ACTION_ADD, ACTION_COPY, ACTION_EDIT, ACTION_REMOVE, ACTION_RESET, ACTION_TOGGLE, ACTION_TORCH,

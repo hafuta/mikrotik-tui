@@ -436,14 +436,16 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("name", "Name", 18),
             col!("listen-port", "Listen", 8),
             col!("public-key", "Public key", 44),
+            col!("private-key", "Private key", 12),
             col!("mtu", "MTU", 7),
+            col!("vrf", "VRF", 12),
             col!("running", "Run", 5),
             col!("disabled", "Off", 5),
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::wireguard_write::WIREGUARD_FORM),
     },
     ResourceSpec {
         id: "wireguard-peers",
@@ -453,22 +455,25 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             endpoint: "/rest/interface/wireguard/peers",
         },
         columns: &[
+            col!("name", "Name", 18),
             col!("interface", "Interface", 16),
             col!("public-key", "Public key", 44),
             col!("endpoint-address", "Endpoint", 22),
             col!("endpoint-port", "Port", 8),
             col!("allowed-address", "Allowed", 28),
+            col!("persistent-keepalive", "Keepalive", 10),
+            col!("responder", "Responder", 10),
             col!("current-endpoint-address", "Current", 22),
+            col!("current-endpoint-port", "Cur port", 9),
             col!("last-handshake", "Handshake", 14),
             col!("rx", "RX", 12),
             col!("tx", "TX", 12),
-            col!("persistent-keepalive", "Keepalive", 10),
             col!("disabled", "Off", 5),
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::wireguard_write::WIREGUARD_PEER_FORM),
     },
     ResourceSpec {
         id: "macvlan",
@@ -1833,6 +1838,84 @@ mod tests {
                 .children
                 .iter()
                 .all(|item| item.id != "wireguard" && item.id != "wireguard-peers")
+        );
+    }
+
+    #[test]
+    fn wireguard_group_covers_webfig_screens() {
+        assert_eq!(
+            group_ids("wireguard-group"),
+            ["wireguard", "wireguard-peers"]
+        );
+        assert_unique_endpoints("wireguard-group");
+        assert_eq!(
+            column_keys("wireguard"),
+            [
+                "name",
+                "listen-port",
+                "public-key",
+                "private-key",
+                "mtu",
+                "vrf",
+                "running",
+                "disabled",
+                "comment",
+            ]
+        );
+        assert_eq!(
+            column_keys("wireguard-peers"),
+            [
+                "name",
+                "interface",
+                "public-key",
+                "endpoint-address",
+                "endpoint-port",
+                "allowed-address",
+                "persistent-keepalive",
+                "responder",
+                "current-endpoint-address",
+                "current-endpoint-port",
+                "last-handshake",
+                "rx",
+                "tx",
+                "disabled",
+                "comment",
+            ]
+        );
+        assert!(resource_by_id("wireguard").is_some_and(|spec| spec.form.is_some()));
+        assert!(resource_by_id("wireguard-peers").is_some_and(|spec| spec.form.is_some()));
+        let wg_actions: Vec<_> = resource_by_id("wireguard")
+            .expect("wireguard")
+            .actions
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(
+            wg_actions,
+            [
+                "add",
+                "edit",
+                "toggle-disabled",
+                "copy",
+                "remove",
+                "reset-counters"
+            ]
+        );
+        let peer_actions: Vec<_> = resource_by_id("wireguard-peers")
+            .expect("wireguard-peers")
+            .actions
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(
+            peer_actions,
+            ["add", "edit", "toggle-disabled", "copy", "remove"]
+        );
+        assert!(
+            ALL_RESOURCES
+                .iter()
+                .filter(|spec| spec.group == "wireguard-group")
+                .all(|spec| !spec.columns.is_empty())
         );
     }
 
