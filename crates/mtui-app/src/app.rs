@@ -1325,8 +1325,10 @@ mod dashboard_tests {
     }
 
     fn wan_interface(rx_byte: &str) -> Resource {
-        let mut iface = Resource::default();
-        iface.id = "*1".into();
+        let mut iface = Resource {
+            id: "*1".into(),
+            ..Resource::default()
+        };
         iface.fields.insert("name".into(), "pppoe-out1".into());
         iface.fields.insert("type".into(), "pppoe-out".into());
         iface.fields.insert("running".into(), "true".into());
@@ -1458,7 +1460,7 @@ mod dashboard_tests {
             header.iter().any(|part| part == "CPU 22%"),
             "stale core average still used: {header:?}"
         );
-        assert_eq!(app.dash.cpu_core_loads["cpu0"], 90.0);
+        assert!((app.dash.cpu_core_loads["cpu0"] - 90.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -1474,7 +1476,7 @@ mod dashboard_tests {
             None,
         )));
         assert!(cmds.is_empty());
-        assert!(app.router.fields.get("cpu-load").is_none());
+        assert!(!app.router.fields.contains_key("cpu-load"));
         assert_eq!(app.dash.memory_total_bytes, 0);
         assert!(!app.dash.traffic_has_base);
     }
@@ -1498,7 +1500,7 @@ mod dashboard_tests {
         }));
         assert!(cmds.is_empty());
         assert_eq!(app.status, "interfaces");
-        assert!(app.router.fields.get("cpu-load").is_none());
+        assert!(!app.router.fields.contains_key("cpu-load"));
         assert!(!app.dash.traffic_has_base);
     }
 
