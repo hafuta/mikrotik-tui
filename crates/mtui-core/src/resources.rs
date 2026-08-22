@@ -498,6 +498,44 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::interface_write::MACVLAN_FORM),
     },
     ResourceSpec {
+        id: "macsec",
+        group: "interfaces-group",
+        label: "MACsec",
+        fetch: FetchKind::List {
+            endpoint: "/rest/interface/macsec",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("interface", "Interface", 16),
+            col!("profile", "Profile", 14),
+            col!("mtu", "MTU", 7),
+            col!("status", "Status", 16),
+            col!("ckn", "CKN", 24),
+            col!("cak", "CAK", 10),
+            col!("running", "Run", 5),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::interface_write::MACSEC_FORM),
+    },
+    ResourceSpec {
+        id: "macsec-profiles",
+        group: "interfaces-group",
+        label: "MACsec Profile",
+        fetch: FetchKind::List {
+            endpoint: "/rest/interface/macsec/profile",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("server-priority", "Server priority", 16),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::interface_write::MACSEC_PROFILE_FORM),
+    },
+    ResourceSpec {
         id: "vrf",
         group: "interfaces-group",
         label: "VRF",
@@ -551,8 +589,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(15),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ppp_write::PPP_SECRET_FORM),
     },
     ResourceSpec {
         id: "ppp-profiles",
@@ -576,8 +614,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::ppp_write::PPP_PROFILE_FORM),
     },
     ResourceSpec {
         id: "ppp-active",
@@ -598,7 +636,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("limit-bytes-out", "Limit out", 12),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
+        actions: crate::actions::DISCONNECT_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -615,8 +653,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("enable-ipv6-accounting", "IPv6 acct", 10),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ppp_write::PPP_AAA_FORM),
     },
     ResourceSpec {
         id: "ppp-client",
@@ -638,8 +676,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::ppp_write::PPP_CLIENT_FORM),
     },
     ResourceSpec {
         id: "pppoe-clients",
@@ -664,8 +702,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::ppp_write::PPPOE_CLIENT_FORM),
     },
     ResourceSpec {
         id: "pppoe-servers",
@@ -688,8 +726,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(15),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ppp_write::PPPOE_SERVER_FORM),
     },
     ResourceSpec {
         id: "pppoe-server-ifaces",
@@ -708,7 +746,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
+        actions: crate::actions::DISCONNECT_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -730,8 +768,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::ppp_write::PPTP_CLIENT_FORM),
     },
     ResourceSpec {
         id: "pptp-server-ifaces",
@@ -748,7 +786,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
+        actions: crate::actions::DISCONNECT_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -768,8 +806,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("mrru", "MRRU", 8),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ppp_write::PPTP_SERVER_FORM),
     },
     ResourceSpec {
         id: "l2tp-client",
@@ -792,8 +830,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::ppp_write::L2TP_CLIENT_FORM),
     },
     ResourceSpec {
         id: "l2tp-server-ifaces",
@@ -810,7 +848,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
+        actions: crate::actions::DISCONNECT_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -832,8 +870,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("allow-fast-path", "Fast path", 10),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ppp_write::L2TP_SERVER_FORM),
     },
     ResourceSpec {
         id: "sstp-client",
@@ -856,8 +894,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::ppp_write::SSTP_CLIENT_FORM),
     },
     ResourceSpec {
         id: "sstp-server-ifaces",
@@ -874,7 +912,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
+        actions: crate::actions::DISCONNECT_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -896,8 +934,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("max-mru", "Max MRU", 8),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ppp_write::SSTP_SERVER_FORM),
     },
     ResourceSpec {
         id: "ovpn-client",
@@ -923,8 +961,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::ppp_write::OVPN_CLIENT_FORM),
     },
     ResourceSpec {
         id: "ovpn-server-ifaces",
@@ -941,7 +979,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
+        actions: crate::actions::DISCONNECT_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -963,8 +1001,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("require-client-certificate", "Client cert", 12),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ppp_write::OVPN_SERVER_FORM),
     },
     ResourceSpec {
         id: "bridges",
@@ -993,8 +1031,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
-        form: None,
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_FORM),
     },
     ResourceSpec {
         id: "bridge-ports",
@@ -1023,8 +1061,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_PORT_FORM),
     },
     ResourceSpec {
         id: "bridge-hosts",
@@ -1045,7 +1083,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("disabled", "Off", 5),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
+        actions: crate::actions::DISCONNECT_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -1067,8 +1105,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(15),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_VLAN_FORM),
     },
     ResourceSpec {
         id: "bridge-mdb",
@@ -1086,8 +1124,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("disabled", "Off", 5),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_MDB_FORM),
     },
     ResourceSpec {
         id: "bridge-msti",
@@ -1104,8 +1142,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_MSTI_FORM),
     },
     ResourceSpec {
         id: "bridge-filter",
@@ -1133,8 +1171,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::FILTER_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_FILTER_FORM),
     },
     ResourceSpec {
         id: "bridge-nat",
@@ -1159,8 +1197,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::FILTER_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_NAT_FORM),
     },
     ResourceSpec {
         id: "bridge-settings",
@@ -1181,8 +1219,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("bridge-fast-forward-bytes", "FF bytes", 12),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_SETTINGS_FORM),
     },
     ResourceSpec {
         id: "bridge-port-controller",
@@ -1197,8 +1235,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("cascade-ports", "Cascade", 28),
         ],
         refresh: Duration::from_secs(15),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_PORT_CONTROLLER_FORM),
     },
     ResourceSpec {
         id: "bridge-port-controller-device",
@@ -1215,8 +1253,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("status", "Status", 10),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
-        form: None,
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_PORT_CONTROLLER_DEVICE_FORM),
     },
     ResourceSpec {
         id: "bridge-port-controller-port",
@@ -1235,8 +1273,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("disabled", "Off", 5),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_PORT_CONTROLLER_PORT_FORM),
     },
     ResourceSpec {
         id: "bridge-port-extender",
@@ -1251,8 +1289,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("excluded-ports", "Excluded", 28),
         ],
         refresh: Duration::from_secs(15),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::bridge_write::BRIDGE_PORT_EXTENDER_FORM),
     },
     ResourceSpec {
         id: "switch",
@@ -1272,8 +1310,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("switch-all-ports", "All ports", 10),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
-        form: None,
+        actions: crate::actions::HARDWARE_EDIT_ACTIONS,
+        form: Some(&crate::switch_write::SWITCH_FORM),
     },
     ResourceSpec {
         id: "switch-port",
@@ -1296,8 +1334,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("mirror-egress", "Mir out", 8),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
-        form: None,
+        actions: crate::actions::HARDWARE_EDIT_ACTIONS,
+        form: Some(&crate::switch_write::SWITCH_PORT_FORM),
     },
     ResourceSpec {
         id: "switch-vlan",
@@ -1314,8 +1352,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("disabled", "Off", 5),
         ],
         refresh: Duration::from_secs(15),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::switch_write::SWITCH_VLAN_FORM),
     },
     ResourceSpec {
         id: "switch-host",
@@ -1337,7 +1375,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("invalid", "Bad", 5),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
+        actions: crate::actions::DISCONNECT_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -1367,8 +1405,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
-        form: None,
+        actions: crate::actions::FILTER_ACTIONS,
+        form: Some(&crate::switch_write::SWITCH_RULE_FORM),
     },
     ResourceSpec {
         id: "switch-port-isolation",
@@ -1383,8 +1421,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("forwarding-override", "Forward to", 36),
         ],
         refresh: Duration::from_secs(15),
-        actions: &[],
-        form: None,
+        actions: crate::actions::HARDWARE_EDIT_ACTIONS,
+        form: Some(&crate::switch_write::SWITCH_PORT_ISOLATION_FORM),
     },
     ResourceSpec {
         id: "switch-l3hw",
@@ -1401,8 +1439,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("hw-supports-fasttrack", "FT support", 11),
         ],
         refresh: Duration::from_secs(15),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::switch_write::SWITCH_L3HW_FORM),
     },
     ResourceSpec {
         id: "arp",
@@ -1419,8 +1457,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("dynamic", "Dyn", 5),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::ARP_ACTIONS,
+        form: Some(&crate::ip_write::ARP_FORM),
     },
     ResourceSpec {
         id: "addresses",
@@ -1437,8 +1475,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("disabled", "Off", 5),
         ],
         refresh: Duration::from_secs(15),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::ADDRESS_FORM),
     },
     ResourceSpec {
         id: "dhcp-servers",
@@ -1455,8 +1493,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("status", "Status", 10),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::DHCP_SERVER_FORM),
     },
     ResourceSpec {
         id: "dhcp-networks",
@@ -1472,8 +1510,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("domain", "Domain", 18),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::ip_write::DHCP_NETWORK_FORM),
     },
     ResourceSpec {
         id: "dhcp-leases",
@@ -1490,8 +1528,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("expires-after", "Expires", 12),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::LEASE_ACTIONS,
+        form: Some(&crate::ip_write::DHCP_LEASE_FORM),
     },
     ResourceSpec {
         id: "firewall-filter",
@@ -1518,8 +1556,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
-        form: None,
+        actions: crate::actions::FILTER_ACTIONS,
+        form: Some(&crate::ip_write::FIREWALL_FILTER_FORM),
     },
     ResourceSpec {
         id: "users",
@@ -1535,8 +1573,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("disabled", "Off", 5),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::system_write::USER_FORM),
     },
     ResourceSpec {
         id: "routerboard",
@@ -1569,8 +1607,8 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("status", "Status", 12),
         ],
         refresh: Duration::from_secs(30),
-        actions: &[],
-        form: None,
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::NTP_CLIENT_FORM),
     },
     ResourceSpec {
         id: "clock",
@@ -1586,8 +1624,811 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("gmt-offset", "Offset", 10),
         ],
         refresh: Duration::from_secs(10),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::CLOCK_FORM),
+    },
+    ResourceSpec {
+        id: "neighbors",
+        group: "ip-group",
+        label: "Neighbors",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/neighbor",
+        },
+        columns: &[
+            col!("interface", "Interface", 16),
+            col!("address", "Address", 18),
+            col!("mac-address", "MAC address", 18),
+            col!("identity", "Identity", 20),
+            col!("platform", "Platform", 14),
+            col!("version", "Version", 14),
+            col!("interface-name", "If name", 16),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: crate::actions::DISCONNECT_ACTIONS,
+        form: None,
+    },
+    ResourceSpec {
+        id: "dhcp-clients",
+        group: "ip-group",
+        label: "DHCP Client",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/dhcp-client",
+        },
+        columns: &[
+            col!("interface", "Interface", 16),
+            col!("status", "Status", 12),
+            col!("address", "Address", 20),
+            col!("gateway", "Gateway", 18),
+            col!("dhcp-server", "Server", 18),
+            col!("add-default-route", "Default", 8),
+            col!("use-peer-dns", "Peer DNS", 9),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::DHCP_CLIENT_FORM),
+    },
+    ResourceSpec {
+        id: "dns",
+        group: "ip-group",
+        label: "DNS",
+        fetch: FetchKind::System {
+            endpoint: "/rest/ip/dns",
+        },
+        columns: &[
+            col!("servers", "Servers", 28),
+            col!("allow-remote-requests", "Remote", 8),
+            col!("cache-size", "Cache", 10),
+            col!("cache-max-ttl", "Max TTL", 10),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ip_write::DNS_FORM),
+    },
+    ResourceSpec {
+        id: "dns-static",
+        group: "ip-group",
+        label: "Static DNS",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/dns/static",
+        },
+        columns: &[
+            col!("name", "Name", 24),
+            col!("address", "Address", 18),
+            col!("type", "Type", 8),
+            col!("ttl", "TTL", 10),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::DNS_STATIC_FORM),
+    },
+    ResourceSpec {
+        id: "routes",
+        group: "ip-group",
+        label: "Routes",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/route",
+        },
+        columns: &[
+            col!("dst-address", "Dst", 20),
+            col!("gateway", "Gateway", 18),
+            col!("distance", "Dist", 6),
+            col!("routing-table", "Table", 12),
+            col!("active", "Act", 5),
+            col!("static", "Static", 7),
+            col!("dynamic", "Dyn", 5),
+            col!("unreachable", "Unreach", 8),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::ROUTE_FORM),
+    },
+    ResourceSpec {
+        id: "pools",
+        group: "ip-group",
+        label: "Pool",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/pool",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("ranges", "Ranges", 36),
+            col!("next-pool", "Next", 18),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::ip_write::POOL_FORM),
+    },
+    ResourceSpec {
+        id: "ip-services",
+        group: "ip-group",
+        label: "Services",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/service",
+        },
+        columns: &[
+            col!("name", "Name", 14),
+            col!("port", "Port", 6),
+            col!("address", "Address", 20),
+            col!("certificate", "Certificate", 18),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::TOGGLE_EDIT_ACTIONS,
+        form: Some(&crate::ip_write::SERVICE_FORM),
+    },
+    ResourceSpec {
+        id: "ip-settings",
+        group: "ip-group",
+        label: "Settings",
+        fetch: FetchKind::System {
+            endpoint: "/rest/ip/settings",
+        },
+        columns: &[
+            col!("ip-forward", "Forward", 8),
+            col!("rp-filter", "RP filter", 12),
+            col!("tcp-syncookies", "Syncookies", 11),
+            col!("accept-redirects", "Accept redir", 13),
+            col!("send-redirects", "Send redir", 11),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ip_write::IP_SETTINGS_FORM),
+    },
+    ResourceSpec {
+        id: "firewall-nat",
+        group: "ip-group",
+        label: "NAT",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/firewall/nat",
+        },
+        columns: &[
+            col!("chain", "Chain", 10),
+            col!("action", "Action", 14),
+            col!("protocol", "Protocol", 9),
+            col!("src-address", "Source", 20),
+            col!("dst-address", "Destination", 20),
+            col!("dst-port", "Dst port", 10),
+            col!("to-addresses", "To addr", 20),
+            col!("to-ports", "To ports", 10),
+            col!("in-interface", "In interface", 16),
+            col!("out-interface", "Out interface", 16),
+            col!("packets", "Packets", 12),
+            col!("bytes", "Bytes", 14),
+            col!("disabled", "Off", 5),
+            col!("dynamic", "Dyn", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::FILTER_ACTIONS,
+        form: Some(&crate::ip_write::FIREWALL_NAT_FORM),
+    },
+    ResourceSpec {
+        id: "firewall-mangle",
+        group: "ip-group",
+        label: "Mangle",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/firewall/mangle",
+        },
+        columns: &[
+            col!("chain", "Chain", 10),
+            col!("action", "Action", 14),
+            col!("protocol", "Protocol", 9),
+            col!("src-address", "Source", 20),
+            col!("dst-address", "Destination", 20),
+            col!("in-interface", "In interface", 16),
+            col!("out-interface", "Out interface", 16),
+            col!("new-routing-mark", "Mark", 16),
+            col!("packets", "Packets", 12),
+            col!("bytes", "Bytes", 14),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::FILTER_ACTIONS,
+        form: Some(&crate::ip_write::FIREWALL_MANGLE_FORM),
+    },
+    ResourceSpec {
+        id: "address-list",
+        group: "ip-group",
+        label: "Address List",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/firewall/address-list",
+        },
+        columns: &[
+            col!("list", "List", 16),
+            col!("address", "Address", 20),
+            col!("timeout", "Timeout", 12),
+            col!("dynamic", "Dyn", 5),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::ADDRESS_LIST_FORM),
+    },
+    ResourceSpec {
+        id: "user-groups",
+        group: "system-group",
+        label: "User Groups",
+        fetch: FetchKind::List {
+            endpoint: "/rest/user/group",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("policy", "Policy", 36),
+            col!("skin", "Skin", 12),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::system_write::USER_GROUP_FORM),
+    },
+    ResourceSpec {
+        id: "identity",
+        group: "system-group",
+        label: "Identity",
+        fetch: FetchKind::System {
+            endpoint: "/rest/system/identity",
+        },
+        columns: &[col!("name", "Name", 28)],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::IDENTITY_FORM),
+    },
+    ResourceSpec {
+        id: "resources",
+        group: "system-group",
+        label: "Resources",
+        fetch: FetchKind::System {
+            endpoint: "/rest/system/resource",
+        },
+        columns: &[
+            col!("uptime", "Uptime", 12),
+            col!("version", "Version", 16),
+            col!("build-time", "Build", 20),
+            col!("cpu-load", "CPU", 6),
+            col!("free-memory", "Free mem", 12),
+            col!("total-memory", "Total mem", 12),
+            col!("cpu-count", "CPUs", 6),
+            col!("board-name", "Board", 18),
+            col!("architecture-name", "Arch", 10),
+        ],
+        refresh: Duration::from_secs(5),
         actions: &[],
         form: None,
+    },
+    ResourceSpec {
+        id: "health",
+        group: "system-group",
+        label: "Health",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/health",
+        },
+        columns: &[
+            col!("name", "Name", 20),
+            col!("value", "Value", 12),
+            col!("type", "Type", 12),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: &[],
+        form: None,
+    },
+    ResourceSpec {
+        id: "packages",
+        group: "system-group",
+        label: "Packages",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/package",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("version", "Version", 14),
+            col!("build-time", "Build", 20),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::TOGGLE_EDIT_ACTIONS,
+        form: Some(&crate::system_write::PACKAGE_FORM),
+    },
+    ResourceSpec {
+        id: "scheduler",
+        group: "system-group",
+        label: "Scheduler",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/scheduler",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("start-date", "Start date", 12),
+            col!("start-time", "Start time", 12),
+            col!("interval", "Interval", 12),
+            col!("on-event", "On event", 24),
+            col!("next-run", "Next", 16),
+            col!("run-count", "Runs", 8),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::system_write::SCHEDULER_FORM),
+    },
+    ResourceSpec {
+        id: "scripts",
+        group: "system-group",
+        label: "Scripts",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/script",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("owner", "Owner", 14),
+            col!("policy", "Policy", 28),
+            col!("dont-require-permissions", "No perms", 9),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::system_write::SCRIPT_FORM),
+    },
+    ResourceSpec {
+        id: "logging",
+        group: "system-group",
+        label: "Logging",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/logging",
+        },
+        columns: &[
+            col!("topics", "Topics", 24),
+            col!("action", "Action", 12),
+            col!("prefix", "Prefix", 14),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::system_write::LOGGING_FORM),
+    },
+    ResourceSpec {
+        id: "snmp",
+        group: "system-group",
+        label: "SNMP",
+        fetch: FetchKind::System {
+            endpoint: "/rest/snmp",
+        },
+        columns: &[
+            col!("enabled", "Enabled", 8),
+            col!("contact", "Contact", 20),
+            col!("location", "Location", 20),
+            col!("engine-id", "Engine", 18),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::SNMP_FORM),
+    },
+    ResourceSpec {
+        id: "snmp-communities",
+        group: "system-group",
+        label: "SNMP Communities",
+        fetch: FetchKind::List {
+            endpoint: "/rest/snmp/community",
+        },
+        columns: &[
+            col!("name", "Name", 16),
+            col!("addresses", "Addresses", 24),
+            col!("security", "Security", 12),
+            col!("authentication-password", "Auth", 10),
+            col!("encryption-password", "Encrypt", 10),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::system_write::SNMP_COMMUNITY_FORM),
+    },
+    ResourceSpec {
+        id: "certificates",
+        group: "system-group",
+        label: "Certificates",
+        fetch: FetchKind::List {
+            endpoint: "/rest/certificate",
+        },
+        columns: &[
+            col!("name", "Name", 20),
+            col!("common-name", "CN", 24),
+            col!("key-usage", "Usage", 24),
+            col!("trusted", "Trust", 6),
+            col!("invalid-after", "Expires", 20),
+            col!("fingerprint", "Fingerprint", 20),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::system_write::CERTIFICATE_FORM),
+    },
+    ResourceSpec {
+        id: "watchdog",
+        group: "system-group",
+        label: "Watchdog",
+        fetch: FetchKind::System {
+            endpoint: "/rest/system/watchdog",
+        },
+        columns: &[
+            col!("watch-address", "Watch", 18),
+            col!("watch-interval", "Interval", 10),
+            col!("automatic-supout", "Supout", 8),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::WATCHDOG_FORM),
+    },
+    ResourceSpec {
+        id: "note",
+        group: "system-group",
+        label: "Note",
+        fetch: FetchKind::System {
+            endpoint: "/rest/system/note",
+        },
+        columns: &[col!("show-at-login", "Login", 8), col!("note", "Note", 48)],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::NOTE_FORM),
+    },
+    ResourceSpec {
+        id: "ipv6-addresses",
+        group: "ipv6-group",
+        label: "Addresses",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ipv6/address",
+        },
+        columns: &[
+            col!("address", "Address", 28),
+            col!("interface", "Interface", 16),
+            col!("advertise", "Adv", 5),
+            col!("eui-64", "EUI-64", 7),
+            col!("dynamic", "Dyn", 5),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ipv6_write::IPV6_ADDRESS_FORM),
+    },
+    ResourceSpec {
+        id: "ipv6-neighbors",
+        group: "ipv6-group",
+        label: "Neighbors",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ipv6/neighbor",
+        },
+        columns: &[
+            col!("address", "Address", 28),
+            col!("interface", "Interface", 16),
+            col!("mac-address", "MAC address", 18),
+            col!("status", "Status", 12),
+            col!("origin", "Origin", 10),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::ipv6_write::IPV6_NEIGHBOR_FORM),
+    },
+    ResourceSpec {
+        id: "ipv6-nd",
+        group: "ipv6-group",
+        label: "ND",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ipv6/nd",
+        },
+        columns: &[
+            col!("interface", "Interface", 16),
+            col!("ra-interval", "RA interval", 12),
+            col!("advertise-mac-address", "Adv MAC", 8),
+            col!("advertise-dns", "Adv DNS", 8),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ipv6_write::IPV6_ND_FORM),
+    },
+    ResourceSpec {
+        id: "ipv6-routes",
+        group: "ipv6-group",
+        label: "Routes",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ipv6/route",
+        },
+        columns: &[
+            col!("dst-address", "Dst", 28),
+            col!("gateway", "Gateway", 28),
+            col!("distance", "Dist", 6),
+            col!("routing-table", "Table", 12),
+            col!("active", "Act", 5),
+            col!("dynamic", "Dyn", 5),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ipv6_write::IPV6_ROUTE_FORM),
+    },
+    ResourceSpec {
+        id: "ipv6-pool",
+        group: "ipv6-group",
+        label: "Pool",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ipv6/pool",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("prefix", "Prefix", 28),
+            col!("prefix-length", "Len", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::ipv6_write::IPV6_POOL_FORM),
+    },
+    ResourceSpec {
+        id: "ipv6-settings",
+        group: "ipv6-group",
+        label: "Settings",
+        fetch: FetchKind::System {
+            endpoint: "/rest/ipv6/settings",
+        },
+        columns: &[
+            col!("forward", "Forward", 8),
+            col!("accept-redirects", "Redirects", 10),
+            col!("max-neighbor-entries", "ND max", 8),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ipv6_write::IPV6_SETTINGS_FORM),
+    },
+    ResourceSpec {
+        id: "ipv6-firewall-filter",
+        group: "ipv6-group",
+        label: "Firewall",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ipv6/firewall/filter",
+        },
+        columns: &[
+            col!("chain", "Chain", 10),
+            col!("action", "Action", 12),
+            col!("src-address", "Source", 24),
+            col!("dst-address", "Destination", 24),
+            col!("protocol", "Protocol", 9),
+            col!("in-interface", "In interface", 16),
+            col!("out-interface", "Out interface", 16),
+            col!("packets", "Packets", 12),
+            col!("bytes", "Bytes", 14),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::FILTER_ACTIONS,
+        form: Some(&crate::ipv6_write::IPV6_FIREWALL_FILTER_FORM),
+    },
+    ResourceSpec {
+        id: "routing-tables",
+        group: "routing-group",
+        label: "Tables",
+        fetch: FetchKind::List {
+            endpoint: "/rest/routing/table",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("fib", "FIB", 5),
+            col!("dynamic", "Dyn", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::routing_write::ROUTING_TABLE_FORM),
+    },
+    ResourceSpec {
+        id: "routing-rules",
+        group: "routing-group",
+        label: "Rules",
+        fetch: FetchKind::List {
+            endpoint: "/rest/routing/rule",
+        },
+        columns: &[
+            col!("src-address", "Source", 20),
+            col!("dst-address", "Destination", 20),
+            col!("routing-mark", "Mark", 14),
+            col!("action", "Action", 12),
+            col!("table", "Table", 14),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::routing_write::ROUTING_RULE_FORM),
+    },
+    ResourceSpec {
+        id: "ospf-instances",
+        group: "routing-group",
+        label: "OSPF",
+        fetch: FetchKind::List {
+            endpoint: "/rest/routing/ospf/instance",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("version", "Ver", 5),
+            col!("router-id", "Router ID", 16),
+            col!("originate-default", "Default", 12),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::routing_write::OSPF_INSTANCE_FORM),
+    },
+    ResourceSpec {
+        id: "bgp-connections",
+        group: "routing-group",
+        label: "BGP",
+        fetch: FetchKind::List {
+            endpoint: "/rest/routing/bgp/connection",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("remote.address", "Remote", 18),
+            col!("remote.as", "Remote AS", 10),
+            col!("local.role", "Role", 12),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::routing_write::BGP_CONNECTION_FORM),
+    },
+    ResourceSpec {
+        id: "queue-simple",
+        group: "queue-group",
+        label: "Simple",
+        fetch: FetchKind::List {
+            endpoint: "/rest/queue/simple",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("target", "Target", 24),
+            col!("max-limit", "Max limit", 18),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::queue_write::QUEUE_SIMPLE_FORM),
+    },
+    ResourceSpec {
+        id: "queue-tree",
+        group: "queue-group",
+        label: "Tree",
+        fetch: FetchKind::List {
+            endpoint: "/rest/queue/tree",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("parent", "Parent", 16),
+            col!("packet-mark", "Mark", 16),
+            col!("max-limit", "Max limit", 14),
+            col!("priority", "Prio", 6),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::queue_write::QUEUE_TREE_FORM),
+    },
+    ResourceSpec {
+        id: "queue-type",
+        group: "queue-group",
+        label: "Queue Type",
+        fetch: FetchKind::List {
+            endpoint: "/rest/queue/type",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("kind", "Kind", 12),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::queue_write::QUEUE_TYPE_FORM),
+    },
+    ResourceSpec {
+        id: "queue-interface",
+        group: "queue-group",
+        label: "Interface",
+        fetch: FetchKind::List {
+            endpoint: "/rest/queue/interface",
+        },
+        columns: &[
+            col!("interface", "Interface", 18),
+            col!("queue", "Queue", 18),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::HARDWARE_EDIT_ACTIONS,
+        form: Some(&crate::queue_write::QUEUE_INTERFACE_FORM),
+    },
+    ResourceSpec {
+        id: "files",
+        group: "files-group",
+        label: "Files",
+        fetch: FetchKind::List {
+            endpoint: "/rest/file",
+        },
+        columns: &[
+            col!("name", "Name", 40),
+            col!("type", "Type", 12),
+            col!("size", "Size", 12),
+            col!("creation-time", "Created", 20),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: crate::actions::DISCONNECT_ACTIONS,
+        form: None,
+    },
+    ResourceSpec {
+        id: "netwatch",
+        group: "tools-group",
+        label: "Netwatch",
+        fetch: FetchKind::List {
+            endpoint: "/rest/tool/netwatch",
+        },
+        columns: &[
+            col!("host", "Host", 22),
+            col!("type", "Type", 10),
+            col!("interval", "Interval", 10),
+            col!("status", "Status", 10),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::tools_write::NETWATCH_FORM),
+    },
+    ResourceSpec {
+        id: "email",
+        group: "tools-group",
+        label: "Email",
+        fetch: FetchKind::System {
+            endpoint: "/rest/tool/email",
+        },
+        columns: &[
+            col!("server", "Server", 22),
+            col!("from", "From", 24),
+            col!("user", "User", 18),
+            col!("password", "Password", 10),
+            col!("tls", "TLS", 10),
+            col!("port", "Port", 6),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::tools_write::EMAIL_FORM),
+    },
+    ResourceSpec {
+        id: "radius",
+        group: "radius-group",
+        label: "RADIUS",
+        fetch: FetchKind::List {
+            endpoint: "/rest/radius",
+        },
+        columns: &[
+            col!("address", "Address", 18),
+            col!("protocol", "Proto", 8),
+            col!("secret", "Secret", 10),
+            col!("service", "Service", 16),
+            col!("timeout", "Timeout", 10),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::radius_write::RADIUS_FORM),
     },
     ResourceSpec {
         id: "logs",
@@ -1645,6 +2486,30 @@ pub static NAVIGATION: &[NavGroup] = &[
     NavGroup {
         id: "ip-group",
         label: "IP",
+    },
+    NavGroup {
+        id: "ipv6-group",
+        label: "IPv6",
+    },
+    NavGroup {
+        id: "routing-group",
+        label: "Routing",
+    },
+    NavGroup {
+        id: "queue-group",
+        label: "Queues",
+    },
+    NavGroup {
+        id: "files-group",
+        label: "Files",
+    },
+    NavGroup {
+        id: "tools-group",
+        label: "Tools",
+    },
+    NavGroup {
+        id: "radius-group",
+        label: "RADIUS",
     },
     NavGroup {
         id: "system-group",
@@ -1791,6 +2656,8 @@ mod tests {
                 "wifi",
                 "wireless",
                 "macvlan",
+                "macsec",
+                "macsec-profiles",
                 "vrf",
                 "detect-internet",
             ]
@@ -1806,6 +2673,30 @@ mod tests {
         assert_eq!(unique.len(), endpoints.len());
         assert!(resource_by_id("detect-internet").is_some_and(ResourceSpec::is_singleton));
         assert!(!resource_by_id("vlan").is_some_and(ResourceSpec::is_singleton));
+        assert_eq!(
+            column_keys("macsec"),
+            [
+                "name",
+                "interface",
+                "profile",
+                "mtu",
+                "status",
+                "ckn",
+                "cak",
+                "running",
+                "disabled",
+                "comment",
+            ]
+        );
+        assert_eq!(column_keys("macsec-profiles"), ["name", "server-priority"]);
+        assert_eq!(
+            resource_by_id("macsec").map(ResourceSpec::endpoint),
+            Some("/rest/interface/macsec")
+        );
+        assert_eq!(
+            resource_by_id("macsec-profiles").map(ResourceSpec::endpoint),
+            Some("/rest/interface/macsec/profile")
+        );
         assert!(
             ALL_RESOURCES
                 .iter()
@@ -1955,6 +2846,9 @@ mod tests {
         assert!(!resource_by_id("ppp-secrets").is_some_and(ResourceSpec::is_singleton));
         assert!(column_keys("ppp-secrets").contains(&"password"));
         assert!(column_keys("l2tp-client").contains(&"ipsec-secret"));
+        assert!(resource_by_id("ppp-secrets").is_some_and(|spec| spec.form.is_some()));
+        assert!(resource_by_id("ppp-aaa").is_some_and(|spec| spec.form.is_some()));
+        assert!(resource_by_id("ppp-active").is_some_and(|spec| spec.form.is_none()));
         assert!(
             ALL_RESOURCES
                 .iter()
@@ -2059,6 +2953,105 @@ mod tests {
                 .filter(|spec| spec.group == "switch-group")
                 .all(|spec| !spec.columns.is_empty())
         );
+    }
+
+    #[test]
+    fn ip_group_covers_webfig_operator_screens() {
+        assert_eq!(
+            group_ids("ip-group"),
+            [
+                "arp",
+                "addresses",
+                "dhcp-servers",
+                "dhcp-networks",
+                "dhcp-leases",
+                "firewall-filter",
+                "neighbors",
+                "dhcp-clients",
+                "dns",
+                "dns-static",
+                "routes",
+                "pools",
+                "ip-services",
+                "ip-settings",
+                "firewall-nat",
+                "firewall-mangle",
+                "address-list",
+            ]
+        );
+        assert_unique_endpoints("ip-group");
+        assert!(resource_by_id("dns").is_some_and(ResourceSpec::is_singleton));
+        assert!(resource_by_id("routes").is_some_and(|spec| spec.form.is_some()));
+        assert!(resource_by_id("neighbors").is_some_and(|spec| spec.form.is_none()));
+    }
+
+    #[test]
+    fn new_webfig_groups_exist() {
+        assert_eq!(
+            group_ids("ipv6-group"),
+            [
+                "ipv6-addresses",
+                "ipv6-neighbors",
+                "ipv6-nd",
+                "ipv6-routes",
+                "ipv6-pool",
+                "ipv6-settings",
+                "ipv6-firewall-filter",
+            ]
+        );
+        assert_eq!(
+            group_ids("routing-group"),
+            [
+                "routing-tables",
+                "routing-rules",
+                "ospf-instances",
+                "bgp-connections",
+            ]
+        );
+        assert_eq!(
+            group_ids("queue-group"),
+            [
+                "queue-simple",
+                "queue-tree",
+                "queue-type",
+                "queue-interface",
+            ]
+        );
+        assert_eq!(group_ids("files-group"), ["files"]);
+        assert_eq!(group_ids("tools-group"), ["netwatch", "email"]);
+        assert_eq!(group_ids("radius-group"), ["radius"]);
+        for group in [
+            "ipv6-group",
+            "routing-group",
+            "queue-group",
+            "files-group",
+            "tools-group",
+            "radius-group",
+        ] {
+            assert_unique_endpoints(group);
+        }
+        let tree = navigation_tree();
+        let labels: Vec<_> = tree.iter().map(|item| item.id.as_str()).collect();
+        assert!(labels.contains(&"ipv6-group"));
+        assert!(labels.contains(&"radius-group"));
+        assert_eq!(labels.last().copied(), Some("system-group"));
+    }
+
+    #[test]
+    fn mutations_require_forms_except_remove_only_rows() {
+        for spec in ALL_RESOURCES {
+            if spec.actions.is_empty() {
+                continue;
+            }
+            let ids: Vec<_> = spec.actions.iter().map(|action| action.id).collect();
+            if ids == ["remove"] {
+                assert!(spec.form.is_none(), "{} should be remove-only", spec.id);
+            } else {
+                assert!(spec.form.is_some(), "{} needs a property sheet", spec.id);
+            }
+        }
+        assert!(resource_by_id("logs").is_some_and(|spec| spec.actions.is_empty()));
+        assert!(resource_by_id("routerboard").is_some_and(|spec| spec.actions.is_empty()));
     }
 
     fn group_ids(group: &str) -> Vec<&'static str> {

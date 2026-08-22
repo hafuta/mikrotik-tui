@@ -474,6 +474,60 @@ pub static MACVLAN_FORM: FormSchema = FormSchema {
     }],
 };
 
+pub static MACSEC_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["interface", "status"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                NAME,
+                f!("interface", "Interface", FieldKind::Text),
+                f!("profile", "Profile", FieldKind::Text),
+                MTU,
+                f!("cak", "CAK", FieldKind::Secret),
+                f!("ckn", "CKN", FieldKind::Text),
+                COMMENT,
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[f!("status", "Status", FieldKind::Readonly), RUNNING],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("interface", "Interface", FieldKind::Text)],
+    }],
+};
+
+pub static MACSEC_PROFILE_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["server-priority"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("server-priority", "Server priority", FieldKind::Number),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
 pub static LIST_FORM: FormSchema = FormSchema {
     title_key: "name",
     subtitle_keys: &[],
@@ -687,3 +741,54 @@ pub static WIRELESS_FORM: FormSchema = FormSchema {
         ],
     }],
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forms::patch_body;
+    use std::collections::HashMap;
+
+    fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
+        schema
+            .create_sections
+            .iter()
+            .flat_map(|section| section.fields.iter().map(|field| field.key))
+            .collect()
+    }
+
+    #[test]
+    fn macsec_create_is_name_and_parent_interface() {
+        assert_eq!(create_keys(&MACSEC_FORM), ["name", "interface"]);
+        assert_eq!(create_keys(&MACSEC_PROFILE_FORM), ["name"]);
+        assert_eq!(
+            MACSEC_FORM.field("cak").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert!(MACSEC_FORM.writable_keys().contains(&"ckn"));
+        assert!(
+            MACSEC_FORM
+                .sections
+                .iter()
+                .all(|section| section.id != "advanced")
+        );
+        assert!(MACSEC_FORM.known_keys().contains(&"status"));
+        assert_eq!(
+            MACSEC_PROFILE_FORM.known_keys(),
+            ["name", "server-priority"]
+        );
+    }
+
+    #[test]
+    fn patch_body_omits_masked_macsec_cak() {
+        let mut original = HashMap::new();
+        original.insert("name".into(), "macsec1".into());
+        original.insert("interface".into(), "ether1".into());
+        original.insert("cak".into(), "********".into());
+        original.insert("ckn".into(), "aa".into());
+        let mut current = original.clone();
+        current.insert("comment".into(), "peer".into());
+        let body = patch_body(&MACSEC_FORM, &original, &current, "********");
+        assert!(!body.contains_key("cak"));
+        assert_eq!(body.get("comment").map(String::as_str), Some("peer"));
+    }
+}

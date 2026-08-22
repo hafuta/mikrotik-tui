@@ -4,10 +4,20 @@
 //! palettes; concrete styling belongs in `mtui-ui`.
 
 mod actions;
+mod bridge_write;
 mod forms;
 mod interface_write;
+mod ip_write;
+mod ipv6_write;
+mod ppp_write;
+mod queue_write;
+mod radius_write;
 mod resources;
+mod routing_write;
+mod switch_write;
+mod system_write;
 mod theme;
+mod tools_write;
 mod wireguard_write;
 
 pub use actions::{
