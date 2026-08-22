@@ -8,6 +8,11 @@
 //! - `ipv6-pool` → `/rest/ipv6/pool` (`IPV6_POOL_FORM`)
 //! - `ipv6-settings` → `/rest/ipv6/settings` (`IPV6_SETTINGS_FORM`)
 //! - `ipv6-firewall-filter` → `/rest/ipv6/firewall/filter` (`IPV6_FIREWALL_FILTER_FORM`)
+//! - `ipv6-dhcp-client` → `/rest/ipv6/dhcp-client` (`IPV6_DHCP_CLIENT_FORM`, `MEMBER_ACTIONS`)
+//! - `ipv6-dhcp-server` → `/rest/ipv6/dhcp-server` (`IPV6_DHCP_SERVER_FORM`, `MEMBER_ACTIONS`)
+//! - `ipv6-nd-prefix` → `/rest/ipv6/nd/prefix` (`IPV6_ND_PREFIX_FORM`, `MEMBER_ACTIONS`)
+//! - `ipv6-firewall-nat` → `/rest/ipv6/firewall/nat` (`IPV6_FIREWALL_NAT_FORM`, `FILTER_ACTIONS`)
+//! - `ipv6-address-list` → `/rest/ipv6/firewall/address-list` (`IPV6_ADDRESS_LIST_FORM`, `MEMBER_ACTIONS`)
 //!
 //! Group id: `ipv6-group`.
 
@@ -38,6 +43,16 @@ const LOOKUP_ROUTING_TABLE: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_IPV6_POOL: FieldKind = FieldKind::Lookup {
+    resource_id: "ipv6-pool",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_IPV6_ADDRESS_LIST: FieldKind = FieldKind::Lookup {
+    resource_id: "ipv6-address-list",
+    value_key: "list",
+    multiple: false,
+};
 
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Text);
 const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
@@ -56,6 +71,28 @@ const OUT_INTERFACE_LIST: FieldSpec = f!(
     LOOKUP_IFACE_LIST
 );
 const ROUTING_TABLE: FieldSpec = f!("routing-table", "Routing table", LOOKUP_ROUTING_TABLE);
+const NAT_CHAIN: FieldSpec = f!(
+    "chain",
+    "Chain",
+    FieldKind::Enum {
+        values: &["srcnat", "dstnat"],
+    }
+);
+const ADDRESS_POOL: FieldSpec = f!("address-pool", "Address pool", LOOKUP_IPV6_POOL);
+const SRC_ADDRESS: FieldSpec = f!("src-address", "Src address", FieldKind::Text);
+const DST_ADDRESS: FieldSpec = f!("dst-address", "Dst address", FieldKind::Text);
+const SRC_ADDRESS_LIST: FieldSpec = f!(
+    "src-address-list",
+    "Src address list",
+    LOOKUP_IPV6_ADDRESS_LIST
+);
+const DST_ADDRESS_LIST: FieldSpec = f!(
+    "dst-address-list",
+    "Dst address list",
+    LOOKUP_IPV6_ADDRESS_LIST
+);
+const ADDRESS_LIST_NAME: FieldSpec = f!("list", "List", LOOKUP_IPV6_ADDRESS_LIST);
+const PREFIX: FieldSpec = f!("prefix", "Prefix", FieldKind::Text);
 
 pub static IPV6_ADDRESS_FORM: FormSchema = FormSchema {
     title_key: "address",
@@ -278,6 +315,170 @@ pub static IPV6_FIREWALL_FILTER_FORM: FormSchema = FormSchema {
     }],
 };
 
+pub static IPV6_DHCP_CLIENT_FORM: FormSchema = FormSchema {
+    title_key: "interface",
+    subtitle_keys: &["status"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                INTERFACE,
+                f!("pool-name", "Pool name", FieldKind::Text),
+                f!("request", "Request", FieldKind::Text),
+                f!("add-default-route", "Default route", FieldKind::Toggle),
+                COMMENT,
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("status", "Status", FieldKind::Readonly),
+                f!("prefix", "Prefix", FieldKind::Readonly),
+                f!("expires-after", "Expires after", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[INTERFACE],
+    }],
+};
+
+pub static IPV6_DHCP_SERVER_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["interface"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            INTERFACE,
+            ADDRESS_POOL,
+            f!("lease-time", "Lease time", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, INTERFACE],
+    }],
+};
+
+pub static IPV6_ND_PREFIX_FORM: FormSchema = FormSchema {
+    title_key: "prefix",
+    subtitle_keys: &["interface"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            PREFIX,
+            INTERFACE,
+            f!("advertise", "Advertise", FieldKind::Toggle),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[PREFIX, INTERFACE],
+    }],
+};
+
+pub static IPV6_FIREWALL_NAT_FORM: FormSchema = FormSchema {
+    title_key: "chain",
+    subtitle_keys: &["action"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                NAT_CHAIN,
+                ACTION,
+                f!("protocol", "Protocol", FieldKind::Text),
+                SRC_ADDRESS,
+                SRC_ADDRESS_LIST,
+                DST_ADDRESS,
+                DST_ADDRESS_LIST,
+                f!("dst-port", "Dst port", FieldKind::Text),
+                f!("to-addresses", "To addresses", FieldKind::Text),
+                f!("to-ports", "To ports", FieldKind::Text),
+                IN_INTERFACE,
+                IN_INTERFACE_LIST,
+                OUT_INTERFACE,
+                OUT_INTERFACE_LIST,
+                COMMENT,
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("packets", "Packets", FieldKind::Readonly),
+                f!("bytes", "Bytes", FieldKind::Readonly),
+                f!("dynamic", "Dynamic", FieldKind::Readonly),
+                f!("invalid", "Invalid", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAT_CHAIN, ACTION],
+    }],
+};
+
+pub static IPV6_ADDRESS_LIST_FORM: FormSchema = FormSchema {
+    title_key: "list",
+    subtitle_keys: &["address"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                ADDRESS_LIST_NAME,
+                ADDRESS,
+                f!("timeout", "Timeout", FieldKind::Text),
+                COMMENT,
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("dynamic", "Dynamic", FieldKind::Readonly),
+                f!("creation-time", "Creation time", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[ADDRESS_LIST_NAME, ADDRESS],
+    }],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,6 +642,78 @@ mod tests {
                 .iter()
                 .all(|section| section.id != "advanced")
         );
+    }
+
+    #[test]
+    fn ipv6_operator_create_keys_and_lookups() {
+        assert_eq!(create_keys(&IPV6_DHCP_CLIENT_FORM), ["interface"]);
+        assert_eq!(create_keys(&IPV6_DHCP_SERVER_FORM), ["name", "interface"]);
+        assert_eq!(create_keys(&IPV6_ND_PREFIX_FORM), ["prefix", "interface"]);
+        assert_eq!(create_keys(&IPV6_FIREWALL_NAT_FORM), ["chain", "action"]);
+        assert_eq!(create_keys(&IPV6_ADDRESS_LIST_FORM), ["list", "address"]);
+
+        assert_lookup(&IPV6_DHCP_CLIENT_FORM, "interface", "interfaces", "name");
+        assert_lookup(&IPV6_DHCP_SERVER_FORM, "interface", "interfaces", "name");
+        assert_lookup(&IPV6_DHCP_SERVER_FORM, "address-pool", "ipv6-pool", "name");
+        assert_lookup(&IPV6_ND_PREFIX_FORM, "interface", "interfaces", "name");
+        assert_lookup(
+            &IPV6_FIREWALL_NAT_FORM,
+            "in-interface",
+            "interfaces",
+            "name",
+        );
+        assert_lookup(
+            &IPV6_FIREWALL_NAT_FORM,
+            "out-interface",
+            "interfaces",
+            "name",
+        );
+        assert_lookup(
+            &IPV6_FIREWALL_NAT_FORM,
+            "in-interface-list",
+            "interface-lists",
+            "name",
+        );
+        assert_lookup(
+            &IPV6_FIREWALL_NAT_FORM,
+            "out-interface-list",
+            "interface-lists",
+            "name",
+        );
+        assert_lookup(
+            &IPV6_FIREWALL_NAT_FORM,
+            "src-address-list",
+            "ipv6-address-list",
+            "list",
+        );
+        assert_lookup(
+            &IPV6_FIREWALL_NAT_FORM,
+            "dst-address-list",
+            "ipv6-address-list",
+            "list",
+        );
+        assert_lookup(&IPV6_ADDRESS_LIST_FORM, "list", "ipv6-address-list", "list");
+        assert_eq!(
+            IPV6_FIREWALL_NAT_FORM
+                .field("chain")
+                .map(|field| field.kind),
+            Some(FieldKind::Enum {
+                values: &["srcnat", "dstnat"],
+            })
+        );
+        assert!(
+            IPV6_FIREWALL_NAT_FORM
+                .writable_keys()
+                .contains(&"to-addresses")
+        );
+        assert!(!IPV6_DHCP_CLIENT_FORM.writable_keys().contains(&"status"));
+        assert!(!IPV6_DHCP_CLIENT_FORM.writable_keys().contains(&"prefix"));
+        assert!(
+            !IPV6_DHCP_CLIENT_FORM
+                .writable_keys()
+                .contains(&"expires-after")
+        );
+        assert!(!IPV6_ADDRESS_LIST_FORM.writable_keys().contains(&"dynamic"));
     }
 
     #[test]

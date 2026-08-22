@@ -628,6 +628,25 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "address, mac-address, client-id, server, status, expires-after, host-name."
     ),
     guide!(
+        "dhcp-relay",
+        "Forwards DHCP between a client LAN and a DHCP server on another network.",
+        "Use when the DHCP server is not on this broadcast domain. The relay interface is \
+         the client side; dhcp-server is the real server address.",
+        "name, interface, dhcp-server, local-address, disabled."
+    ),
+    guide!(
+        "dhcp-options",
+        "Named DHCP option codes and values that networks or option sets can attach.",
+        "Define vendor or extra options once, then reference them from a network or set.",
+        "name, code, value."
+    ),
+    guide!(
+        "dhcp-option-sets",
+        "Named groups of DHCP options applied together.",
+        "Attach a set to a DHCP network instead of listing every option on that network.",
+        "name, options (list of option names)."
+    ),
+    guide!(
         "firewall-filter",
         "IPv4 filter: accept, drop, reject, fasttrack, jump — the main packet policy table.",
         "Control what the router forwards or accepts. Chains input/forward/output are the \
@@ -650,6 +669,13 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "chain, action (mark-connection/packet/routing), new-*-mark, passthrough, matchers."
     ),
     guide!(
+        "firewall-raw",
+        "IPv4 raw table: prerouting/output before connection tracking.",
+        "Drop or notrack early, or exempt traffic from conntrack. Most policy still belongs \
+         in filter.",
+        "chain (prerouting/output), action, address and interface matchers, packets/bytes."
+    ),
+    guide!(
         "firewall-connections",
         "IPv4 connection tracking table: live conntrack entries the firewall is following.",
         "Inspect who is talking through the router. Remove drops that tracked entry so the \
@@ -663,6 +689,19 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "Named IPv4 address lists referenced by firewall matchers (and some other menus).",
         "Group IPs/prefixes for allowlists, blocks, or PCC. Timeouts make dynamic entries.",
         "list, address, timeout, dynamic, creation-time."
+    ),
+    guide!(
+        "firewall-layer7",
+        "Named regular expressions used as layer7-protocol matchers in firewall rules.",
+        "Match application payloads when ports are not enough. Regex is costly; keep it rare.",
+        "name, regexp."
+    ),
+    guide!(
+        "firewall-service-port",
+        "Helper services (ftp, h323, sip, …) the firewall can inspect or disable.",
+        "Turn a helper off if it breaks NAT or is unused. These rows are built-in; you do \
+         not add new names.",
+        "name, ports, disabled."
     ),
     guide!(
         "ipsec-peers",
@@ -798,6 +837,12 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "interface, ra-interval, advertise-dns, mtu, hop-limit, managed-address-configuration."
     ),
     guide!(
+        "ipv6-nd-prefix",
+        "Prefixes advertised in IPv6 Router Advertisements on an interface.",
+        "Publish which prefix LAN hosts may use. Distinct from the ND interface settings.",
+        "prefix, interface, advertise, disabled."
+    ),
+    guide!(
         "ipv6-routes",
         "IPv6 routing table (static and dynamic).",
         "Same idea as IPv4 routes: dst-prefix, gateway, distance, VRF/table.",
@@ -810,6 +855,18 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "name, prefix, prefix-length."
     ),
     guide!(
+        "ipv6-dhcp-client",
+        "DHCPv6 client: request a prefix or address on an interface.",
+        "Typical WAN PD: request prefix, store it in a pool, then advertise on LAN via ND.",
+        "interface, pool-name, request, add-default-route, status, prefix, expires-after."
+    ),
+    guide!(
+        "ipv6-dhcp-server",
+        "DHCPv6 server that leases prefixes or addresses from an IPv6 pool.",
+        "Use on LAN when hosts need stateful DHCPv6 rather than SLAAC-only.",
+        "name, interface, address-pool, lease-time, disabled."
+    ),
+    guide!(
         "ipv6-settings",
         "Global IPv6 stack: forwarding, accept-redirects, neighbor limits.",
         "Disable forward to make the box a host. Most routers keep forward on.",
@@ -820,6 +877,18 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "IPv6 filter table (separate from IPv4 filter).",
         "IPv6 is not covered by IPv4 rules. Build input/forward policy here too.",
         "chain, action, src/dst-address, protocol, in/out-interface, packets/bytes."
+    ),
+    guide!(
+        "ipv6-firewall-nat",
+        "IPv6 NAT table (srcnat/dstnat). Less common than IPv4 NAT but the same idea.",
+        "NPTv6 or port mapping when you must rewrite IPv6. Filter still has to allow traffic.",
+        "chain, action, to-addresses/to-ports, address and interface matchers."
+    ),
+    guide!(
+        "ipv6-address-list",
+        "Named IPv6 address lists for firewall matchers.",
+        "Group prefixes the same way IPv4 address lists group IPv4.",
+        "list, address, timeout, dynamic."
     ),
     guide!(
         "routing-tables",
@@ -837,9 +906,22 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "ospf-instances",
         "OSPF routing instances (v2/v3): router-id and how default routes are originated.",
-        "Need dynamic IGP inside an AS. Interfaces and areas are related OSPF submenus not \
-         all listed here.",
+        "Need dynamic IGP inside an AS. Areas and interface templates are sibling menus.",
         "name, version, router-id, originate-default, disabled."
+    ),
+    guide!(
+        "ospf-areas",
+        "OSPF areas belonging to an instance: area-id and type (backbone, stub, NSSA, …).",
+        "Split a large domain. Area 0.0.0.0 is backbone. Attach networks via interface \
+         templates.",
+        "name, instance, area-id, type, disabled."
+    ),
+    guide!(
+        "ospf-interface-templates",
+        "OSPF interface templates (RouterOS v7): which interfaces sit in which area.",
+        "Bind instance+area to one or more interfaces. There is no separate \
+         /routing/ospf/interface menu in v7.",
+        "instance, area, interfaces, type, disabled."
     ),
     guide!(
         "bgp-connections",
@@ -847,6 +929,12 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "Peering with ISPs or other ASes. Templates and address-families may exist beyond \
          this table.",
         "name, remote.address, remote.as, local.role, disabled."
+    ),
+    guide!(
+        "bgp-templates",
+        "Reusable BGP session defaults (AS, router-id, address-families) for connections.",
+        "Put common peering options on a template, then point connections at it.",
+        "name, as, router-id, address-families, output.network, disabled."
     ),
     guide!(
         "queue-simple",
