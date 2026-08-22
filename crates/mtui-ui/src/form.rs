@@ -347,6 +347,84 @@ pub const BACKUP_SAVE_FORM: FormSchema = FormSchema {
     create_sections: BACKUP_SAVE_SECTIONS,
 };
 
+const LOCAL_PATH: FieldSpec = FieldSpec {
+    key: "local-path",
+    label: "Local path",
+    kind: FieldKind::Text,
+};
+
+const REMOTE_NAME: FieldSpec = FieldSpec {
+    key: "remote-name",
+    label: "Remote name",
+    kind: FieldKind::Text,
+};
+
+const FETCH_URL: FieldSpec = FieldSpec {
+    key: "url",
+    label: "URL",
+    kind: FieldKind::Text,
+};
+
+const DST_PATH: FieldSpec = FieldSpec {
+    key: "dst-path",
+    label: "Dst path",
+    kind: FieldKind::Text,
+};
+
+const FETCH_USER: FieldSpec = FieldSpec {
+    key: "user",
+    label: "User",
+    kind: FieldKind::Text,
+};
+
+const FETCH_PASSWORD: FieldSpec = FieldSpec {
+    key: "password",
+    label: "Password",
+    kind: FieldKind::Secret,
+};
+
+const UPLOAD_SECTIONS: &[FormSection] = &[FormSection {
+    id: "upload",
+    label: "Upload",
+    read_only: false,
+    fields: &[LOCAL_PATH, REMOTE_NAME],
+}];
+
+const DOWNLOAD_SECTIONS: &[FormSection] = &[FormSection {
+    id: "download",
+    label: "Download",
+    read_only: false,
+    fields: &[LOCAL_PATH],
+}];
+
+const FETCH_SECTIONS: &[FormSection] = &[FormSection {
+    id: "fetch",
+    label: "Fetch URL",
+    read_only: false,
+    fields: &[FETCH_URL, DST_PATH, FETCH_USER, FETCH_PASSWORD],
+}];
+
+pub const UPLOAD_FORM: FormSchema = FormSchema {
+    title_key: "remote-name",
+    subtitle_keys: &[],
+    sections: UPLOAD_SECTIONS,
+    create_sections: UPLOAD_SECTIONS,
+};
+
+pub const DOWNLOAD_FORM: FormSchema = FormSchema {
+    title_key: "local-path",
+    subtitle_keys: &[],
+    sections: DOWNLOAD_SECTIONS,
+    create_sections: DOWNLOAD_SECTIONS,
+};
+
+pub const FETCH_FORM: FormSchema = FormSchema {
+    title_key: "url",
+    subtitle_keys: &[],
+    sections: FETCH_SECTIONS,
+    create_sections: FETCH_SECTIONS,
+};
+
 /// Paint a centered properties sheet over the dimmed canvas.
 pub fn render_form_sheet(
     frame: &mut Frame<'_>,
@@ -609,6 +687,9 @@ fn sheet_title(session: &FormSession, schema: &FormSchema) -> String {
     if let Some(command) = session.prompt_command {
         return match command {
             "save" => "Save backup".into(),
+            "upload" => "Upload".into(),
+            "download" => "Download".into(),
+            "fetch" => "Fetch URL".into(),
             _ => "Copy".into(),
         };
     }
@@ -1150,5 +1231,35 @@ mod tests {
             !rendered.contains("space toggle"),
             "hints follow the focused field"
         );
+    }
+
+    #[test]
+    fn fetch_prompt_shows_url_and_secret_password() {
+        let mut values = HashMap::new();
+        values.insert("url".into(), String::new());
+        values.insert("dst-path".into(), String::new());
+        values.insert("user".into(), String::new());
+        values.insert("password".into(), String::new());
+        let session = FormSession::prompt_fields("files", "", "fetch", &FETCH_FORM, values);
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &FETCH_FORM, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(rendered.contains("Fetch URL"));
+        assert!(rendered.contains("URL"));
+        assert!(rendered.contains("Password"));
+        assert!(rendered.contains("secret"));
     }
 }

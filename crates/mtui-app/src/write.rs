@@ -1,6 +1,8 @@
 //! Resource write overlays and mutation commands.
 
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
+use std::path::Path;
 
 use mtui_core::{
     ActionCommand, ActionKind, ActionSpec, DASHBOARD_ID, INTERFACE_CREATE_TARGETS, action_label,
@@ -12,7 +14,7 @@ use mtui_ui::{ActionMenuItem, ActionMenuState, FormSession, Row, TorchState};
 use crate::app::{App, AppCommand, Overlay, Pane};
 use crate::event::WorkerMsg;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum MutationOp {
     Patch {
         endpoint: String,
@@ -32,6 +34,61 @@ pub enum MutationOp {
         command: String,
         fields: BTreeMap<String, String>,
     },
+}
+
+impl fmt::Debug for MutationOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Patch {
+                endpoint,
+                id,
+                fields,
+            } => f
+                .debug_struct("Patch")
+                .field("endpoint", endpoint)
+                .field("id", id)
+                .field("fields", &redact_mutation_fields(fields))
+                .finish(),
+            Self::Put { endpoint, fields } => f
+                .debug_struct("Put")
+                .field("endpoint", endpoint)
+                .field("fields", &redact_mutation_fields(fields))
+                .finish(),
+            Self::Delete { endpoint, id } => f
+                .debug_struct("Delete")
+                .field("endpoint", endpoint)
+                .field("id", id)
+                .finish(),
+            Self::Command {
+                endpoint,
+                command,
+                fields,
+            } => f
+                .debug_struct("Command")
+                .field("endpoint", endpoint)
+                .field("command", command)
+                .field("fields", &redact_mutation_fields(fields))
+                .finish(),
+        }
+    }
+}
+
+fn redact_mutation_fields(fields: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    fields
+        .iter()
+        .map(|(key, value)| {
+            let sensitive = key.eq_ignore_ascii_case("password")
+                || key.eq_ignore_ascii_case("contents")
+                || key.contains("secret")
+                || key.contains("passphrase");
+            let shown = if sensitive {
+                MASKED_VALUE.to_string()
+            } else {
+                value.clone()
+            };
+            (key.clone(), shown)
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,10 +239,7 @@ impl App {
             ActionKind::Edit => self.open_edit(),
             ActionKind::Create => self.open_create(&self.current_resource.clone()),
             ActionKind::Confirm { command } => self.open_confirm(action, command),
-            ActionKind::Prompt { command } => match command {
-                ActionCommand::BackupSave => self.open_backup_save_prompt(),
-                _ => self.open_copy_prompt(command),
-            },
+            ActionKind::Prompt { command } => self.open_prompt(command),
             ActionKind::Overlay { id: "torch" } => self.open_torch(),
             ActionKind::Overlay { id: "create-type" } => self.open_type_picker(),
             ActionKind::Overlay { .. } => Vec::new(),
@@ -222,6 +276,66 @@ impl App {
             return Vec::new();
         };
         self.overlay = Overlay::Form(FormSession::create(spec.id, schema));
+        Vec::new()
+    }
+
+    fn open_prompt(&mut self, command: ActionCommand) -> Vec<AppCommand> {
+        match command {
+            ActionCommand::BackupSave => self.open_backup_save_prompt(),
+            ActionCommand::Upload => self.open_file_upload_prompt(),
+            ActionCommand::Download => self.open_file_download_prompt(),
+            ActionCommand::Fetch => self.open_file_fetch_prompt(),
+            other => self.open_copy_prompt(other),
+        }
+    }
+
+    fn open_file_upload_prompt(&mut self) -> Vec<AppCommand> {
+        let mut values = HashMap::new();
+        values.insert("local-path".into(), String::new());
+        values.insert("remote-name".into(), String::new());
+        self.overlay = Overlay::Form(FormSession::prompt_fields(
+            self.current_resource.clone(),
+            String::new(),
+            "upload",
+            &mtui_ui::UPLOAD_FORM,
+            values,
+        ));
+        Vec::new()
+    }
+
+    fn open_file_download_prompt(&mut self) -> Vec<AppCommand> {
+        let Some(row) = self.table.selected_row() else {
+            return Vec::new();
+        };
+        let id = row.get(".id").cloned().unwrap_or_default();
+        let mut values = HashMap::new();
+        values.insert("local-path".into(), String::new());
+        if let Some(contents) = row.get("contents").filter(|value| !value.is_empty()) {
+            values.insert("contents".into(), contents.clone());
+        }
+        self.overlay = Overlay::Form(FormSession::prompt_fields(
+            self.current_resource.clone(),
+            id,
+            "download",
+            &mtui_ui::DOWNLOAD_FORM,
+            values,
+        ));
+        Vec::new()
+    }
+
+    fn open_file_fetch_prompt(&mut self) -> Vec<AppCommand> {
+        let mut values = HashMap::new();
+        values.insert("url".into(), String::new());
+        values.insert("dst-path".into(), String::new());
+        values.insert("user".into(), String::new());
+        values.insert("password".into(), String::new());
+        self.overlay = Overlay::Form(FormSession::prompt_fields(
+            self.current_resource.clone(),
+            String::new(),
+            "fetch",
+            &mtui_ui::FETCH_FORM,
+            values,
+        ));
         Vec::new()
     }
 
@@ -477,7 +591,7 @@ impl App {
             return Vec::new();
         }
         if let Some(command) = session.prompt_command {
-            return self.save_prompt_form(command);
+            return self.save_prompt(command);
         }
         let Some(spec) = resource_by_id(&session.resource_id) else {
             return Vec::new();
@@ -523,6 +637,164 @@ impl App {
             endpoint: spec.endpoint().to_string(),
             id,
             fields: body,
+        })]
+    }
+
+    fn save_prompt(&mut self, command: &'static str) -> Vec<AppCommand> {
+        match command {
+            "upload" => self.save_upload_prompt(),
+            "download" => self.save_download_prompt(),
+            "fetch" => self.save_fetch_prompt(),
+            _ => self.save_prompt_form(command),
+        }
+    }
+
+    fn save_upload_prompt(&mut self) -> Vec<AppCommand> {
+        let Overlay::Form(session) = &self.overlay else {
+            return Vec::new();
+        };
+        let path = session
+            .values
+            .get("local-path")
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        if path.is_empty() {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.error = Some("Local path is required".into());
+            }
+            return Vec::new();
+        }
+        let mut remote_name = session
+            .values
+            .get("remote-name")
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        if remote_name.is_empty() {
+            remote_name = Path::new(&path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("file")
+                .to_string();
+        }
+        if let Overlay::Form(session) = &mut self.overlay {
+            session.saving = true;
+            session.error = None;
+        }
+        self.status = "Reading local file…".into();
+        vec![AppCommand::ReadLocalFile {
+            request_id: self.next_request(),
+            generation: self.poll_generation,
+            path,
+            remote_name,
+        }]
+    }
+
+    fn save_download_prompt(&mut self) -> Vec<AppCommand> {
+        let Overlay::Form(session) = &self.overlay else {
+            return Vec::new();
+        };
+        let path = session
+            .values
+            .get("local-path")
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        if path.is_empty() {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.error = Some("Local path is required".into());
+            }
+            return Vec::new();
+        }
+        let contents = session
+            .values
+            .get("contents")
+            .filter(|value| !value.is_empty())
+            .cloned();
+        let record_id = session.record_id.clone();
+        let endpoint = resource_by_id(&session.resource_id)
+            .map_or_else(|| "/rest/file".into(), |spec| spec.endpoint().to_string());
+        if let Overlay::Form(session) = &mut self.overlay {
+            session.saving = true;
+            session.error = None;
+        }
+        if let Some(contents) = contents {
+            self.status = "Writing local file…".into();
+            return vec![AppCommand::WriteLocalFile {
+                request_id: self.next_request(),
+                generation: self.poll_generation,
+                path,
+                contents,
+            }];
+        }
+        if record_id.is_empty() {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.saving = false;
+                session.error = Some(
+                    "RouterOS REST did not return file contents; copy from the router another way."
+                        .into(),
+                );
+            }
+            self.status =
+                "RouterOS REST did not return file contents; copy from the router another way."
+                    .into();
+            return Vec::new();
+        }
+        self.status = "Fetching file…".into();
+        vec![AppCommand::FetchRecord {
+            request_id: self.next_request(),
+            generation: self.poll_generation,
+            endpoint,
+            id: record_id,
+            local_path: path,
+        }]
+    }
+
+    fn save_fetch_prompt(&mut self) -> Vec<AppCommand> {
+        let Overlay::Form(session) = &self.overlay else {
+            return Vec::new();
+        };
+        let url = session
+            .values
+            .get("url")
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        if url.is_empty() {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.error = Some("URL is required".into());
+            }
+            return Vec::new();
+        }
+        let dst_path = session
+            .values
+            .get("dst-path")
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        let user = session
+            .values
+            .get("user")
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        let password = session.values.get("password").cloned().unwrap_or_default();
+        let mut fields = BTreeMap::new();
+        fields.insert("url".into(), url.clone());
+        if !dst_path.is_empty() {
+            fields.insert("dst-path".into(), dst_path);
+        }
+        if !user.is_empty() {
+            fields.insert("user".into(), user);
+        }
+        if !password.is_empty() && password != MASKED_VALUE {
+            fields.insert("password".into(), password);
+        }
+        tracing::info!(url = url.as_str(), "tool fetch");
+        if let Overlay::Form(session) = &mut self.overlay {
+            session.saving = true;
+            session.error = None;
+        }
+        self.status = "Fetching…".into();
+        vec![self.mutate_command(MutationOp::Command {
+            endpoint: "/rest/tool".into(),
+            command: "fetch".into(),
+            fields,
         })]
     }
 
@@ -581,6 +853,110 @@ impl App {
         self.status = "Saved".into();
         self.refreshing = true;
         self.poll_current()
+    }
+
+    pub(crate) fn apply_read_local_file(&mut self, msg: WorkerMsg) -> Vec<AppCommand> {
+        let WorkerMsg::ReadLocalFileResult {
+            generation,
+            remote_name,
+            contents,
+            error,
+            ..
+        } = msg
+        else {
+            return Vec::new();
+        };
+        if generation != self.poll_generation {
+            return Vec::new();
+        }
+        if let Some(err) = error {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.saving = false;
+                session.error = Some(err.clone());
+            }
+            self.status = format!("Upload failed: {err}");
+            return Vec::new();
+        }
+        let Some(contents) = contents else {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.saving = false;
+                session.error = Some("file was empty".into());
+            }
+            return Vec::new();
+        };
+        let mut fields = BTreeMap::new();
+        fields.insert("name".into(), remote_name);
+        fields.insert("contents".into(), contents);
+        tracing::info!("file upload");
+        self.status = "Uploading…".into();
+        vec![self.mutate_command(MutationOp::Put {
+            endpoint: "/rest/file".into(),
+            fields,
+        })]
+    }
+
+    pub(crate) fn apply_write_local_file(&mut self, msg: WorkerMsg) -> Vec<AppCommand> {
+        let WorkerMsg::WriteLocalFileResult {
+            generation, error, ..
+        } = msg
+        else {
+            return Vec::new();
+        };
+        if generation != self.poll_generation {
+            return Vec::new();
+        }
+        if let Some(err) = error {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.saving = false;
+                session.error = Some(err.clone());
+            }
+            self.status = format!("Download failed: {err}");
+            return Vec::new();
+        }
+        self.overlay = Overlay::None;
+        self.status = "Downloaded".into();
+        Vec::new()
+    }
+
+    pub(crate) fn apply_record_result(&mut self, msg: WorkerMsg) -> Vec<AppCommand> {
+        let WorkerMsg::RecordResult {
+            generation,
+            local_path,
+            contents,
+            error,
+            ..
+        } = msg
+        else {
+            return Vec::new();
+        };
+        if generation != self.poll_generation {
+            return Vec::new();
+        }
+        if let Some(err) = error {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.saving = false;
+                session.error = Some(err.clone());
+            }
+            self.status = format!("Download failed: {err}");
+            return Vec::new();
+        }
+        let Some(contents) = contents.filter(|value| !value.is_empty()) else {
+            let message =
+                "RouterOS REST did not return file contents; copy from the router another way.";
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.saving = false;
+                session.error = Some(message.into());
+            }
+            self.status = message.into();
+            return Vec::new();
+        };
+        self.status = "Writing local file…".into();
+        vec![AppCommand::WriteLocalFile {
+            request_id: self.next_request(),
+            generation: self.poll_generation,
+            path: local_path,
+            contents,
+        }]
     }
 
     pub(crate) fn apply_torch_result(
@@ -970,6 +1346,14 @@ mod tests {
             .expect("mutate command")
     }
 
+    fn ctrl_s() -> KeyEvent {
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)
+    }
+
+    fn is_mutate(cmd: &AppCommand) -> bool {
+        matches!(cmd, AppCommand::Mutate { .. })
+    }
+
     #[test]
     fn reboot_from_empty_resources_uses_system_endpoint() {
         let mut app = App::new(false).expect("app");
@@ -1075,6 +1459,30 @@ mod tests {
         }));
     }
 
+    fn files_app(contents: Option<&str>) -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("files");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "backup.rsc".into());
+        fields.insert("type".into(), "script".into());
+        if let Some(text) = contents {
+            fields.insert("contents".into(), text.into());
+        }
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "files".into(),
+            rows: vec![Resource {
+                id: "*1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        app
+    }
+
     #[test]
     fn backup_load_on_backup_file_posts_name() {
         let mut app = App::new(false).expect("app");
@@ -1088,7 +1496,8 @@ mod tests {
             .map(|action| action.id)
             .collect();
         assert!(ids.contains(&"backup-load"));
-        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        let cmds = app.dispatch_named_action("backup-load");
+        assert!(cmds.is_empty());
         let Overlay::Confirm(session) = &app.overlay else {
             panic!("expected load confirm, got {:?}", app.overlay);
         };
@@ -1124,7 +1533,8 @@ mod tests {
             .map(|action| action.id)
             .collect();
         assert!(!ids.contains(&"backup-load"));
-        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        let cmds = app.dispatch_named_action("backup-load");
+        assert!(cmds.is_empty());
         assert!(matches!(app.overlay, Overlay::None));
     }
 
@@ -1267,6 +1677,132 @@ mod tests {
                 command: "make-static".into(),
                 fields: BTreeMap::from([(".id".into(), "*9".into())]),
             }
+        );
+    }
+
+    #[test]
+    fn files_remove_and_transfer_keys_are_offered() {
+        let app = files_app(None);
+        let ids: Vec<_> = app
+            .current_actions()
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert!(ids.contains(&"remove"));
+        assert!(ids.contains(&"upload"));
+        assert!(ids.contains(&"fetch"));
+        assert!(ids.contains(&"download"));
+        let hints = app.footer_action_hints();
+        assert!(
+            hints
+                .iter()
+                .any(|(key, label)| key == "u" && label == "Upload")
+        );
+        assert!(
+            hints
+                .iter()
+                .any(|(key, label)| key == "f" && label == "Fetch URL")
+        );
+        assert!(
+            hints
+                .iter()
+                .any(|(key, label)| key == "w" && label == "Download")
+        );
+        assert!(
+            hints
+                .iter()
+                .any(|(key, label)| key == "x" && label == "Remove")
+        );
+    }
+
+    #[test]
+    fn upload_without_local_path_does_not_mutate() {
+        let mut app = files_app(None);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        let cmds = app.update(AppEvent::Input(ctrl_s()));
+        assert!(cmds.iter().all(|cmd| !is_mutate(cmd)));
+        assert!(
+            !cmds
+                .iter()
+                .any(|cmd| matches!(cmd, AppCommand::ReadLocalFile { .. }))
+        );
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected upload form");
+        };
+        assert_eq!(session.prompt_command, Some("upload"));
+        assert_eq!(session.error.as_deref(), Some("Local path is required"));
+    }
+
+    #[test]
+    fn upload_too_large_worker_result_does_not_put() {
+        let mut app = files_app(None);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        let cmds = app.apply_read_local_file(WorkerMsg::ReadLocalFileResult {
+            request_id: 1,
+            generation: app.poll_generation,
+            remote_name: "script.rsc".into(),
+            contents: None,
+            error: Some("file too large for REST contents upload — use Fetch URL".into()),
+        });
+        assert!(cmds.is_empty());
+        assert!(
+            app.status.contains("file too large"),
+            "status: {}",
+            app.status
+        );
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form to stay open");
+        };
+        assert!(!session.saving);
+    }
+
+    #[test]
+    fn fetch_prompt_requires_url() {
+        let mut app = files_app(None);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected fetch form, got {:?}", app.overlay);
+        };
+        assert_eq!(session.prompt_command, Some("fetch"));
+        let cmds = app.update(AppEvent::Input(ctrl_s()));
+        assert!(cmds.iter().all(|cmd| !is_mutate(cmd)));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected fetch form");
+        };
+        assert_eq!(session.error.as_deref(), Some("URL is required"));
+    }
+
+    #[test]
+    fn download_without_contents_sets_status() {
+        let mut app = files_app(None);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('w'))));
+        for ch in "out.txt".chars() {
+            let _ = app.update(AppEvent::Input(press(KeyCode::Char(ch))));
+        }
+        let cmds = app.update(AppEvent::Input(ctrl_s()));
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                AppCommand::FetchRecord {
+                    id,
+                    local_path,
+                    ..
+                } if id == "*1" && local_path == "out.txt"
+            )),
+            "expected GET then write, got {cmds:?}"
+        );
+        let cmds = app.apply_record_result(WorkerMsg::RecordResult {
+            request_id: 1,
+            generation: app.poll_generation,
+            local_path: "out.txt".into(),
+            contents: None,
+            error: None,
+        });
+        assert!(cmds.is_empty());
+        assert!(
+            app.status.contains("did not return file contents"),
+            "status: {}",
+            app.status
         );
     }
 }

@@ -3257,6 +3257,13 @@ mod tests {
                 assert!(spec.form.is_none(), "{} should be remove-only", spec.id);
                 continue;
             }
+            if spec.id == "files" {
+                assert!(
+                    spec.form.is_none(),
+                    "files uses transfer prompts, not a sheet"
+                );
+                continue;
+            }
             let needs_sheet = spec
                 .actions
                 .iter()
@@ -3273,7 +3280,8 @@ mod tests {
         );
         assert!(
             resource_by_id("files").is_some_and(|spec| spec.form.is_none()
-                && spec.actions.iter().any(|action| action.id == "backup-save"))
+                && spec.actions.iter().any(|action| action.id == "backup-save")
+                && spec.actions.iter().any(|action| action.id == "upload"))
         );
     }
 

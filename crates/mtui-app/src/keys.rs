@@ -455,14 +455,9 @@ impl App {
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
             return self.save_form();
         }
-        let resource_id = match &self.overlay {
-            Overlay::Form(session) => session.resource_id.clone(),
-            _ => return Vec::new(),
-        };
         let schema = match &self.overlay {
-            Overlay::Form(session) => {
-                session.overlay_schema(resource_by_id(&resource_id).and_then(|spec| spec.form))
-            }
+            Overlay::Form(session) => session
+                .overlay_schema(resource_by_id(&session.resource_id).and_then(|spec| spec.form)),
             _ => return Vec::new(),
         };
 

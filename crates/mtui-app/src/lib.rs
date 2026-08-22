@@ -2,6 +2,7 @@
 
 mod app;
 mod event;
+mod files_io;
 mod keys;
 mod render;
 mod runtime;
