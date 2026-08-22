@@ -12,6 +12,10 @@
 > it can do, and will still contain bugs. Treat it as experimental: do not
 > rely on it for production operations.
 
+<p align="center">
+  <img src="assets/banner.png" alt="MikroTik TUI" width="520">
+</p>
+
 MikroTik TUI is a keyboard-first terminal client for MikroTik RouterOS. It
 connects over HTTPS REST and presents live operational state - interfaces,
 addressing, DHCP, firewall, hardware, and logs - so any RouterOS device can be
