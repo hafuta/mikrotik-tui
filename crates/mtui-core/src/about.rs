@@ -1005,9 +1005,12 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "certificates",
-        "Local certificate store: CA, device certs, CSRs for www-ssl, SSTP, IPsec, OpenVPN.",
-        "Needed for HTTPS REST/WinBox TLS and several VPN types. Keys are sensitive.",
-        "name, digest, key-type, days-valid, trusted, issued, expired, private-key."
+        "Local certificate store: CA, device certs, CSRs for www-ssl, SSTP, IPsec, OpenVPN. \
+         Create an empty request, sign against a CA (or the same name for a root), import a \
+         file already on the router, or export PEM/PKCS12.",
+        "Needed for HTTPS REST/WinBox TLS and several VPN types. Keys and passphrases stay \
+         secret. Sign with g, import with p, export with w.",
+        "name, common-name, key-usage, ca, file-name, type, passphrase, export-passphrase."
     ),
     guide!(
         "watchdog",

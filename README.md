@@ -131,7 +131,8 @@ Resources or saves a backup on Files, `o` shuts down (power off) on Resources,
 `u` uploads a UTF-8 file on Files, `w` downloads the selected file, `f` fetches a
 URL onto the router, and load-backup is on the Files action menu (`a`) for
 `.backup` rows. `p` opens ping on the Ping tool screen (Enter starts traceroute
-on Traceroute). `a` opens the
+on Traceroute). On Certificates, `g` signs, `p` imports a file already on the
+router, and `w` exports PEM/PKCS12 (passphrases stay secret). `a` opens the
 action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,
 `ctrl+l` logs out, `` ` `` toggles the application log console, `-` hides the
 selected sidebar item after confirmation (or restores it when hidden menus are

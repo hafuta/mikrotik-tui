@@ -313,7 +313,97 @@ pub static CERTIFICATE_FORM: FormSchema = FormSchema {
             ],
         },
     ],
-    create_sections: &[],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("common-name", "Common name", FieldKind::Text),
+            f!("key-usage", "Key usage", FieldKind::Text),
+        ],
+    }],
+};
+
+const CERT_EXPORT_TYPES: &[&str] = &["pem", "pkcs12"];
+
+pub static CERT_SIGN_PROMPT: FormSchema = FormSchema {
+    title_key: "ca",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "sign",
+        label: "Sign",
+        read_only: false,
+        fields: &[f!("ca", "CA", FieldKind::Text)],
+    }],
+    create_sections: &[FormSection {
+        id: "sign",
+        label: "Sign",
+        read_only: false,
+        fields: &[f!("ca", "CA", FieldKind::Text)],
+    }],
+};
+
+pub static CERT_IMPORT_PROMPT: FormSchema = FormSchema {
+    title_key: "file-name",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "import",
+        label: "Import",
+        read_only: false,
+        fields: &[
+            f!("file-name", "File name", FieldKind::Text),
+            f!("passphrase", "Passphrase", FieldKind::Secret),
+            NAME,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "import",
+        label: "Import",
+        read_only: false,
+        fields: &[
+            f!("file-name", "File name", FieldKind::Text),
+            f!("passphrase", "Passphrase", FieldKind::Secret),
+            NAME,
+        ],
+    }],
+};
+
+pub static CERT_EXPORT_PROMPT: FormSchema = FormSchema {
+    title_key: "file-name",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "export",
+        label: "Export",
+        read_only: false,
+        fields: &[
+            f!("file-name", "File name", FieldKind::Text),
+            FieldSpec {
+                key: "type",
+                label: "Type",
+                kind: FieldKind::Enum {
+                    values: CERT_EXPORT_TYPES,
+                },
+            },
+            f!("export-passphrase", "Export passphrase", FieldKind::Secret),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "export",
+        label: "Export",
+        read_only: false,
+        fields: &[
+            f!("file-name", "File name", FieldKind::Text),
+            FieldSpec {
+                key: "type",
+                label: "Type",
+                kind: FieldKind::Enum {
+                    values: CERT_EXPORT_TYPES,
+                },
+            },
+            f!("export-passphrase", "Export passphrase", FieldKind::Secret),
+        ],
+    }],
 };
 
 pub static WATCHDOG_FORM: FormSchema = FormSchema {
@@ -539,7 +629,10 @@ mod tests {
 
     #[test]
     fn certificate_has_no_writable_text_private_key() {
-        assert!(CERTIFICATE_FORM.create_sections.is_empty());
+        assert_eq!(
+            create_keys(&CERTIFICATE_FORM),
+            ["name", "common-name", "key-usage"]
+        );
         assert_eq!(
             CERTIFICATE_FORM.writable_keys(),
             ["name", "common-name", "key-usage", "trusted", "days-valid"]
@@ -553,6 +646,53 @@ mod tests {
         }
         assert!(!CERTIFICATE_FORM.writable_keys().contains(&"fingerprint"));
         assert!(!CERTIFICATE_FORM.writable_keys().contains(&"serial-number"));
+    }
+
+    #[test]
+    fn certificate_prompts_cover_sign_import_export() {
+        assert_eq!(CERT_SIGN_PROMPT.writable_keys(), ["ca"]);
+        assert!(CERT_SIGN_PROMPT.field("ca").is_some());
+        assert_eq!(
+            CERT_IMPORT_PROMPT.writable_keys(),
+            ["file-name", "passphrase", "name"]
+        );
+        assert_eq!(
+            CERT_IMPORT_PROMPT
+                .field("passphrase")
+                .map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(
+            CERT_EXPORT_PROMPT.writable_keys(),
+            ["file-name", "type", "export-passphrase"]
+        );
+        assert_eq!(
+            CERT_EXPORT_PROMPT
+                .field("export-passphrase")
+                .map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+
+        let mut original = HashMap::new();
+        original.insert("file-name".into(), "web.p12".into());
+        original.insert("passphrase".into(), "********".into());
+        original.insert("export-passphrase".into(), "********".into());
+        let mut current = original.clone();
+        current.insert("file-name".into(), "web.pem".into());
+        current.insert("passphrase".into(), "********".into());
+        current.insert("export-passphrase".into(), "********".into());
+        let import_body = patch_body(&CERT_IMPORT_PROMPT, &original, &current, "********");
+        assert_eq!(
+            import_body.get("file-name").map(String::as_str),
+            Some("web.pem")
+        );
+        assert!(!import_body.contains_key("passphrase"));
+        let export_body = patch_body(&CERT_EXPORT_PROMPT, &original, &current, "********");
+        assert!(!export_body.contains_key("export-passphrase"));
+        assert_eq!(
+            export_body.get("file-name").map(String::as_str),
+            Some("web.pem")
+        );
     }
 
     #[test]
