@@ -42,6 +42,8 @@ pub struct ConfirmSession {
     pub command: ActionCommand,
     pub record_id: String,
     pub record_name: String,
+    pub endpoint: String,
+    pub fields: BTreeMap<String, String>,
 }
 
 impl App {
@@ -180,7 +182,10 @@ impl App {
             ActionKind::Edit => self.open_edit(),
             ActionKind::Create => self.open_create(&self.current_resource.clone()),
             ActionKind::Confirm { command } => self.open_confirm(action, command),
-            ActionKind::Prompt { command } => self.open_copy_prompt(command),
+            ActionKind::Prompt { command } => match command {
+                ActionCommand::BackupSave => self.open_backup_save_prompt(),
+                _ => self.open_copy_prompt(command),
+            },
             ActionKind::Overlay { id: "torch" } => self.open_torch(),
             ActionKind::Overlay { id: "create-type" } => self.open_type_picker(),
             ActionKind::Overlay { .. } => Vec::new(),
@@ -239,34 +244,72 @@ impl App {
         Vec::new()
     }
 
+    fn open_backup_save_prompt(&mut self) -> Vec<AppCommand> {
+        let mut values = HashMap::new();
+        values.insert("name".into(), String::new());
+        values.insert("password".into(), String::new());
+        self.overlay = Overlay::Form(FormSession::prompt_fields(
+            self.current_resource.clone(),
+            String::new(),
+            ActionCommand::BackupSave.rest_name(),
+            &mtui_ui::BACKUP_SAVE_FORM,
+            values,
+        ));
+        Vec::new()
+    }
+
     fn open_confirm(&mut self, action: &ActionSpec, command: ActionCommand) -> Vec<AppCommand> {
-        let Some(row) = self.table.selected_row() else {
+        let Some(spec) = resource_by_id(&self.current_resource) else {
             return Vec::new();
         };
-        let id = row.get(".id").cloned().unwrap_or_default();
-        let name = row
-            .get("name")
-            .or_else(|| row.get("interface"))
+        let row = self.table.selected_row();
+        if action.needs_selection && row.is_none() {
+            return Vec::new();
+        }
+        if matches!(command, ActionCommand::ToggleDisabled) && row.is_none() {
+            return Vec::new();
+        }
+        let mut record_id = row
+            .and_then(|row| row.get(".id"))
             .cloned()
-            .unwrap_or_else(|| id.clone());
-        let command = match command {
-            ActionCommand::ToggleDisabled => {
+            .unwrap_or_default();
+        let record_name = row
+            .and_then(|row| row.get("name").or_else(|| row.get("interface")))
+            .cloned()
+            .unwrap_or_else(|| record_id.clone());
+        if matches!(action.id, "reboot" | "shutdown" | "backup-load") {
+            record_id.clear();
+        }
+        let command = match (command, row) {
+            (ActionCommand::ToggleDisabled, Some(row)) => {
                 if truthy(row.get("disabled").map(String::as_str)) {
                     ActionCommand::Enable
                 } else {
                     ActionCommand::Disable
                 }
             }
-            other => other,
+            (ActionCommand::ToggleDisabled, None) => return Vec::new(),
+            (other, _) => other,
         };
-        let label = action_label(action, Some(row));
+        let mut fields = BTreeMap::new();
+        if action.id == "backup-load" {
+            if record_name.is_empty() {
+                self.status = "Backup load needs a file name".into();
+                return Vec::new();
+            }
+            fields.insert("name".into(), record_name.clone());
+        }
+        let label = action_label(action, row);
+        let body = confirm_body(action.id, &label, &record_name);
         self.overlay = Overlay::Confirm(ConfirmSession {
-            title: label.clone(),
-            body: format!("{label} {name}?"),
+            title: label,
+            body,
             action_id: action.id.to_string(),
             command,
-            record_id: id,
-            record_name: name,
+            record_id,
+            record_name,
+            endpoint: command_base_path(action.id, spec.endpoint()),
+            fields,
         });
         tracing::trace!(overlay = "confirm", action = action.id, "opened pane");
         Vec::new()
@@ -323,6 +366,61 @@ impl App {
         Vec::new()
     }
 
+    fn save_prompt_form(&mut self, command: &'static str) -> Vec<AppCommand> {
+        let Overlay::Form(session) = &self.overlay else {
+            return Vec::new();
+        };
+        let resource_id = session.resource_id.clone();
+        let record_id = session.record_id.clone();
+        let values = session.values.clone();
+        let Some(spec) = resource_by_id(&resource_id) else {
+            return Vec::new();
+        };
+        let (endpoint, fields, status) = if command == ActionCommand::BackupSave.rest_name() {
+            let mut fields = BTreeMap::new();
+            let Some(name) = values
+                .get("name")
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+            else {
+                if let Overlay::Form(session) = &mut self.overlay {
+                    session.error = Some("Name is required".into());
+                }
+                return Vec::new();
+            };
+            fields.insert("name".into(), name.to_string());
+            if let Some(password) = values
+                .get("password")
+                .map(String::as_str)
+                .filter(|password| !password.is_empty())
+            {
+                fields.insert("password".into(), password.to_string());
+            }
+            (
+                command_base_path("backup-save", spec.endpoint()),
+                fields,
+                "Saving backup…",
+            )
+        } else {
+            let mut fields = BTreeMap::new();
+            fields.insert(".id".into(), record_id);
+            if let Some(name) = values.get("new-name") {
+                fields.insert("new-name".into(), name.clone());
+            }
+            (spec.endpoint().to_string(), fields, "Copying…")
+        };
+        if let Overlay::Form(session) = &mut self.overlay {
+            session.saving = true;
+        }
+        self.status = status.into();
+        vec![self.mutate_command(MutationOp::Command {
+            endpoint,
+            command: command.to_string(),
+            fields,
+        })]
+    }
+
     pub(crate) fn save_form(&mut self) -> Vec<AppCommand> {
         let Overlay::Form(session) = &self.overlay else {
             return Vec::new();
@@ -331,23 +429,7 @@ impl App {
             return Vec::new();
         }
         if let Some(command) = session.prompt_command {
-            let mut fields = BTreeMap::new();
-            fields.insert(".id".into(), session.record_id.clone());
-            if let Some(name) = session.values.get("new-name") {
-                fields.insert("new-name".into(), name.clone());
-            }
-            let Some(spec) = resource_by_id(&session.resource_id) else {
-                return Vec::new();
-            };
-            if let Overlay::Form(session) = &mut self.overlay {
-                session.saving = true;
-            }
-            self.status = "Copying…".into();
-            return vec![self.mutate_command(MutationOp::Command {
-                endpoint: spec.endpoint().to_string(),
-                command: command.to_string(),
-                fields,
-            })];
+            return self.save_prompt_form(command);
         }
         let Some(spec) = resource_by_id(&session.resource_id) else {
             return Vec::new();
@@ -400,20 +482,18 @@ impl App {
         let Overlay::Confirm(session) = &self.overlay else {
             return Vec::new();
         };
-        let Some(spec) = resource_by_id(&self.current_resource) else {
-            return Vec::new();
-        };
-        let mut fields = BTreeMap::new();
-        if !session.record_id.is_empty() {
+        let mut fields = session.fields.clone();
+        if !session.record_id.is_empty() && !fields.contains_key(".id") {
             fields.insert(".id".into(), session.record_id.clone());
         }
+        let endpoint = session.endpoint.clone();
         let op = match session.command {
             ActionCommand::Remove => MutationOp::Delete {
-                endpoint: spec.endpoint().to_string(),
+                endpoint,
                 id: session.record_id.clone(),
             },
             other => MutationOp::Command {
-                endpoint: spec.endpoint().to_string(),
+                endpoint,
                 command: other.rest_name().to_string(),
                 fields,
             },
@@ -537,6 +617,25 @@ fn object_row(value: serde_json::Value) -> Option<HashMap<String, String>> {
         row.insert(key, text);
     }
     Some(row)
+}
+
+fn command_base_path(action_id: &str, resource_endpoint: &str) -> String {
+    match action_id {
+        "reboot" | "shutdown" => "/rest/system".into(),
+        "backup-save" | "backup-load" => "/rest/system/backup".into(),
+        _ => resource_endpoint.to_string(),
+    }
+}
+
+fn confirm_body(action_id: &str, label: &str, record_name: &str) -> String {
+    match action_id {
+        "reboot" => "Reboot the router? Active sessions will drop.".into(),
+        "shutdown" => "Shut down the router? The device will power off.".into(),
+        "backup-load" => {
+            format!("Load backup {record_name}? This replaces running config and reboots.")
+        }
+        _ => format!("{label} {record_name}?"),
+    }
 }
 
 #[cfg(test)]
@@ -810,5 +909,213 @@ mod tests {
         });
         assert!(cmds.is_empty());
         assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    fn command_op(cmds: &[crate::app::AppCommand]) -> &MutationOp {
+        cmds.iter()
+            .find_map(|cmd| match cmd {
+                crate::app::AppCommand::Mutate { op, .. } => Some(op),
+                _ => None,
+            })
+            .expect("mutate command")
+    }
+
+    #[test]
+    fn reboot_from_empty_resources_uses_system_endpoint() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("resources");
+        app.pane = Pane::Content;
+        assert!(app.table.selected_row().is_none());
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('b'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected reboot confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Reboot);
+        assert_eq!(session.endpoint, "/rest/system");
+        assert!(session.record_id.is_empty());
+        assert!(session.body.contains("Active sessions will drop"));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Command {
+                endpoint,
+                command,
+                fields,
+            } => {
+                assert_eq!(endpoint, "/rest/system");
+                assert_eq!(command, "reboot");
+                assert!(fields.is_empty());
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shutdown_from_empty_resources_uses_system_endpoint() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("resources");
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('o'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected shutdown confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Shutdown);
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        match command_op(&cmds) {
+            MutationOp::Command {
+                endpoint,
+                command,
+                fields,
+            } => {
+                assert_eq!(endpoint, "/rest/system");
+                assert_eq!(command, "shutdown");
+                assert!(fields.is_empty());
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    #[test]
+    fn backup_save_prompt_includes_name() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("files");
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('b'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected backup save prompt, got {:?}", app.overlay);
+        };
+        assert_eq!(session.prompt_command, Some("save"));
+        assert!(session.values.contains_key("name"));
+        assert!(session.values.contains_key("password"));
+        if let Overlay::Form(session) = &mut app.overlay {
+            session.values.insert("name".into(), "nightly".into());
+            session.values.insert("password".into(), "secret".into());
+        }
+        let cmds = app.save_form();
+        match command_op(&cmds) {
+            MutationOp::Command {
+                endpoint,
+                command,
+                fields,
+            } => {
+                assert_eq!(endpoint, "/rest/system/backup");
+                assert_eq!(command, "save");
+                assert_eq!(fields.get("name").map(String::as_str), Some("nightly"));
+                assert_eq!(fields.get("password").map(String::as_str), Some("secret"));
+                assert!(!fields.contains_key(".id"));
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    fn load_files(app: &mut App, name: &str) {
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), name.into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "files".into(),
+            rows: vec![Resource {
+                id: "*9".into(),
+                fields,
+            }],
+            error: None,
+        }));
+    }
+
+    #[test]
+    fn backup_load_on_backup_file_posts_name() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("files");
+        load_files(&mut app, "foo.backup");
+        app.pane = Pane::Content;
+        let ids: Vec<_> = app
+            .current_actions()
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert!(ids.contains(&"backup-load"));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected load confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(
+            session.fields.get("name").map(String::as_str),
+            Some("foo.backup")
+        );
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Command {
+                endpoint,
+                command,
+                fields,
+            } => {
+                assert_eq!(endpoint, "/rest/system/backup");
+                assert_eq!(command, "load");
+                assert_eq!(fields.get("name").map(String::as_str), Some("foo.backup"));
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    #[test]
+    fn backup_load_not_offered_for_other_files() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("files");
+        load_files(&mut app, "script.rsc");
+        app.pane = Pane::Content;
+        let ids: Vec<_> = app
+            .current_actions()
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert!(!ids.contains(&"backup-load"));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    #[test]
+    fn enable_confirm_still_requires_a_row() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("vlan");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "vlan10".into());
+        fields.insert("disabled".into(), "true".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "vlan".into(),
+            rows: vec![Resource {
+                id: "*3".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('d'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected enable confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Enable);
+        assert_eq!(session.record_id, "*3");
+        assert_eq!(session.endpoint, "/rest/interface/vlan");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Command {
+                endpoint,
+                command,
+                fields,
+            } => {
+                assert_eq!(endpoint, "/rest/interface/vlan");
+                assert_eq!(command, "enable");
+                assert_eq!(fields.get(".id").map(String::as_str), Some("*3"));
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
     }
 }

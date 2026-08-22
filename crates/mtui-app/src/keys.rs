@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use mtui_core::{DASHBOARD_ID, about_copy, resource_by_id};
 use mtui_routeros::Resource;
-use mtui_ui::{COPY_FORM, FormSession, LoginField};
+use mtui_ui::{FormSession, LoginField};
 
 use crate::app::{App, AppCommand, Overlay, Pane, Screen, is_https_router_url};
 
@@ -459,9 +459,12 @@ impl App {
             Overlay::Form(session) => session.resource_id.clone(),
             _ => return Vec::new(),
         };
-        let schema = resource_by_id(&resource_id)
-            .and_then(|spec| spec.form)
-            .unwrap_or(&COPY_FORM);
+        let schema = match &self.overlay {
+            Overlay::Form(session) => {
+                session.overlay_schema(resource_by_id(&resource_id).and_then(|spec| spec.form))
+            }
+            _ => return Vec::new(),
+        };
 
         if let Overlay::Form(session) = &self.overlay
             && session.confirm_discard

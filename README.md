@@ -34,6 +34,8 @@ where WebFig allows remove/disconnect.
 - Hide unused sidebar menus (categories or screens) and reveal them later to restore
 - HTTPS with a custom CA or a pinned device certificate (the pin takes
   precedence when both are set)
+- Confirmed reboot and shutdown from System Resources, plus named backup save
+  and `.backup` load from Files
 - One saved connection profile and machine-local credentials
 - Structured, redacted application logs on disk and in the in-app console
 
@@ -119,7 +121,9 @@ or opens the selected item. On an Interfaces table, `enter` edits the selected
 row. `/` filters the table, `s`
 cycles sort (not on Logs), `r` refreshes, `g`/`G` or Home/End jump, `pgup`/
 `pgdn` and `ctrl+u`/`ctrl+d` page, `e` edits, `n` adds, `d` enables or disables,
-`c` copies, `x` removes, `z` resets counters, `t` opens torch, `a` opens the
+`c` copies, `x` removes, `z` resets counters, `t` opens torch, `b` reboots on
+Resources or saves a backup on Files, `o` shuts down (power off) on Resources,
+`u` loads a selected `.backup` file, `a` opens the
 action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,
 `ctrl+l` logs out, `` ` `` toggles the application log console, `-` hides the
 selected sidebar item after confirmation (or restores it when hidden menus are
