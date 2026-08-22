@@ -802,7 +802,8 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "files",
         "Router filesystem: backups, scripts, images, and uploaded files.",
-        "Upload packages or download backups. Removing a file here deletes it on the router.",
+        "Save a named backup or load a `.backup` file (that replaces the running configuration \
+         and reboots). Removing a file here deletes it on the router.",
         "name, type, size, creation-time. Contents are not shown in the table."
     ),
     guide!(
@@ -866,7 +867,8 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "resources",
         "CPU, memory, HDD, uptime, version — `/system resource`.",
-        "Capacity and version checks. Live graphs on the dashboard sample similar data.",
+        "Capacity and version checks. Reboot or shut down the router from this screen; those \
+         commands are system-wide, not operations on the resource table itself.",
         "uptime, version, cpu, cpu-load, free/total-memory, architecture."
     ),
     guide!(

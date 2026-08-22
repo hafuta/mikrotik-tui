@@ -23,9 +23,11 @@ mod wireguard_write;
 
 pub use about::{AboutCopy, ScreenGuide, WHEN_YOU_NEED_IT, about_copy, screen_guide};
 pub use actions::{
-    ACTION_ADD, ACTION_COPY, ACTION_EDIT, ACTION_REMOVE, ACTION_RESET, ACTION_TOGGLE, ACTION_TORCH,
-    ActionCommand, ActionKind, ActionSpec, ActionWhen, ETHERNET_ACTIONS, INTERFACE_CREATE_TARGETS,
-    INTERFACE_LIST_ACTIONS, action_label, resolve_actions, truthy,
+    ACTION_ADD, ACTION_BACKUP_LOAD, ACTION_BACKUP_SAVE, ACTION_COPY, ACTION_EDIT, ACTION_REBOOT,
+    ACTION_REMOVE, ACTION_RESET, ACTION_SHUTDOWN, ACTION_TOGGLE, ACTION_TORCH, ActionCommand,
+    ActionKind, ActionSpec, ActionWhen, ETHERNET_ACTIONS, FILE_ACTIONS, INTERFACE_CREATE_TARGETS,
+    INTERFACE_LIST_ACTIONS, RESOURCE_LIFECYCLE_ACTIONS, action_label, is_backup_file,
+    resolve_actions, truthy,
 };
 pub use forms::{FieldKind, FieldSpec, FormSchema, FormSection, extra_status_fields, patch_body};
 pub use resources::{

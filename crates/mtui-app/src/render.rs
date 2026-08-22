@@ -79,13 +79,10 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                     render_modal(frame, area, &modal, &styles);
                 }
                 Overlay::Form(ref session) => {
-                    if let Some(schema) =
-                        mtui_core::resource_by_id(&session.resource_id).and_then(|spec| spec.form)
-                    {
-                        render_form_sheet(frame, area, session, schema, &styles);
-                    } else {
-                        render_form_sheet(frame, area, session, &mtui_ui::COPY_FORM, &styles);
-                    }
+                    let schema = session.overlay_schema(
+                        mtui_core::resource_by_id(&session.resource_id).and_then(|spec| spec.form),
+                    );
+                    render_form_sheet(frame, area, session, schema, &styles);
                 }
                 Overlay::ActionMenu(ref menu) | Overlay::TypePicker(ref menu) => {
                     render_action_menu(frame, area, menu, &styles);
@@ -433,6 +430,9 @@ c           copy · console: copy focused log
 x           remove
 z           reset counters
 t           torch
+b           reboot (Resources) · save backup (Files)
+o           shutdown (Resources; power off)
+u           load backup (Files, *.backup)
 a           action menu
 ctrl+s      save properties
 [ / ]       previous / next properties tab

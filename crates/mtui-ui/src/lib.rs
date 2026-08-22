@@ -31,7 +31,7 @@ pub use chrome::{
 pub use console::{ConsoleEntry, ConsoleLevel, ConsoleState, TIME_COL, console_pane_height};
 pub use dashboard::{CpuCoreView, DashboardGeometry, DashboardView, dashboard_content};
 pub use firewall::{FirewallHitChart, FirewallRuleMetric, MAX_FIREWALL_RULES};
-pub use form::{COPY_FORM, FormMode, FormSession, render_form_sheet};
+pub use form::{BACKUP_SAVE_FORM, COPY_FORM, FormMode, FormSession, render_form_sheet};
 pub use inspector::InspectorState;
 pub use layout::{
     Breakpoint, LayoutMetrics, clip_line, constrain_lines, fit_cell, fit_line, line_plain,

@@ -26,6 +26,10 @@ pub enum ActionCommand {
     Remove,
     Copy,
     ResetCounters,
+    Reboot,
+    Shutdown,
+    BackupSave,
+    BackupLoad,
 }
 
 impl ActionCommand {
@@ -37,6 +41,10 @@ impl ActionCommand {
             Self::Remove => "remove",
             Self::Copy => "copy",
             Self::ResetCounters => "reset-counters",
+            Self::Reboot => "reboot",
+            Self::Shutdown => "shutdown",
+            Self::BackupSave => "save",
+            Self::BackupLoad => "load",
         }
     }
 }
@@ -62,6 +70,13 @@ pub struct ActionSpec {
     pub danger: bool,
     pub kind: ActionKind,
     pub when: ActionWhen,
+}
+
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn is_backup_file(row: &HashMap<String, String>) -> bool {
+    row.get("name")
+        .is_some_and(|name| name.rsplit('/').next().unwrap_or(name).ends_with(".backup"))
 }
 
 #[must_use]
@@ -94,6 +109,9 @@ pub fn action_available(
 ) -> bool {
     if action.needs_selection && row.is_none() {
         return false;
+    }
+    if action.id == "backup-load" {
+        return row.is_some_and(is_backup_file);
     }
     match action.when {
         ActionWhen::Always => true,
@@ -223,6 +241,66 @@ pub const ACTION_RESET: ActionSpec = ActionSpec {
     },
     when: ActionWhen::HasSelection,
 };
+
+pub const ACTION_REBOOT: ActionSpec = ActionSpec {
+    id: "reboot",
+    label: "Reboot",
+    key: Some('b'),
+    enter: false,
+    needs_selection: false,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Reboot,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_SHUTDOWN: ActionSpec = ActionSpec {
+    id: "shutdown",
+    label: "Shutdown",
+    key: Some('o'),
+    enter: false,
+    needs_selection: false,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Shutdown,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_BACKUP_SAVE: ActionSpec = ActionSpec {
+    id: "backup-save",
+    label: "Save backup",
+    key: Some('b'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::BackupSave,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_BACKUP_LOAD: ActionSpec = ActionSpec {
+    id: "backup-load",
+    label: "Load backup",
+    key: Some('u'),
+    enter: false,
+    needs_selection: true,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::BackupLoad,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const RESOURCE_LIFECYCLE_ACTIONS: &[ActionSpec] = &[ACTION_REBOOT, ACTION_SHUTDOWN];
+
+pub const FILE_ACTIONS: &[ActionSpec] = &[
+    ACTION_BACKUP_SAVE,
+    ACTION_BACKUP_LOAD,
+    ACTION_REMOVE_SELECTED,
+];
 
 pub const ACTION_TORCH: ActionSpec = ActionSpec {
     id: "torch",
@@ -379,5 +457,38 @@ mod tests {
         assert!(!ids.contains(&"copy"));
         assert!(ids.contains(&"edit"));
         assert!(ids.contains(&"add"));
+    }
+
+    #[test]
+    fn backup_load_only_for_backup_files() {
+        let mut backup = HashMap::new();
+        backup.insert("name".into(), "flash/foo.backup".into());
+        let mut other = HashMap::new();
+        other.insert("name".into(), "script.rsc".into());
+        let with_backup: Vec<_> = resolve_actions(FILE_ACTIONS, false, Some(&backup))
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        let with_other: Vec<_> = resolve_actions(FILE_ACTIONS, false, Some(&other))
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert!(with_backup.contains(&"backup-load"));
+        assert!(!with_other.contains(&"backup-load"));
+        assert!(with_other.contains(&"backup-save"));
+        assert!(
+            resolve_actions(FILE_ACTIONS, false, None)
+                .iter()
+                .any(|action| action.id == "backup-save")
+        );
+    }
+
+    #[test]
+    fn resource_lifecycle_without_selection() {
+        let ids: Vec<_> = resolve_actions(RESOURCE_LIFECYCLE_ACTIONS, true, None)
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(ids, ["reboot", "shutdown"]);
     }
 }

@@ -1901,7 +1901,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("architecture-name", "Arch", 10),
         ],
         refresh: Duration::from_secs(5),
-        actions: &[],
+        actions: crate::actions::RESOURCE_LIFECYCLE_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -2369,7 +2369,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("creation-time", "Created", 20),
         ],
         refresh: Duration::from_secs(10),
-        actions: crate::actions::DISCONNECT_ACTIONS,
+        actions: crate::actions::FILE_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -3039,6 +3039,8 @@ mod tests {
 
     #[test]
     fn mutations_require_forms_except_remove_only_rows() {
+        use crate::actions::ActionKind;
+
         for spec in ALL_RESOURCES {
             if spec.actions.is_empty() {
                 continue;
@@ -3046,12 +3048,26 @@ mod tests {
             let ids: Vec<_> = spec.actions.iter().map(|action| action.id).collect();
             if ids == ["remove"] {
                 assert!(spec.form.is_none(), "{} should be remove-only", spec.id);
-            } else {
+                continue;
+            }
+            let needs_sheet = spec
+                .actions
+                .iter()
+                .any(|action| matches!(action.kind, ActionKind::Edit | ActionKind::Create));
+            if needs_sheet {
                 assert!(spec.form.is_some(), "{} needs a property sheet", spec.id);
             }
         }
         assert!(resource_by_id("logs").is_some_and(|spec| spec.actions.is_empty()));
         assert!(resource_by_id("routerboard").is_some_and(|spec| spec.actions.is_empty()));
+        assert!(
+            resource_by_id("resources").is_some_and(|spec| spec.form.is_none()
+                && spec.actions.iter().any(|action| action.id == "reboot"))
+        );
+        assert!(
+            resource_by_id("files").is_some_and(|spec| spec.form.is_none()
+                && spec.actions.iter().any(|action| action.id == "backup-save"))
+        );
     }
 
     fn group_ids(group: &str) -> Vec<&'static str> {

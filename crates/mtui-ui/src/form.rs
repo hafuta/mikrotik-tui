@@ -36,6 +36,7 @@ pub struct FormSession {
     pub saving: bool,
     pub confirm_discard: bool,
     pub prompt_command: Option<&'static str>,
+    pub prompt_schema: Option<&'static FormSchema>,
 }
 
 impl FormSession {
@@ -60,6 +61,7 @@ impl FormSession {
             saving: false,
             confirm_discard: false,
             prompt_command: None,
+            prompt_schema: None,
         }
     }
 
@@ -87,6 +89,7 @@ impl FormSession {
             saving: false,
             confirm_discard: false,
             prompt_command: None,
+            prompt_schema: None,
         }
     }
 
@@ -113,7 +116,42 @@ impl FormSession {
             saving: false,
             confirm_discard: false,
             prompt_command: Some(command),
+            prompt_schema: Some(&COPY_FORM),
         }
+    }
+
+    #[must_use]
+    pub fn prompt_fields(
+        resource_id: impl Into<String>,
+        record_id: impl Into<String>,
+        command: &'static str,
+        schema: &'static FormSchema,
+        values: HashMap<String, String>,
+    ) -> Self {
+        Self {
+            resource_id: resource_id.into(),
+            record_id: record_id.into(),
+            mode: FormMode::Create,
+            section: 0,
+            focus: 0,
+            offset: 0,
+            values,
+            original: HashMap::new(),
+            extras: Vec::new(),
+            error: None,
+            saving: false,
+            confirm_discard: false,
+            prompt_command: Some(command),
+            prompt_schema: Some(schema),
+        }
+    }
+
+    #[must_use]
+    pub fn overlay_schema(
+        &self,
+        resource_form: Option<&'static FormSchema>,
+    ) -> &'static FormSchema {
+        self.prompt_schema.or(resource_form).unwrap_or(&COPY_FORM)
     }
 
     #[must_use]
@@ -123,7 +161,9 @@ impl FormSession {
 
     #[must_use]
     pub fn schema_sections<'a>(&self, schema: &'a FormSchema) -> &'a [FormSection] {
-        if self.prompt_command.is_some() {
+        if let Some(prompt) = self.prompt_schema {
+            prompt.sections_for(true)
+        } else if self.prompt_command.is_some() {
             COPY_SECTIONS
         } else {
             schema.sections_for(self.mode == FormMode::Create)
@@ -278,6 +318,33 @@ pub const COPY_FORM: FormSchema = FormSchema {
     subtitle_keys: &[],
     sections: COPY_SECTIONS,
     create_sections: COPY_SECTIONS,
+};
+
+const BACKUP_SAVE_FIELDS: &[FieldSpec] = &[
+    FieldSpec {
+        key: "name",
+        label: "Name",
+        kind: FieldKind::Text,
+    },
+    FieldSpec {
+        key: "password",
+        label: "Password",
+        kind: FieldKind::Secret,
+    },
+];
+
+const BACKUP_SAVE_SECTIONS: &[FormSection] = &[FormSection {
+    id: "backup",
+    label: "Backup",
+    read_only: false,
+    fields: BACKUP_SAVE_FIELDS,
+}];
+
+pub const BACKUP_SAVE_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &[],
+    sections: BACKUP_SAVE_SECTIONS,
+    create_sections: BACKUP_SAVE_SECTIONS,
 };
 
 /// Paint a centered properties sheet over the dimmed canvas.
@@ -539,8 +606,11 @@ fn tabs_width<'a>(tabs: impl Iterator<Item = &'a str>) -> usize {
 }
 
 fn sheet_title(session: &FormSession, schema: &FormSchema) -> String {
-    if session.prompt_command.is_some() {
-        return "Copy".into();
+    if let Some(command) = session.prompt_command {
+        return match command {
+            "save" => "Save backup".into(),
+            _ => "Copy".into(),
+        };
     }
     let name = session
         .values
@@ -982,6 +1052,35 @@ mod tests {
         assert!(rendered.contains("text"));
         assert!(rendered.contains('['));
         assert!(!rendered.contains("[1 Copy]"));
+    }
+
+    #[test]
+    fn backup_save_prompt_shows_name_and_secret_password() {
+        let mut values = HashMap::new();
+        values.insert("name".into(), "nightly".into());
+        values.insert("password".into(), "hidden".into());
+        let session = FormSession::prompt_fields("files", "", "save", &BACKUP_SAVE_FORM, values);
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &BACKUP_SAVE_FORM, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(rendered.contains("Save backup"));
+        assert!(rendered.contains("Name"));
+        assert!(rendered.contains("nightly"));
+        assert!(rendered.contains("Password"));
+        assert!(!rendered.contains("hidden"));
     }
 
     #[test]
