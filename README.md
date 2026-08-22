@@ -182,3 +182,7 @@ live in dedicated crates with test seams.
 The current client is RouterOS v7 REST. Resource descriptors sit above that
 transport so a native API-SSL path could be added later for subscriptions
 without rewriting screens.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
