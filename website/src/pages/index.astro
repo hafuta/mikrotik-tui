@@ -48,10 +48,11 @@ const releases = `${repo}/releases`;
         <div>
           <h2>The menus you already type, as a live table.</h2>
           <p class="prose">
-            Interfaces and WireGuard can be created, edited, copied, enabled,
-            disabled, or removed — with a confirmation first. Torch and
-            counters sit on the interface tables. The rest of the tree stays
-            live and inspectable until it grows the same actions.
+            Interfaces, WireGuard, PPP, Bridge, Switch, IP, IPv6, Routing,
+            Queues, Files, Tools, RADIUS, and System share the same
+            create/edit/delete catalog, with a confirmation first. Torch and
+            counters sit on interface tables. Secrets stay masked; runtime
+            views such as logs remain inspect-only.
           </p>
         </div>
         <ul class="paths">
@@ -65,7 +66,7 @@ const releases = `${repo}/releases`;
           </li>
           <li class="path">
             <code>/ip</code>
-            <span>Addresses, ARP, DHCP servers, networks, leases, and firewall filter rules.</span>
+            <span>Addresses, ARP, DHCP, DNS, routes, pools, services, NAT, mangle, and filter.</span>
           </li>
           <li class="path">
             <code>/ppp</code>
@@ -80,8 +81,16 @@ const releases = `${repo}/releases`;
             <span>Chip, ports, VLAN, host, ACL, isolation, and L3HW.</span>
           </li>
           <li class="path">
+            <code>/ipv6</code>
+            <span>Addresses, ND, routes, pool, settings, and firewall filter.</span>
+          </li>
+          <li class="path">
+            <code>/routing</code>
+            <span>Tables, rules, OSPF instances, and BGP connections.</span>
+          </li>
+          <li class="path">
             <code>/system</code>
-            <span>Users, RouterBOARD, NTP, clock, and a bounded live log stream.</span>
+            <span>Users, identity, packages, scheduler, scripts, SNMP, certificates, and logs.</span>
           </li>
         </ul>
       </section>

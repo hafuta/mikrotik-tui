@@ -1685,4 +1685,43 @@ mod secret_mask_tests {
                 .any(|(_, value)| value.contains("MARKER"))
         );
     }
+
+    #[test]
+    fn macsec_cak_is_masked_in_table_and_inspector() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("macsec");
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("name".into(), "macsec1".into());
+        fields.insert("interface".into(), "ether1".into());
+        fields.insert("cak".into(), "MARKER-CAK".into());
+        fields.insert("ckn".into(), "visible-ckn".into());
+        let row = Resource {
+            id: "*1".into(),
+            fields,
+        };
+
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "macsec".into(),
+            rows: vec![row],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+
+        let table_row = app.table.selected_row().expect("row");
+        assert_eq!(table_row.get("cak").map(String::as_str), Some(MASKED_VALUE));
+        assert_eq!(
+            table_row.get("ckn").map(String::as_str),
+            Some("visible-ckn")
+        );
+        assert!(
+            !app.inspector
+                .fields
+                .iter()
+                .any(|(_, value)| value.contains("MARKER"))
+        );
+    }
 }

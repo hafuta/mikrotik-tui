@@ -197,6 +197,20 @@ pub const ACTION_REMOVE: ActionSpec = ActionSpec {
     when: ActionWhen::MutableRecord,
 };
 
+/// Remove even when the row is `dynamic` (sessions, FDB hosts, leases).
+pub const ACTION_REMOVE_SELECTED: ActionSpec = ActionSpec {
+    id: "remove",
+    label: "Remove",
+    key: Some('x'),
+    enter: false,
+    needs_selection: true,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Remove,
+    },
+    when: ActionWhen::HasSelection,
+};
+
 pub const ACTION_RESET: ActionSpec = ActionSpec {
     id: "reset-counters",
     label: "Reset counters",
@@ -268,6 +282,31 @@ pub const SINGLETON_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT];
 
 pub const VRF_ACTIONS: &[ActionSpec] = &[ACTION_ADD, ACTION_EDIT, ACTION_COPY, ACTION_REMOVE];
 
+/// Firewall / bridge filter / NAT / mangle / switch rules.
+pub const FILTER_ACTIONS: &[ActionSpec] = &[
+    ACTION_ADD,
+    ACTION_EDIT,
+    ACTION_TOGGLE,
+    ACTION_COPY,
+    ACTION_REMOVE,
+    ACTION_RESET,
+];
+
+/// Disconnect a live session or drop an FDB/lease row.
+pub const DISCONNECT_ACTIONS: &[ActionSpec] = &[ACTION_REMOVE_SELECTED];
+
+/// Hardware switch chip: edit only (no add/remove).
+pub const HARDWARE_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT];
+
+/// Enable/disable without add (packages, some system lists).
+pub const TOGGLE_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_TOGGLE];
+
+/// DHCP leases: edit (make static fields) and remove; no copy.
+pub const LEASE_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_REMOVE_SELECTED];
+
+/// Static ARP: add/edit/remove including dynamic rows.
+pub const ARP_ACTIONS: &[ActionSpec] = &[ACTION_ADD, ACTION_EDIT, ACTION_REMOVE_SELECTED];
+
 /// Create targets offered from the generic Interface screen.
 pub const INTERFACE_CREATE_TARGETS: &[(&str, &str)] = &[
     ("vlan", "VLAN"),
@@ -278,6 +317,8 @@ pub const INTERFACE_CREATE_TARGETS: &[(&str, &str)] = &[
     ("vrrp", "VRRP"),
     ("bonding", "Bonding"),
     ("macvlan", "MACVLAN"),
+    ("macsec", "MACsec"),
+    ("macsec-profiles", "MACsec Profile"),
     ("interface-lists", "Interface List"),
     ("interface-list-members", "List Member"),
     ("vrf", "VRF"),

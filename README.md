@@ -19,13 +19,16 @@ connects over HTTPS REST and presents live operational state - interfaces,
 addressing, DHCP, firewall, hardware, and logs - so any RouterOS device can be
 inspected without leaving the terminal. Interface screens can create, edit,
 and run per-row actions (enable/disable, copy, remove, torch, reset counters)
-through confirmation dialogs and a sectioned properties sheet. Other resource
-groups remain read-only until they reuse the same action catalog.
+through confirmation dialogs and a sectioned properties sheet. Operator menus
+beyond Interfaces — PPP, Bridge, Switch, IP, IPv6, Routing, Queues, Files,
+Tools, RADIUS, and System — use the same action catalog. Runtime-only views
+(logs, health, RouterBOARD, neighbor/session tables) stay non-editable except
+where WebFig allows remove/disconnect.
 
 ## Features
 
 - Live dashboard for CPU, memory, WAN throughput, and firewall activity
-- Browse live RouterOS operational state; coverage is still expanding
+- Browse live RouterOS operational state across the common WebFig operator menus
 - Search, sorting, detail inspector, application log console, command palette, and in-app keyboard help
 - Hide unused sidebar menus (categories or screens) and reveal them later to restore
 - HTTPS with a custom CA or a pinned device certificate (the pin takes
@@ -34,8 +37,8 @@ groups remain read-only until they reuse the same action catalog.
 - Structured, redacted application logs on disk and in the in-app console
 
 RouterOS v7 with `www-ssl` and REST access is required. Use a dedicated,
-least-privileged RouterOS account. Interface screens require write permission
-for the menus you edit; other views still work with read-only REST access.
+least-privileged RouterOS account. Screens you edit require write permission
+for those menus; inspect-only views still work with read-only REST access.
 
 ## Crates
 
