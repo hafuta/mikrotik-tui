@@ -528,7 +528,9 @@ impl App {
             KeyCode::Char('l') if !self.form_editing_text(schema) => {
                 self.with_form(|session| session.move_section(schema, 1));
             }
-            KeyCode::Char(digit) if digit.is_ascii_digit() && digit != '0' => {
+            KeyCode::Char(digit)
+                if digit.is_ascii_digit() && digit != '0' && !self.form_editing_text(schema) =>
+            {
                 let index = usize::from(digit as u8 - b'1');
                 self.with_form(|session| session.jump_section(schema, index));
             }
@@ -556,14 +558,9 @@ impl App {
         let Overlay::Form(session) = &self.overlay else {
             return false;
         };
-        session.focused_spec(schema).is_some_and(|field| {
-            matches!(
-                field.kind,
-                mtui_core::FieldKind::Text
-                    | mtui_core::FieldKind::Number
-                    | mtui_core::FieldKind::Secret
-            )
-        })
+        session
+            .focused_spec(schema)
+            .is_some_and(|field| field.kind.takes_typed_input())
     }
 
     fn keys_action_menu(&mut self, key: KeyEvent, type_picker: bool) -> Vec<AppCommand> {

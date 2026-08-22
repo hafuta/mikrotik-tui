@@ -433,7 +433,7 @@ t           torch
 a           action menu
 ctrl+s      save properties
 [ / ]       previous / next properties tab
-1-9         jump to a properties tab
+1-9         jump to a properties tab (when not typing)
 ctrl+k      command palette
 ctrl+l      log out
 -           hide menu (confirm) / restore (nav)
