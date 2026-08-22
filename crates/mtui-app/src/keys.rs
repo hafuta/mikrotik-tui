@@ -227,12 +227,14 @@ impl App {
             KeyCode::PageDown => self.page_content(1),
             KeyCode::Home | KeyCode::Char('g') => self.jump_content_home(),
             KeyCode::End | KeyCode::Char('G') => self.jump_content_end(),
-            KeyCode::Left | KeyCode::Char('h') if self.on_table_content() => {
+            KeyCode::Char('h') if self.on_table_content() => {
                 self.table.scroll_columns(-1);
             }
-            KeyCode::Right | KeyCode::Char('l') if self.on_table_content() => {
+            KeyCode::Char('l') if self.on_table_content() => {
                 self.table.scroll_columns(1);
             }
+            KeyCode::Left => self.arrow_horizontal(-1),
+            KeyCode::Right => self.arrow_horizontal(1),
             KeyCode::Enter => {
                 if self.pane == Pane::Nav
                     && let Some(id) = self.nav.selected_id().map(str::to_owned)
@@ -751,6 +753,14 @@ impl App {
         self.current_resource != DASHBOARD_ID && self.pane == Pane::Content
     }
 
+    fn arrow_horizontal(&mut self, delta: isize) {
+        if self.on_table_content() && self.table.can_scroll_columns(delta) {
+            self.table.scroll_columns(delta);
+            return;
+        }
+        self.shift_main_pane(delta > 0);
+    }
+
     fn move_content(&mut self, delta: isize) {
         if self.on_dashboard_content() {
             self.scroll_firewall(delta);
@@ -768,7 +778,7 @@ impl App {
             self.after_table_cursor();
         } else if self.pane == Pane::Inspector {
             let page = isize::try_from(self.inspector_visible_rows()).unwrap_or(1);
-            self.inspector.scroll_by(
+            self.inspector.move_selection(
                 direction.saturating_mul(page),
                 self.inspector_visible_rows(),
             );
@@ -782,7 +792,7 @@ impl App {
             self.table.select_first();
             self.after_table_cursor();
         } else if self.pane == Pane::Inspector {
-            self.inspector.offset = 0;
+            self.inspector.select_first();
         }
     }
 
@@ -793,8 +803,7 @@ impl App {
             self.table.select_last();
             self.after_table_cursor();
         } else if self.pane == Pane::Inspector {
-            let visible = self.inspector_visible_rows();
-            self.inspector.offset = self.inspector.fields.len().saturating_sub(visible);
+            self.inspector.select_last(self.inspector_visible_rows());
         }
     }
 
@@ -830,7 +839,7 @@ impl App {
             }
             Pane::Inspector => self
                 .inspector
-                .scroll_by(delta, self.inspector_visible_rows()),
+                .move_selection(delta, self.inspector_visible_rows()),
             Pane::Console => {
                 let len = self.console.filtered_indices(&self.console_entries).len();
                 self.console.move_selection(delta, len);
@@ -1088,6 +1097,65 @@ mod table_scroll_tests {
     }
 
     #[test]
+    fn arrows_pan_columns_then_shift_main_panes() {
+        let mut app = table_app(140, 24);
+        assert_eq!(app.pane, Pane::Content);
+        assert_eq!(app.table.col_offset, 0);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Left)));
+        assert_eq!(app.pane, Pane::Nav);
+        assert_eq!(app.table.col_offset, 0);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Left)));
+        assert_eq!(app.pane, Pane::Nav);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Right)));
+        assert_eq!(app.pane, Pane::Content);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Right)));
+        assert!(
+            app.table.col_offset > 0,
+            "right should pan columns before leaving the table"
+        );
+        assert_eq!(app.pane, Pane::Content);
+
+        let mut reached_inspector = false;
+        for _ in 0..app.table.columns.len() {
+            let offset = app.table.col_offset;
+            let _ = app.update(AppEvent::Input(press(KeyCode::Right)));
+            if app.pane == Pane::Inspector {
+                assert_eq!(app.table.col_offset, offset);
+                reached_inspector = true;
+                break;
+            }
+            assert!(
+                app.table.col_offset > offset,
+                "right should keep panning until the last column"
+            );
+            assert_eq!(app.pane, Pane::Content);
+        }
+        assert!(reached_inspector, "right should reach the details pane");
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Right)));
+        assert_eq!(app.pane, Pane::Inspector);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Left)));
+        assert_eq!(app.pane, Pane::Content);
+    }
+
+    #[test]
+    fn arrows_skip_inspector_when_that_pane_is_hidden() {
+        let mut app = table_app(80, 24);
+        assert_eq!(app.pane, Pane::Content);
+        app.table.scroll_columns_end();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Right)));
+        assert_eq!(app.pane, Pane::Content);
+        app.table.scroll_columns_home();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Left)));
+        assert_eq!(app.pane, Pane::Nav);
+    }
+
+    #[test]
     fn table_resize_collapses_offsets_when_the_pane_grows() {
         let mut app = table_app(80, 10);
         let _ = app.update(AppEvent::Input(press(KeyCode::End)));
@@ -1099,6 +1167,39 @@ mod table_scroll_tests {
         assert_eq!(app.table.selected, 19);
         assert_eq!(app.table.row_offset, 0);
         assert_eq!(app.table.col_offset, 0);
+    }
+
+    #[test]
+    fn inspector_cursor_clamps_at_first_and_last_field() {
+        let mut app = table_app(140, 12);
+        let mut fields = HashMap::new();
+        for i in 0..12 {
+            fields.insert(format!("field-{i:02}"), format!("{i}"));
+        }
+        app.inspector = mtui_ui::InspectorState::from_row(Some(&fields));
+        app.pane = Pane::Inspector;
+        assert_eq!(app.inspector.selected, 0);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Up)));
+        assert_eq!(app.inspector.selected, 0);
+        assert_eq!(app.inspector.offset, 0);
+
+        let last = app.inspector.fields.len() - 1;
+        for _ in 0..last.saturating_add(4) {
+            let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        }
+        assert_eq!(app.inspector.selected, last);
+        assert!(
+            app.inspector.offset > 0,
+            "cursor should scroll the inspector window, offset={}",
+            app.inspector.offset
+        );
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Home)));
+        assert_eq!(app.inspector.selected, 0);
+        assert_eq!(app.inspector.offset, 0);
+        let _ = app.update(AppEvent::Input(press(KeyCode::End)));
+        assert_eq!(app.inspector.selected, last);
     }
 }
 

@@ -111,8 +111,9 @@ machine or `MIKROTIK_TUI_PASSWORD_FILE`.
 
 ## Keyboard
 
-`↑/↓` or `j/k` moves, `←/→` or `h/l` pans table columns, `tab` / `shift+tab`
-cycle panes, `enter` expands a nav category (accordion; first screen opens)
+`↑/↓` or `j/k` moves, `h/l` pans table columns, `←/→` pans a wide table then
+moves between the menu, central, and details panes, `tab` / `shift+tab`
+cycle panes (including the log console), `enter` expands a nav category (accordion; first screen opens)
 or opens the selected item. On an Interfaces table, `enter` edits the selected
 row. `/` filters the table, `s`
 cycles sort (not on Logs), `r` refreshes, `g`/`G` or Home/End jump, `pgup`/

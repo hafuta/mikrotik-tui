@@ -834,6 +834,38 @@ impl App {
         }
     }
 
+    /// Move among the visible nav / content / inspector panes, clamping at the ends.
+    pub(crate) fn shift_main_pane(&mut self, forward: bool) {
+        if self.console.fullscreen {
+            return;
+        }
+        let panes = self.visible_main_panes();
+        let Some(idx) = panes.iter().position(|&pane| pane == self.pane) else {
+            return;
+        };
+        let next = if forward {
+            idx.saturating_add(1).min(panes.len().saturating_sub(1))
+        } else {
+            idx.saturating_sub(1)
+        };
+        if let Some(pane) = panes.get(next).copied() {
+            self.pane = pane;
+        }
+    }
+
+    fn visible_main_panes(&self) -> Vec<Pane> {
+        let metrics = LayoutMetrics::new(self.terminal_width, self.terminal_height);
+        let mut panes = Vec::new();
+        if metrics.nav_width > 0 {
+            panes.push(Pane::Nav);
+        }
+        panes.push(Pane::Content);
+        if metrics.inspector_width > 0 && self.current_resource != DASHBOARD_ID {
+            panes.push(Pane::Inspector);
+        }
+        panes
+    }
+
     pub(crate) fn console_body_height(&self) -> usize {
         usize::from(self.console_layout_height().saturating_sub(2).max(1))
     }
@@ -944,8 +976,10 @@ impl App {
 
     pub(crate) fn refresh_inspector(&mut self, preserve_offset: bool) {
         let offset = self.inspector.offset;
+        let selected = self.inspector.selected;
         self.inspector = InspectorState::from_row(self.table.selected_row());
         if preserve_offset {
+            self.inspector.selected = selected;
             self.inspector.offset = offset;
             self.inspector
                 .clamp_to_visible(self.inspector_visible_rows());

@@ -361,9 +361,11 @@ fn draw_inspector(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let block = pane_block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    let width = usize::from(inner.width);
     let lines = constrain_lines(
-        app.inspector.render_lines(&styles),
-        usize::from(inner.width),
+        app.inspector
+            .render_lines(&styles, app.pane == Pane::Inspector, width),
+        width,
         usize::from(inner.height),
     );
     frame.render_widget(Paragraph::new(lines), inner);
@@ -417,6 +419,7 @@ const HELP_TEXT: &str = r"↑↓ / j k   move
 pgup/pgdn   page
 g / G       first / last
 h / l       columns
+← →         panes (after column scroll)
 tab         cycle panes
 `           toggle log console
 enter       open / expand category; edit row; expand log
