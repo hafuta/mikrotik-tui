@@ -121,7 +121,8 @@ or opens the selected item. On an Interfaces table, `enter` edits the selected
 row. `/` filters the table, `s`
 cycles sort (not on Logs), `r` refreshes, `g`/`G` or Home/End jump, `pgup`/
 `pgdn` and `ctrl+u`/`ctrl+d` page, `e` edits, `n` adds, `d` enables or disables,
-`c` copies, `x` removes, `z` resets counters, `t` opens torch, `b` reboots on
+`c` copies, `x` removes, `z` resets counters, `[` / `]` move a filter-like rule
+up or down, `m` makes a DHCP lease static, `t` opens torch, `b` reboots on
 Resources or saves a backup on Files, `o` shuts down (power off) on Resources,
 `u` loads a selected `.backup` file, `a` opens the
 action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,

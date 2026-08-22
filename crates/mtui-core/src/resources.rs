@@ -1835,6 +1835,29 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::ip_write::FIREWALL_MANGLE_FORM),
     },
     ResourceSpec {
+        id: "firewall-connections",
+        group: "ip-group",
+        label: "Connections",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/firewall/connection",
+        },
+        columns: &[
+            col!("src-address", "Source", 22),
+            col!("dst-address", "Destination", 22),
+            col!("protocol", "Protocol", 9),
+            col!("src-port", "Src port", 10),
+            col!("dst-port", "Dst port", 10),
+            col!("tcp-state", "TCP state", 12),
+            col!("timeout", "Timeout", 10),
+            col!("orig-rate", "Orig rate", 12),
+            col!("repl-rate", "Repl rate", 12),
+            col!("connection-mark", "Mark", 16),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::DISCONNECT_ACTIONS,
+        form: None,
+    },
+    ResourceSpec {
         id: "address-list",
         group: "ip-group",
         label: "Address List",
@@ -3124,6 +3147,7 @@ mod tests {
                 "ip-settings",
                 "firewall-nat",
                 "firewall-mangle",
+                "firewall-connections",
                 "address-list",
                 "ipsec-peers",
                 "ipsec-identities",
@@ -3144,6 +3168,27 @@ mod tests {
             !column_keys("ipsec-installed-sa")
                 .iter()
                 .any(|key| { key.contains("key") || *key == "secret" || key.contains("auth-key") })
+        );
+        let connections = resource_by_id("firewall-connections").expect("firewall-connections");
+        assert_eq!(connections.endpoint(), "/rest/ip/firewall/connection");
+        assert!(connections.form.is_none());
+        let connection_actions: Vec<_> =
+            connections.actions.iter().map(|action| action.id).collect();
+        assert_eq!(connection_actions, ["remove"]);
+        assert_eq!(
+            column_keys("firewall-connections"),
+            [
+                "src-address",
+                "dst-address",
+                "protocol",
+                "src-port",
+                "dst-port",
+                "tcp-state",
+                "timeout",
+                "orig-rate",
+                "repl-rate",
+                "connection-mark",
+            ]
         );
     }
 

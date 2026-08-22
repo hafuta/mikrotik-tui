@@ -429,13 +429,14 @@ d           enable / disable
 c           copy · console: copy focused log
 x           remove
 z           reset counters
+[ / ]       move rule up / down; properties: previous / next tab
+m           make DHCP lease static
 t           torch
 b           reboot (Resources) · save backup (Files)
 o           shutdown (Resources; power off)
 u           load backup (Files, *.backup)
 a           action menu
 ctrl+s      save properties
-[ / ]       previous / next properties tab
 1-9         jump to a properties tab (when not typing)
 ctrl+k      command palette
 ctrl+l      log out

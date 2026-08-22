@@ -30,6 +30,9 @@ pub enum ActionCommand {
     Shutdown,
     BackupSave,
     BackupLoad,
+    MoveUp,
+    MoveDown,
+    MakeStatic,
 }
 
 impl ActionCommand {
@@ -45,6 +48,8 @@ impl ActionCommand {
             Self::Shutdown => "shutdown",
             Self::BackupSave => "save",
             Self::BackupLoad => "load",
+            Self::MoveUp | Self::MoveDown => "move",
+            Self::MakeStatic => "make-static",
         }
     }
 }
@@ -302,6 +307,45 @@ pub const FILE_ACTIONS: &[ActionSpec] = &[
     ACTION_REMOVE_SELECTED,
 ];
 
+pub const ACTION_MOVE_UP: ActionSpec = ActionSpec {
+    id: "move-up",
+    label: "Move up",
+    key: Some('['),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::MoveUp,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_MOVE_DOWN: ActionSpec = ActionSpec {
+    id: "move-down",
+    label: "Move down",
+    key: Some(']'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::MoveDown,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_MAKE_STATIC: ActionSpec = ActionSpec {
+    id: "make-static",
+    label: "Make static",
+    key: Some('m'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::MakeStatic,
+    },
+    when: ActionWhen::HasSelection,
+};
+
 pub const ACTION_TORCH: ActionSpec = ActionSpec {
     id: "torch",
     label: "Torch",
@@ -366,6 +410,8 @@ pub const FILTER_ACTIONS: &[ActionSpec] = &[
     ACTION_EDIT,
     ACTION_TOGGLE,
     ACTION_COPY,
+    ACTION_MOVE_UP,
+    ACTION_MOVE_DOWN,
     ACTION_REMOVE,
     ACTION_RESET,
 ];
@@ -379,8 +425,8 @@ pub const HARDWARE_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT];
 /// Enable/disable without add (packages, some system lists).
 pub const TOGGLE_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_TOGGLE];
 
-/// DHCP leases: edit (make static fields) and remove; no copy.
-pub const LEASE_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_REMOVE_SELECTED];
+/// DHCP leases: edit, convert dynamic → static, and remove; no copy.
+pub const LEASE_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_MAKE_STATIC, ACTION_REMOVE_SELECTED];
 
 /// Static ARP: add/edit/remove including dynamic rows.
 pub const ARP_ACTIONS: &[ActionSpec] = &[ACTION_ADD, ACTION_EDIT, ACTION_REMOVE_SELECTED];
@@ -442,6 +488,22 @@ mod tests {
         assert_eq!(action_label(&ACTION_TOGGLE, Some(&row)), "Enable");
         row.insert("disabled".into(), "false".into());
         assert_eq!(action_label(&ACTION_TOGGLE, Some(&row)), "Disable");
+    }
+
+    #[test]
+    fn filter_actions_include_move() {
+        let ids: Vec<_> = FILTER_ACTIONS.iter().map(|action| action.id).collect();
+        assert!(ids.contains(&"move-up"));
+        assert!(ids.contains(&"move-down"));
+        assert_eq!(ActionCommand::MoveUp.rest_name(), "move");
+        assert_eq!(ActionCommand::MoveDown.rest_name(), "move");
+    }
+
+    #[test]
+    fn lease_actions_include_make_static() {
+        let ids: Vec<_> = LEASE_ACTIONS.iter().map(|action| action.id).collect();
+        assert!(ids.contains(&"make-static"));
+        assert_eq!(ActionCommand::MakeStatic.rest_name(), "make-static");
     }
 
     #[test]
