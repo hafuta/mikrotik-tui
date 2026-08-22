@@ -61,12 +61,10 @@ impl FieldKind {
     }
 
     /// Whether printable keys, including digits, should go into this field.
+    /// Lookup typing happens only inside the picker filter, not on the sheet.
     #[must_use]
     pub fn takes_typed_input(self) -> bool {
-        matches!(
-            self,
-            Self::Text | Self::Number | Self::Secret | Self::Lookup { .. }
-        )
+        matches!(self, Self::Text | Self::Number | Self::Secret)
     }
 }
 
@@ -302,7 +300,7 @@ mod tests {
         );
         assert!(FieldKind::Number.takes_typed_input());
         assert!(
-            FieldKind::Lookup {
+            !FieldKind::Lookup {
                 resource_id: "interfaces",
                 value_key: "name",
                 multiple: false,

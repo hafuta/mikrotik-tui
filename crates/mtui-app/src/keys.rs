@@ -1960,6 +1960,27 @@ mod lookup_picker_tests {
     }
 
     #[test]
+    fn typing_on_lookup_field_does_not_write_free_text() {
+        let mut app = lookup_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed");
+        };
+        assert!(session.lookup.is_none());
+        assert_eq!(
+            session.values.get("interface").map(String::as_str),
+            Some("")
+        );
+        assert_eq!(session.focus, 0);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('j'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed");
+        };
+        assert_eq!(session.focus, 1);
+    }
+
+    #[test]
     fn esc_closes_lookup_picker_not_form() {
         let mut app = lookup_app();
         let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));

@@ -281,10 +281,7 @@ impl FormSession {
         let Some(field) = self.focused_spec(schema) else {
             return;
         };
-        if matches!(
-            field.kind,
-            FieldKind::Readonly | FieldKind::Toggle | FieldKind::Enum { .. }
-        ) {
+        if !field.kind.takes_typed_input() {
             return;
         }
         self.values
@@ -297,10 +294,7 @@ impl FormSession {
         let Some(field) = self.focused_spec(schema) else {
             return;
         };
-        if matches!(
-            field.kind,
-            FieldKind::Readonly | FieldKind::Toggle | FieldKind::Enum { .. }
-        ) {
+        if !field.kind.takes_typed_input() {
             return;
         }
         self.values.entry(field.key.to_string()).or_default().pop();
@@ -1146,7 +1140,7 @@ fn field_control(
     };
     match kind {
         FieldKind::Toggle => toggle_control(raw, locked, focused, width, styles),
-        FieldKind::Enum { .. } => slot_control(
+        FieldKind::Enum { .. } | FieldKind::Lookup { .. } => slot_control(
             if raw.is_empty() { "—" } else { raw },
             '<',
             '▾',
@@ -1179,7 +1173,7 @@ fn field_control(
             let body = pad_visual(raw, width);
             vec![Span::styled(body, styles.muted)]
         }
-        FieldKind::Text | FieldKind::Number | FieldKind::Lookup { .. } => slot_control(
+        FieldKind::Text | FieldKind::Number => slot_control(
             raw,
             '[',
             ' ',
@@ -1677,14 +1671,45 @@ mod tests {
     }
 
     #[test]
-    fn activate_opens_lookup_picker_without_network() {
+    fn lookup_field_rejects_free_text() {
         let (schema, mut session) = lookup_session();
-        session.insert_char(&schema, 'e');
+        session.values.insert("interface".into(), "ether1".into());
+        session.insert_char(&schema, 'x');
         session.insert_char(&schema, '\0');
+        session.backspace(&schema);
         assert_eq!(
             session.values.get("interface").map(String::as_str),
-            Some("e")
+            Some("ether1")
         );
+    }
+
+    #[test]
+    fn lookup_field_renders_as_picker_slot() {
+        let (schema, session) = lookup_session();
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(rendered.contains('▾'));
+        assert!(rendered.contains("space pick"));
+        assert!(!rendered.contains("[  —"));
+    }
+
+    #[test]
+    fn activate_opens_lookup_picker_without_network() {
+        let (schema, mut session) = lookup_session();
         session.activate(&schema);
         let picker = session.lookup.as_ref().expect("picker");
         assert_eq!(picker.field_key, "interface");
@@ -1696,7 +1721,7 @@ mod tests {
         assert_eq!(picker.request_id, 0);
         assert_eq!(
             session.values.get("interface").map(String::as_str),
-            Some("e")
+            Some("")
         );
     }
 
