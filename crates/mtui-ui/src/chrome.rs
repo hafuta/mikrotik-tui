@@ -1,10 +1,24 @@
 //! Header, status, and footer chrome.
 
+use std::time::{Duration, Instant};
+
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
+use unicode_width::UnicodeWidthStr;
 
-use crate::layout::fit_line;
+use crate::layout::{clip_line, fit_line, line_width};
 use crate::styles::Styles;
+
+/// Hide the activity pulse until a request has lasted this long.
+pub const ACTIVITY_SHOW_AFTER: Duration = Duration::from_millis(280);
+
+const ACTIVITY_SLOT: usize = 2;
+
+/// True when a busy operation has lasted long enough to be worth showing.
+#[must_use]
+pub fn activity_shown(busy_since: Option<Instant>, now: Instant) -> bool {
+    busy_since.is_some_and(|started| now.saturating_duration_since(started) >= ACTIVITY_SHOW_AFTER)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignalLevel {
@@ -34,11 +48,62 @@ impl Signal {
 
 #[must_use]
 pub fn header_line(title: &str, subtitle: &str, styles: &Styles) -> Line<'static> {
-    let mut spans = vec![Span::styled(format!(" {title} "), styles.title)];
+    let mut spans = vec![Span::styled(format!("  {title}"), styles.title)];
     if !subtitle.is_empty() {
-        spans.push(Span::styled(subtitle.to_string(), styles.muted));
+        spans.push(Span::styled(format!("  {subtitle}"), styles.muted));
     }
     Line::from(spans)
+}
+
+/// Product title, identity, and right-aligned live metrics (Deck mock header).
+///
+/// The last two columns are a reserved activity pulse so busy state never
+/// rewrites the status or metrics text.
+#[must_use]
+pub fn session_header(
+    product: &str,
+    identity: &str,
+    metrics: &[Signal],
+    width: usize,
+    styles: &Styles,
+    activity: bool,
+) -> Line<'static> {
+    if width == 0 {
+        return Line::default();
+    }
+    let inner = width.saturating_sub(ACTIVITY_SLOT.min(width));
+    let mut left = vec![Span::styled(format!("  {product}"), styles.title)];
+    if !identity.is_empty() {
+        left.push(Span::styled(format!("  {identity}"), styles.muted));
+    }
+    let left_line = Line::from(left);
+    let content = if inner == 0 {
+        Line::default()
+    } else {
+        let left_w = line_width(&left_line);
+        if metrics.is_empty() || left_w + 2 >= inner {
+            fit_line(left_line, inner)
+        } else {
+            let rest = inner.saturating_sub(left_w);
+            let rail = signal_rail(metrics, rest.saturating_sub(1), styles);
+            let rail_w = line_width(&rail);
+            let pad = rest.saturating_sub(rail_w).max(1);
+            let mut spans = left_line.spans;
+            spans.push(Span::raw(" ".repeat(pad)));
+            spans.extend(rail.spans);
+            fit_line(Line::from(spans), inner)
+        }
+    };
+    if width < ACTIVITY_SLOT {
+        return content;
+    }
+    let mut spans = content.spans;
+    if activity {
+        spans.push(Span::styled(" ●", styles.signal));
+    } else {
+        spans.push(Span::raw("  "));
+    }
+    fit_line(Line::from(spans), width)
 }
 
 /// Compact status rail matching the Go `SignalRail` header.
@@ -50,7 +115,7 @@ pub fn signal_rail(signals: &[Signal], width: usize, styles: &Styles) -> Line<'s
     let mut spans = Vec::new();
     for (i, signal) in signals.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled(" │ ", styles.muted));
+            spans.push(Span::styled(" · ", styles.muted));
         }
         let text = format!("{} {}", signal.label, signal.value)
             .trim()
@@ -81,14 +146,45 @@ pub fn footer_hints(hints: &[(&str, &str)], styles: &Styles) -> Line<'static> {
         if i > 0 {
             spans.push(Span::styled("  ", styles.muted));
         }
-        spans.push(Span::styled(key.to_string(), styles.focus));
+        spans.push(Span::styled(key.to_string(), styles.key));
         spans.push(Span::styled(format!(" {label}"), styles.muted));
     }
     Line::from(spans)
 }
 
+/// Hints on the left, optional status clipped to the right.
+#[must_use]
+pub fn footer_bar(
+    status: &str,
+    hints: &[(&str, &str)],
+    width: usize,
+    styles: &Styles,
+) -> Line<'static> {
+    if width == 0 {
+        return Line::default();
+    }
+    let hints_line = footer_hints(hints, styles);
+    let status = status.trim();
+    if status.is_empty() {
+        return fit_line(hints_line, width);
+    }
+    let hint_w = line_width(&hints_line);
+    if hint_w + 2 >= width {
+        return fit_line(hints_line, width);
+    }
+    let rest = width.saturating_sub(hint_w);
+    let clipped = clip_line(status, rest.saturating_sub(1));
+    let pad = rest.saturating_sub(clipped.width()).max(1);
+    let mut spans = hints_line.spans;
+    spans.push(Span::raw(" ".repeat(pad)));
+    spans.push(Span::styled(clipped, styles.muted));
+    fit_line(Line::from(spans), width)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use mtui_core::{DefaultTheme, Theme};
 
     use super::*;
@@ -117,7 +213,7 @@ mod tests {
         assert!(plain.contains("https://router.test"));
         assert!(plain.contains("user reader"));
         assert!(plain.contains("session 1m0s"));
-        assert!(plain.contains(" │ "));
+        assert!(plain.contains(" · "));
         assert_eq!(line_width(&line), 80);
     }
 
@@ -130,5 +226,94 @@ mod tests {
             &styles,
         );
         assert!(line_plain(&line).is_empty());
+    }
+
+    #[test]
+    fn session_header_puts_metrics_on_the_right() {
+        let styles = styles();
+        let line = session_header(
+            "mikrotik-tui",
+            "CCR2004 · 192.0.2.1",
+            &[
+                Signal::new("CPU", "18%", SignalLevel::Good),
+                Signal::new("MEM", "41%", SignalLevel::Good),
+                Signal::new("WAN", "84.2 Mb/s", SignalLevel::Good),
+            ],
+            80,
+            &styles,
+            false,
+        );
+        let plain = line_plain(&line);
+        assert!(plain.contains("mikrotik-tui"));
+        assert!(plain.contains("CCR2004 · 192.0.2.1"));
+        assert!(plain.contains("CPU 18%"));
+        assert!(plain.contains("WAN 84.2 Mb/s"));
+        assert_eq!(line_width(&line), 80);
+        let product = plain.find("mikrotik-tui").expect("product");
+        let wan = plain.find("WAN").expect("wan");
+        assert!(product < wan);
+        assert!(!plain.contains('●'));
+    }
+
+    #[test]
+    fn session_header_reserves_activity_slot_without_shifting_metrics() {
+        let styles = styles();
+        let metrics = [
+            Signal::new("CPU", "18%", SignalLevel::Good),
+            Signal::new("MEM", "41%", SignalLevel::Good),
+            Signal::new("WAN", "84.2 Mb/s", SignalLevel::Good),
+        ];
+        let idle = session_header(
+            "mikrotik-tui",
+            "CCR2004 · 192.0.2.1",
+            &metrics,
+            80,
+            &styles,
+            false,
+        );
+        let busy = session_header(
+            "mikrotik-tui",
+            "CCR2004 · 192.0.2.1",
+            &metrics,
+            80,
+            &styles,
+            true,
+        );
+        let idle_plain = line_plain(&idle);
+        let busy_plain = line_plain(&busy);
+        let idle_wan = idle_plain.find("WAN").expect("idle wan");
+        let busy_wan = busy_plain.find("WAN").expect("busy wan");
+        assert_eq!(idle_wan, busy_wan);
+        assert!(busy_plain.contains('●'));
+        assert!(!idle_plain.contains('●'));
+        assert_eq!(line_width(&idle), 80);
+        assert_eq!(line_width(&busy), 80);
+    }
+
+    #[test]
+    fn activity_pulse_waits_out_fast_requests() {
+        let started = Instant::now();
+        assert!(!activity_shown(None, started));
+        assert!(!activity_shown(Some(started), started));
+        assert!(!activity_shown(
+            Some(started),
+            started + Duration::from_millis(100)
+        ));
+        assert!(activity_shown(Some(started), started + ACTIVITY_SHOW_AFTER));
+    }
+
+    #[test]
+    fn footer_bar_keeps_hints_left_and_status_right() {
+        let styles = styles();
+        let line = footer_bar(
+            "resource loaded interfaces",
+            &[("enter", "edit"), ("q", "quit")],
+            60,
+            &styles,
+        );
+        let plain = line_plain(&line);
+        assert!(plain.starts_with("enter edit"));
+        assert!(plain.contains("resource loaded interfaces"));
+        assert_eq!(line_width(&line), 60);
     }
 }

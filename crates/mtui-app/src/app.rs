@@ -4,7 +4,6 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
-use chrono::Local;
 use mtui_config::{
     Credential, CredentialStore, EnvOverrides, FileCredentialStore, LogLevel, LogRecord, LogStore,
     Profile, ProfileStore, shared_log_store,
@@ -17,7 +16,7 @@ use mtui_routeros::{Client, Resource};
 use mtui_ui::{
     ActionMenuState, Command, CommandPalette, ConsoleEntry, ConsoleLevel, ConsoleState,
     DashboardGeometry, FirewallHitChart, FormSession, InspectorState, LayoutMetrics, LoginForm,
-    NavState, Row, Signal, SignalLevel, TableState, TorchState, console_pane_height, format_bytes,
+    NavState, Row, Signal, SignalLevel, TableState, TorchState, console_pane_height, format_rate,
 };
 
 use crate::event::{AppEvent, WorkerMsg};
@@ -119,6 +118,7 @@ pub struct App {
     pub current_resource: String,
     pub loading: bool,
     pub refreshing: bool,
+    activity_since: Option<Instant>,
     pub request_id: u64,
     pub poll_generation: u64,
     pub torch_generation: u64,
@@ -203,6 +203,7 @@ impl App {
             current_resource: DASHBOARD_ID.to_string(),
             loading: false,
             refreshing: false,
+            activity_since: None,
             request_id: 0,
             poll_generation: 0,
             torch_generation: 0,
@@ -374,7 +375,7 @@ impl App {
 
     pub fn update(&mut self, event: AppEvent) -> Vec<AppCommand> {
         self.pull_console_logs();
-        match event {
+        let cmds = match event {
             AppEvent::Input(key) => self.on_key(key),
             AppEvent::Worker(msg) => self.on_worker(msg),
             AppEvent::Tick => self.on_tick(),
@@ -386,7 +387,22 @@ impl App {
                 self.sync_console_viewport();
                 Vec::new()
             }
+        };
+        self.sync_activity();
+        cmds
+    }
+
+    fn sync_activity(&mut self) {
+        if self.loading || self.refreshing {
+            self.activity_since.get_or_insert_with(Instant::now);
+        } else {
+            self.activity_since = None;
         }
+    }
+
+    #[must_use]
+    pub fn show_activity(&self) -> bool {
+        mtui_ui::activity_shown(self.activity_since, Instant::now())
     }
 
     fn on_tick(&mut self) -> Vec<AppCommand> {
@@ -497,11 +513,7 @@ impl App {
                         self.table.select_id(&id);
                     }
                 }
-                self.status = if self.refreshing {
-                    "Refreshing…".into()
-                } else {
-                    resource_id
-                };
+                self.status = resource_id;
                 Vec::new()
             }
             WorkerMsg::DashboardResult {
@@ -551,33 +563,73 @@ impl App {
         }
     }
 
-    /// Header signals: board, host, `RouterOS` version, memory, uptime, and local clock.
+    /// Header identity: board and host, matching the Deck mock (`CCR2004 · 192.0.2.1`).
+    #[must_use]
+    pub fn session_identity(&self) -> String {
+        let board = nonempty_field(&self.router, "board-name").unwrap_or("RouterOS");
+        let host = header_host(&self.login.url);
+        if host.is_empty() {
+            board.to_string()
+        } else {
+            format!("{board} · {host}")
+        }
+    }
+
+    /// Live header metrics: CPU, memory, and WAN rate.
     #[must_use]
     pub fn header_signals(&self) -> Vec<Signal> {
-        let board = nonempty_field(&self.router, "board-name").unwrap_or("RouterOS");
-        let version = nonempty_field(&self.router, "version").unwrap_or_default();
-        let uptime = nonempty_field(&self.router, "uptime").unwrap_or_default();
-        vec![
-            Signal::new(board, "", SignalLevel::Good),
-            Signal::new(header_host(&self.login.url), "", SignalLevel::Good),
-            Signal::new("RouterOS", version, SignalLevel::Idle),
-            self.memory_signal(),
-            Signal::new("uptime", uptime, SignalLevel::Idle),
-            Signal::new(format_header_clock(Local::now()), "", SignalLevel::Idle),
-        ]
+        vec![self.cpu_signal(), self.memory_signal(), self.wan_signal()]
+    }
+
+    fn cpu_signal(&self) -> Signal {
+        match self.cpu_percent() {
+            Some(load) => {
+                let level = percent_signal_level(load);
+                let level = if matches!(level, SignalLevel::Good) {
+                    SignalLevel::Idle
+                } else {
+                    level
+                };
+                Signal::new("CPU", format!("{load:.0}%"), level)
+            }
+            None => Signal::new("CPU", "—", SignalLevel::Idle),
+        }
     }
 
     fn memory_signal(&self) -> Signal {
         let used = self.dash.memory_used_bytes;
         let total = self.dash.memory_total_bytes;
         if total == 0 {
-            return Signal::new("mem", "—", SignalLevel::Idle);
+            return Signal::new("MEM", "—", SignalLevel::Idle);
+        }
+        let percent = memory_percent(used, total);
+        let level = percent_signal_level(percent);
+        let level = if matches!(level, SignalLevel::Good) {
+            SignalLevel::Idle
+        } else {
+            level
+        };
+        Signal::new("MEM", format!("{percent:.0}%"), level)
+    }
+
+    fn wan_signal(&self) -> Signal {
+        if !self.dash.traffic_has_base {
+            return Signal::new("WAN", "—", SignalLevel::Idle);
         }
         Signal::new(
-            "mem",
-            format!("{} / {}", format_bytes(used), format_bytes(total)),
-            memory_signal_level(used, total),
+            "WAN",
+            format_rate(self.dash.traffic_rx_rate),
+            SignalLevel::Good,
         )
+    }
+
+    fn cpu_percent(&self) -> Option<f64> {
+        if !self.dash.cpu_core_loads.is_empty() {
+            let total: f64 = self.dash.cpu_core_loads.values().copied().sum();
+            let count = f64::from(u32::try_from(self.dash.cpu_core_loads.len()).unwrap_or(1));
+            return Some(total / count.max(1.0));
+        }
+        nonempty_field(&self.router, "cpu-load").and_then(parse_percent)
     }
 
     pub(crate) fn poll_current(&mut self) -> Vec<AppCommand> {
@@ -655,11 +707,11 @@ impl App {
             .terminal_width
             .saturating_sub(metrics.nav_width)
             .saturating_sub(inspector)
-            .saturating_sub(2)
+            .saturating_sub(4)
             .max(1);
         let inner_h = self
             .terminal_height
-            .saturating_sub(5)
+            .saturating_sub(4)
             .saturating_sub(self.console_layout_height())
             .max(1);
         (usize::from(inner_w), usize::from(inner_h))
@@ -984,10 +1036,6 @@ pub(crate) fn is_https_router_url(url: &str) -> bool {
     }
 }
 
-fn format_header_clock(now: chrono::DateTime<Local>) -> String {
-    now.format("%Y-%m-%d %H:%M:%S").to_string()
-}
-
 fn loaded_entity_id(rows: &[Resource]) -> Option<&str> {
     match rows {
         [row] => {
@@ -1030,29 +1078,24 @@ fn console_level(level: LogLevel) -> ConsoleLevel {
     }
 }
 
-#[cfg(test)]
-fn is_header_clock(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() == 19
-        && bytes[4] == b'-'
-        && bytes[7] == b'-'
-        && bytes[10] == b' '
-        && bytes[13] == b':'
-        && bytes[16] == b':'
-        && bytes.iter().enumerate().all(|(index, byte)| match index {
-            4 | 7 | 10 | 13 | 16 => true,
-            _ => byte.is_ascii_digit(),
-        })
+fn parse_percent(value: &str) -> Option<f64> {
+    let trimmed = value.trim().trim_end_matches('%');
+    let load = trimmed.parse::<f64>().ok()?;
+    (load.is_finite() && load >= 0.0).then_some(load)
 }
 
-fn memory_signal_level(used: u64, total: u64) -> SignalLevel {
+#[allow(clippy::cast_precision_loss)]
+fn memory_percent(used: u64, total: u64) -> f64 {
     if total == 0 {
-        return SignalLevel::Idle;
+        return 0.0;
     }
-    let used_percent_x100 = used.saturating_mul(100);
-    if used_percent_x100 >= total.saturating_mul(90) {
+    (used as f64 / total as f64) * 100.0
+}
+
+fn percent_signal_level(percent: f64) -> SignalLevel {
+    if percent >= 90.0 {
         SignalLevel::Error
-    } else if used_percent_x100 >= total.saturating_mul(75) {
+    } else if percent >= 75.0 {
         SignalLevel::Warning
     } else {
         SignalLevel::Good
@@ -1101,9 +1144,10 @@ mod dashboard_tests {
         let mut app = dashboard_app();
         app.current_resource = "interfaces".into();
         app.screen = Screen::Main;
+        app.login.url = "https://192.0.2.1".into();
         let mut system = Resource::default();
         system.fields.insert("board-name".into(), "hEX S".into());
-        system.fields.insert("version".into(), "7.23.3".into());
+        system.fields.insert("cpu-load".into(), "18".into());
         system.fields.insert("uptime".into(), "2h".into());
         system
             .fields
@@ -1129,25 +1173,25 @@ mod dashboard_tests {
             })
             .collect::<Vec<_>>();
         assert!(
-            header
-                .iter()
-                .any(|part| part == "mem 128.0 MiB / 256.0 MiB")
+            header.iter().any(|part| part == "MEM 50%"),
+            "memory percent missing: {header:?}"
         );
-        assert!(header.iter().any(|part| part == "hEX S"));
-        assert!(header.iter().any(|part| part == "uptime 2h"));
+        assert!(header.iter().any(|part| part == "CPU 18%"));
+        assert_eq!(app.session_identity(), "hEX S · 192.0.2.1");
     }
 
     #[test]
-    fn header_shows_board_host_version_and_uptime() {
+    fn header_shows_identity_and_live_metrics() {
         let mut app = dashboard_app();
         app.login.url = "https://192.168.88.1:8443".into();
         app.router
             .fields
             .insert("board-name".into(), "hEX S".into());
-        app.router.fields.insert("version".into(), "7.23.3".into());
-        app.router.fields.insert("uptime".into(), "1d".into());
+        app.router.fields.insert("cpu-load".into(), "18".into());
         app.dash.memory_used_bytes = 128 * 1024 * 1024;
         app.dash.memory_total_bytes = 256 * 1024 * 1024;
+        app.dash.traffic_has_base = true;
+        app.dash.traffic_rx_rate = 84_200_000.0;
 
         let labels: Vec<_> = app
             .header_signals()
@@ -1158,25 +1202,17 @@ mod dashboard_tests {
                     .to_string()
             })
             .collect();
+        assert_eq!(app.session_identity(), "hEX S · 192.168.88.1");
         assert_eq!(
-            &labels[..labels.len().saturating_sub(1)],
+            labels,
             [
-                "hEX S",
-                "192.168.88.1",
-                "RouterOS 7.23.3",
-                "mem 128.0 MiB / 256.0 MiB",
-                "uptime 1d",
+                "CPU 18%".to_string(),
+                "MEM 50%".to_string(),
+                "WAN 84.2 Mb/s".to_string(),
             ]
         );
-        assert!(
-            labels.last().is_some_and(|clock| is_header_clock(clock)),
-            "clock missing or unpadded: {labels:?}"
-        );
-        assert!(!labels.iter().any(|part| part.contains("https")));
-        assert!(!labels.iter().any(|part| part.contains("8443")));
-        assert!(!labels.iter().any(|part| part.contains("session")));
-        assert!(!labels.iter().any(|part| part.contains("MikroTik")));
-        assert!(!labels.iter().any(|part| part.contains("user")));
+        assert!(!app.session_identity().contains("https"));
+        assert!(!app.session_identity().contains("8443"));
     }
 
     #[test]
@@ -1184,18 +1220,6 @@ mod dashboard_tests {
         assert_eq!(header_host("https://10.0.0.1"), "10.0.0.1");
         assert_eq!(header_host("https://10.0.0.1:443/"), "10.0.0.1");
         assert_eq!(header_host("https://[2001:db8::1]:8729"), "2001:db8::1");
-    }
-
-    #[test]
-    fn header_clock_zero_pads_single_digits() {
-        use chrono::TimeZone;
-        let dt = Local
-            .with_ymd_and_hms(2026, 8, 22, 1, 6, 5)
-            .single()
-            .expect("valid local time");
-        assert_eq!(format_header_clock(dt), "2026-08-22 01:06:05");
-        assert!(is_header_clock("2026-08-22 01:26:35"));
-        assert!(!is_header_clock("2026-8-22 1:26:35"));
     }
 
     #[test]
@@ -1229,6 +1253,31 @@ mod dashboard_tests {
             resource_loaded_message("clock", &singleton),
             "resource loaded clock"
         );
+    }
+}
+
+#[cfg(test)]
+mod activity_tests {
+    use super::*;
+    use mtui_ui::{ACTIVITY_SHOW_AFTER, activity_shown};
+
+    #[test]
+    fn activity_clock_arms_with_busy_flags_but_stays_hidden_until_delay() {
+        let mut app = App::new(false).expect("app");
+        assert!(!app.show_activity());
+        app.loading = true;
+        app.sync_activity();
+        assert!(app.activity_since.is_some());
+        assert!(!app.show_activity());
+
+        let started = app.activity_since.expect("armed");
+        assert!(activity_shown(Some(started), started + ACTIVITY_SHOW_AFTER));
+
+        app.loading = false;
+        app.refreshing = false;
+        app.sync_activity();
+        assert!(app.activity_since.is_none());
+        assert!(!app.show_activity());
     }
 }
 

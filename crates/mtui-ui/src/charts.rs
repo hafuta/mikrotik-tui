@@ -363,27 +363,27 @@ fn format_traffic_window(window: Duration) -> String {
 #[must_use]
 pub fn format_traffic_rate(bits_per_second: f64) -> String {
     if bits_per_second >= 1_000_000_000.0 {
-        format!("{:.1} Gbps", bits_per_second / 1_000_000_000.0)
+        format!("{:.1} Gb/s", bits_per_second / 1_000_000_000.0)
     } else if bits_per_second >= 1_000_000.0 {
-        format!("{:.1} Mbps", bits_per_second / 1_000_000.0)
+        format!("{:.1} Mb/s", bits_per_second / 1_000_000.0)
     } else if bits_per_second >= 1_000.0 {
-        format!("{:.1} Kbps", bits_per_second / 1_000.0)
+        format!("{:.1} Kb/s", bits_per_second / 1_000.0)
     } else {
-        format!("{bits_per_second:.0} bps")
+        format!("{bits_per_second:.0} b/s")
     }
 }
 
-/// Header-rate formatting (2 decimal Gbps), matching Go `formatRate`.
+/// Header-rate formatting (2 decimal Gb/s).
 #[must_use]
 pub fn format_rate(bits_per_second: f64) -> String {
     if bits_per_second >= 1_000_000_000.0 {
-        format!("{:.2} Gbps", bits_per_second / 1_000_000_000.0)
+        format!("{:.2} Gb/s", bits_per_second / 1_000_000_000.0)
     } else if bits_per_second >= 1_000_000.0 {
-        format!("{:.1} Mbps", bits_per_second / 1_000_000.0)
+        format!("{:.1} Mb/s", bits_per_second / 1_000_000.0)
     } else if bits_per_second >= 1_000.0 {
-        format!("{:.1} Kbps", bits_per_second / 1_000.0)
+        format!("{:.1} Kb/s", bits_per_second / 1_000.0)
     } else {
-        format!("{bits_per_second:.0} bps")
+        format!("{bits_per_second:.0} b/s")
     }
 }
 
@@ -474,7 +474,7 @@ mod tests {
         assert_bounded(&first, 30, 6);
         let plain = crate::layout::lines_plain(&first);
         assert!(has_braille(&plain), "{plain}");
-        assert!(plain.contains("Mbps"), "{plain}");
+        assert!(plain.contains("Mb/s"), "{plain}");
         assert!(plain.contains("0 bps"), "{plain}");
         assert!(plain.contains("-32s"), "{plain}");
         assert!(plain.contains("now"), "{plain}");

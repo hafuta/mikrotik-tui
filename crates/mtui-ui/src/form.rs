@@ -9,10 +9,11 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph};
 
+use crate::layout::clip_line;
 use crate::login::is_printable_char;
 use crate::overlay::{compact_modal_rect, dim_canvas};
 use crate::styles::Styles;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormMode {
@@ -333,41 +334,19 @@ pub fn render_form_sheet(
         );
     }
 
-    let field_area = chunks[1];
-    let mut field_lines = Vec::new();
-    let fields = session.visible_fields(schema);
-    let extra_rows = if sections.get(session.section).is_some_and(|s| s.read_only) {
-        session.extras.len().min(6)
-    } else {
-        0
-    };
-    let visible_h = usize::from(field_area.height.max(1)).saturating_sub(extra_rows);
-    let start = session.offset.min(fields.len().saturating_sub(1));
-    for (idx, (locked, field)) in fields.iter().enumerate().skip(start).take(visible_h.max(1)) {
-        let focused = idx == session.focus;
-        field_lines.push(field_line(session, field, *locked, focused, styles));
-    }
-    if extra_rows > 0 {
-        for (key, value) in session.extras.iter().take(extra_rows) {
-            field_lines.push(Line::from(vec![
-                Span::styled(format!("  {key:<16} "), styles.muted),
-                Span::styled(value.clone(), styles.text),
-            ]));
-        }
-    }
-    frame.render_widget(Paragraph::new(field_lines), field_area);
+    frame.render_widget(
+        Paragraph::new(sheet_field_lines(
+            session,
+            schema,
+            sections,
+            usize::from(chunks[1].width.max(1)),
+            usize::from(chunks[1].height.max(1)),
+            styles,
+        )),
+        chunks[1],
+    );
 
-    let hint = if session.confirm_discard {
-        "discard changes?  y confirm   n keep editing"
-    } else if session.saving {
-        "saving…"
-    } else if let Some(err) = &session.error {
-        err.as_str()
-    } else if show_tabs {
-        "[ / ] tabs   1-9 jump   ↑↓ field   tab field   space toggle   ctrl+s save   esc"
-    } else {
-        "tab field   space toggle   ctrl+s save   esc"
-    };
+    let hint = sheet_hint(session, schema, sections, show_tabs);
     let hint_style = if session.error.is_some() || session.confirm_discard {
         styles.alert
     } else {
@@ -377,6 +356,77 @@ pub fn render_form_sheet(
         Paragraph::new(Line::from(Span::styled(hint, hint_style))),
         chunks[2],
     );
+}
+
+fn sheet_field_lines(
+    session: &FormSession,
+    schema: &FormSchema,
+    sections: &[FormSection],
+    width: usize,
+    height: usize,
+    styles: &Styles,
+) -> Vec<Line<'static>> {
+    let fields = session.visible_fields(schema);
+    let extra_rows = if sections.get(session.section).is_some_and(|s| s.read_only) {
+        session.extras.len().min(6)
+    } else {
+        0
+    };
+    let visible_h = height.saturating_sub(extra_rows);
+    let start = session.offset.min(fields.len().saturating_sub(1));
+    let mut lines = Vec::new();
+    for (idx, (locked, field)) in fields.iter().enumerate().skip(start).take(visible_h.max(1)) {
+        lines.push(field_line(
+            session,
+            field,
+            *locked,
+            idx == session.focus,
+            width,
+            styles,
+        ));
+    }
+    if extra_rows > 0 {
+        for (key, value) in session.extras.iter().take(extra_rows) {
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {key:<16} "), styles.muted),
+                Span::styled(value.clone(), styles.text),
+            ]));
+        }
+    }
+    lines
+}
+
+fn sheet_hint(
+    session: &FormSession,
+    schema: &FormSchema,
+    sections: &[FormSection],
+    show_tabs: bool,
+) -> String {
+    if session.confirm_discard {
+        return "discard changes?  y confirm   n keep editing".into();
+    }
+    if session.saving {
+        return "saving…".into();
+    }
+    if let Some(err) = &session.error {
+        return err.clone();
+    }
+    let field_hint = session.focused_spec(schema).map_or("tab field", |field| {
+        if sections
+            .get(session.section)
+            .is_some_and(|section| section.read_only)
+            || matches!(field.kind, FieldKind::Readonly)
+        {
+            FieldKind::Readonly.edit_hint()
+        } else {
+            field.kind.edit_hint()
+        }
+    });
+    if show_tabs {
+        format!("[ / ] tabs   1-9 jump   ↑↓ field   tab field   {field_hint}   ctrl+s save   esc")
+    } else {
+        format!("tab field   {field_hint}   ctrl+s save   esc")
+    }
 }
 
 /// Numbered tabs with a bracketed active tab and an underline so selection
@@ -516,45 +566,200 @@ fn sheet_title(session: &FormSession, schema: &FormSchema) -> String {
     bits.join(" · ")
 }
 
+const LABEL_COLS: usize = 14;
+const TAG_COLS: usize = 6;
+
 fn field_line(
     session: &FormSession,
     field: &FieldSpec,
     locked: bool,
     focused: bool,
+    width: usize,
     styles: &Styles,
 ) -> Line<'static> {
     let caret = if focused { ">" } else { " " };
-    let raw = session.values.get(field.key).cloned().unwrap_or_default();
-    let display = match field.kind {
-        FieldKind::Toggle => {
-            if matches!(raw.as_str(), "true" | "yes" | "1") {
-                "[x]".into()
-            } else {
-                "[ ]".into()
-            }
-        }
-        FieldKind::Secret => {
-            if raw.is_empty() {
-                String::new()
-            } else {
-                "••••••••".into()
-            }
-        }
-        _ => raw,
-    };
-    let suffix = if locked { "  (locked)" } else { "" };
+    let label = pad_visual(field.label, LABEL_COLS);
+    let tag = pad_visual(field.kind.tag(), TAG_COLS);
     let label_style = if focused { styles.focus } else { styles.muted };
-    let value_style: Style = if focused {
+    let tag_style = if focused { styles.key } else { styles.quiet };
+    let mut spans = vec![
+        Span::styled(format!("{caret} {label} "), label_style),
+        Span::styled(format!("{tag} "), tag_style),
+    ];
+
+    let used = spans
+        .iter()
+        .map(|span| span.content.as_ref().width())
+        .sum::<usize>();
+    let rest = width.saturating_sub(used);
+    spans.extend(field_control(
+        field.kind,
+        session.values.get(field.key).map_or("", String::as_str),
+        locked,
+        focused,
+        rest,
+        styles,
+    ));
+    Line::from(spans)
+}
+
+fn field_control(
+    kind: FieldKind,
+    raw: &str,
+    locked: bool,
+    focused: bool,
+    width: usize,
+    styles: &Styles,
+) -> Vec<Span<'static>> {
+    let value_style: Style = if focused && !locked {
         styles.focus.add_modifier(Modifier::BOLD)
     } else if locked {
         styles.muted
     } else {
         styles.text
     };
-    Line::from(vec![
-        Span::styled(format!("{caret} {:<16} ", field.label), label_style),
-        Span::styled(format!("{display}{suffix}"), value_style),
-    ])
+    let chrome = if focused && !locked {
+        styles.focus
+    } else {
+        styles.border
+    };
+    match kind {
+        FieldKind::Toggle => toggle_control(raw, locked, focused, width, styles),
+        FieldKind::Enum { .. } => slot_control(
+            if raw.is_empty() { "—" } else { raw },
+            '<',
+            '▾',
+            '>',
+            focused && !locked,
+            locked,
+            width,
+            chrome,
+            value_style,
+        ),
+        FieldKind::Secret => {
+            let shown = if raw.is_empty() {
+                String::new()
+            } else {
+                "••••••••".into()
+            };
+            slot_control(
+                &shown,
+                '[',
+                ' ',
+                ']',
+                focused && !locked,
+                locked,
+                width,
+                chrome,
+                value_style,
+            )
+        }
+        FieldKind::Readonly => {
+            let body = pad_visual(raw, width);
+            vec![Span::styled(body, styles.muted)]
+        }
+        FieldKind::Text | FieldKind::Number => slot_control(
+            raw,
+            '[',
+            ' ',
+            ']',
+            focused && !locked,
+            locked,
+            width,
+            chrome,
+            value_style,
+        ),
+    }
+}
+
+fn toggle_control(
+    raw: &str,
+    locked: bool,
+    focused: bool,
+    width: usize,
+    styles: &Styles,
+) -> Vec<Span<'static>> {
+    let on = matches!(raw, "true" | "yes" | "1");
+    let mark = if on { "[x]" } else { "[ ]" };
+    let word = if on { "on" } else { "off" };
+    let mark_style = if focused && !locked {
+        styles.focus
+    } else if on {
+        styles.signal
+    } else {
+        styles.muted
+    };
+    let word_style = if focused && !locked {
+        styles.focus
+    } else {
+        styles.muted
+    };
+    let gap = "  ";
+    let used = mark.width() + gap.len() + word.width();
+    let pad = " ".repeat(width.saturating_sub(used));
+    vec![
+        Span::styled(mark.to_string(), mark_style),
+        Span::styled(format!("{gap}{word}{pad}"), word_style),
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn slot_control(
+    value: &str,
+    open: char,
+    trail: char,
+    close: char,
+    caret: bool,
+    locked: bool,
+    width: usize,
+    chrome: Style,
+    value_style: Style,
+) -> Vec<Span<'static>> {
+    if width < 2 {
+        return vec![Span::styled(pad_visual(value, width), value_style)];
+    }
+    let trail_w = if trail == ' ' {
+        0
+    } else {
+        UnicodeWidthChar::width(trail).unwrap_or(1)
+    };
+    let inner = width.saturating_sub(2 + trail_w).max(1);
+    let mut body = value.to_string();
+    if caret {
+        body.push('_');
+    }
+    let padded = pad_visual(&body, inner);
+    let suffix = if locked {
+        let trimmed = padded.trim_end();
+        let note = " locked";
+        if trimmed.width() + note.len() <= inner {
+            pad_visual(&format!("{trimmed}{note}"), inner)
+        } else {
+            padded
+        }
+    } else {
+        padded
+    };
+    let mut spans = vec![
+        Span::styled(open.to_string(), chrome),
+        Span::styled(suffix, value_style),
+    ];
+    if trail != ' ' {
+        spans.push(Span::styled(trail.to_string(), chrome));
+    }
+    spans.push(Span::styled(close.to_string(), chrome));
+    spans
+}
+
+fn pad_visual(value: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let w = value.width();
+    if w > width {
+        return clip_line(value, width);
+    }
+    format!("{value}{}", " ".repeat(width - w))
 }
 
 #[cfg(test)]
@@ -684,6 +889,9 @@ mod tests {
         assert!(rendered.contains("[1 General]"));
         assert!(rendered.contains("2 Status"));
         assert!(rendered.contains("Name"));
+        assert!(rendered.contains("text"));
+        assert!(rendered.contains('['));
+        assert!(rendered.contains("toggle"));
         assert!(
             !rendered.contains("> General"),
             "tabs replace the left section rail"
@@ -736,6 +944,77 @@ mod tests {
             }
         }
         assert!(rendered.contains("New name"));
+        assert!(rendered.contains("text"));
+        assert!(rendered.contains('['));
         assert!(!rendered.contains("[1 Copy]"));
+    }
+
+    #[test]
+    fn empty_create_fields_show_slots_and_kind_tags() {
+        let schema = FormSchema {
+            title_key: "name",
+            subtitle_keys: &[],
+            sections: &[],
+            create_sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[
+                    FieldSpec {
+                        key: "name",
+                        label: "Name",
+                        kind: FieldKind::Text,
+                    },
+                    FieldSpec {
+                        key: "interfaces",
+                        label: "Interfaces",
+                        kind: FieldKind::Text,
+                    },
+                    FieldSpec {
+                        key: "arp",
+                        label: "ARP",
+                        kind: FieldKind::Enum {
+                            values: &["enabled", "disabled"],
+                        },
+                    },
+                    FieldSpec {
+                        key: "disabled",
+                        label: "Disabled",
+                        kind: FieldKind::Toggle,
+                    },
+                ],
+            }],
+        };
+        let session = FormSession::create("bridge", &schema);
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(rendered.contains("text"));
+        assert!(rendered.contains("select"));
+        assert!(rendered.contains("toggle"));
+        assert!(
+            rendered.contains('['),
+            "empty text fields keep an input slot"
+        );
+        assert!(rendered.contains('▾'), "select fields show a cycle marker");
+        assert!(rendered.contains("[ ]"));
+        assert!(rendered.contains("type value"));
+        assert!(
+            !rendered.contains("space toggle"),
+            "hints follow the focused field"
+        );
     }
 }

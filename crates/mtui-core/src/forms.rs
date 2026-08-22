@@ -26,6 +26,30 @@ impl FieldKind {
     pub fn writable(self) -> bool {
         !matches!(self, Self::Readonly)
     }
+
+    /// Short kind tag shown beside the field label (`text`, `select`, …).
+    #[must_use]
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Number => "num",
+            Self::Toggle => "toggle",
+            Self::Enum { .. } => "select",
+            Self::Readonly => "read",
+            Self::Secret => "secret",
+        }
+    }
+
+    /// Footer hint for the focused control.
+    #[must_use]
+    pub fn edit_hint(self) -> &'static str {
+        match self {
+            Self::Text | Self::Number | Self::Secret => "type value",
+            Self::Toggle => "space toggle",
+            Self::Enum { .. } => "space cycle",
+            Self::Readonly => "read only",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,5 +242,27 @@ mod tests {
         assert_eq!(body.get("comment").map(String::as_str), Some("office"));
         assert!(!body.contains_key("running"));
         assert!(!body.contains_key("name"));
+    }
+
+    #[test]
+    fn field_kind_names_the_control() {
+        assert_eq!(FieldKind::Text.tag(), "text");
+        assert_eq!(FieldKind::Number.tag(), "num");
+        assert_eq!(FieldKind::Toggle.tag(), "toggle");
+        assert_eq!(
+            FieldKind::Enum {
+                values: &["a", "b"]
+            }
+            .tag(),
+            "select"
+        );
+        assert_eq!(FieldKind::Readonly.tag(), "read");
+        assert_eq!(FieldKind::Secret.tag(), "secret");
+        assert_eq!(FieldKind::Text.edit_hint(), "type value");
+        assert_eq!(FieldKind::Toggle.edit_hint(), "space toggle");
+        assert_eq!(
+            FieldKind::Enum { values: &["a"] }.edit_hint(),
+            "space cycle"
+        );
     }
 }

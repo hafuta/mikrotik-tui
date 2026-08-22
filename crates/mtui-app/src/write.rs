@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use mtui_core::{
-    ActionCommand, ActionKind, ActionSpec, INTERFACE_CREATE_TARGETS, action_label, patch_body,
-    resource_by_id, truthy,
+    ActionCommand, ActionKind, ActionSpec, DASHBOARD_ID, INTERFACE_CREATE_TARGETS, action_label,
+    patch_body, resource_by_id, truthy,
 };
 use mtui_routeros::MASKED_VALUE;
 use mtui_ui::{ActionMenuItem, ActionMenuState, FormSession, Row, TorchState};
@@ -68,22 +68,47 @@ impl App {
             ("ctrl+k".into(), "commands".into()),
             ("`".into(), "console".into()),
         ];
-        if self.pane == Pane::Content && self.current_resource != "logs" {
-            for action in self.current_actions().into_iter().take(5) {
+        if self.resource_actions_allowed() {
+            let row = self.table.selected_row();
+            for action in self
+                .current_actions()
+                .into_iter()
+                .filter(|action| self.action_offered_in_pane(action))
+                .take(5)
+            {
                 if let Some(key) = action.key {
-                    hints.push((
-                        key.to_string(),
-                        action_label(action, self.table.selected_row()),
-                    ));
+                    hints.push((key.to_string(), action_label(action, row)));
                 }
             }
-            if resource_by_id(&self.current_resource).is_some_and(|spec| !spec.actions.is_empty()) {
+            if self.pane_allows_row_actions()
+                && resource_by_id(&self.current_resource)
+                    .is_some_and(|spec| !spec.actions.is_empty())
+            {
                 hints.push(("a".into(), "actions".into()));
             }
         }
         hints.push(("r".into(), "refresh".into()));
         hints.push(("q".into(), "quit".into()));
         hints
+    }
+
+    fn resource_actions_allowed(&self) -> bool {
+        self.current_resource != "logs" && self.current_resource != DASHBOARD_ID
+    }
+
+    fn pane_allows_row_actions(&self) -> bool {
+        matches!(self.pane, Pane::Content | Pane::Inspector)
+    }
+
+    fn action_offered_in_pane(&self, action: &ActionSpec) -> bool {
+        if !self.resource_actions_allowed() || self.pane == Pane::Console {
+            return false;
+        }
+        if action.needs_selection {
+            self.pane_allows_row_actions()
+        } else {
+            matches!(self.pane, Pane::Nav | Pane::Content | Pane::Inspector)
+        }
     }
 
     pub(crate) fn dispatch_named_action(&mut self, action_id: &str) -> Vec<AppCommand> {
@@ -112,12 +137,13 @@ impl App {
 
     pub(crate) fn action_key_consumed(&self, ch: char) -> bool {
         if ch == 'a' {
-            return resource_by_id(&self.current_resource)
-                .is_some_and(|spec| !spec.actions.is_empty());
+            return self.pane_allows_row_actions()
+                && resource_by_id(&self.current_resource)
+                    .is_some_and(|spec| !spec.actions.is_empty());
         }
         self.current_actions()
             .iter()
-            .any(|action| action.key == Some(ch))
+            .any(|action| action.key == Some(ch) && self.action_offered_in_pane(action))
     }
 
     pub(crate) fn dispatch_key_action(&mut self, key: char) -> Vec<AppCommand> {
@@ -596,6 +622,54 @@ mod tests {
             panic!("expected form");
         };
         assert_eq!(session.section, 0);
+    }
+
+    #[test]
+    fn add_from_nav_opens_create() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("vlan");
+        app.pane = Pane::Nav;
+        let hints = app.footer_action_hints();
+        assert!(
+            hints
+                .iter()
+                .any(|(key, label)| key == "n" && label == "Add"),
+            "nav footer should offer add: {hints:?}"
+        );
+        assert!(
+            !hints.iter().any(|(key, _)| key == "e"),
+            "row edit should stay on the table pane: {hints:?}"
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('n'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected create form, got {:?}", app.overlay);
+        };
+        assert_eq!(session.resource_id, "vlan");
+        assert_eq!(session.mode, mtui_ui::FormMode::Create);
+    }
+
+    #[test]
+    fn edit_from_nav_does_not_open_the_sheet() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("vlan");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "vlan10".into());
+        fields.insert("vlan-id".into(), "10".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "vlan".into(),
+            rows: vec![Resource {
+                id: "*3".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Nav;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('e'))));
+        assert!(matches!(app.overlay, Overlay::None));
     }
 
     #[test]

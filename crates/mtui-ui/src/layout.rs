@@ -165,7 +165,15 @@ pub fn fit_line(line: Line<'static>, width: usize) -> Line<'static> {
         break;
     }
     if used < width {
-        spans.push(Span::raw(" ".repeat(width - used)));
+        let pad = " ".repeat(width - used);
+        let pad_style = spans
+            .iter()
+            .find_map(|span| span.style.bg)
+            .map(|bg| ratatui::style::Style::default().bg(bg));
+        spans.push(match pad_style {
+            Some(style) => Span::styled(pad, style),
+            None => Span::raw(pad),
+        });
     }
     Line::from(spans)
 }

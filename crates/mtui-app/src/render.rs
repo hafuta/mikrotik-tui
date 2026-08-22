@@ -3,13 +3,12 @@
 use mtui_core::DASHBOARD_ID;
 use mtui_ui::{
     CpuCoreView, DashboardView, LayoutMetrics, Modal, ModalButton, ModalButtonKind, ModalPanel,
-    constrain_lines, dashboard_content, fit_line, footer_hints, format_fingerprint, header_line,
-    render_action_menu, render_form_sheet, render_modal, render_torch, signal_rail, status_line,
+    constrain_lines, dashboard_content, fill_rect, footer_bar, format_fingerprint, header_line,
+    render_action_menu, render_form_sheet, render_modal, render_torch, session_header,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
 
 use crate::app::{App, Overlay, Pane, Screen};
 
@@ -75,20 +74,23 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
 
 fn draw_login(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
+    fill_rect(frame, area, styles.void);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Min(1),
+            Constraint::Length(1),
         ])
         .split(area);
 
+    fill_rect(frame, chunks[0], styles.band);
     frame.render_widget(
-        Paragraph::new(header_line("MikroTik TUI", "(Rust)", &styles)),
+        Paragraph::new(header_line("mikrotik-tui", "connect", &styles)),
         chunks[0],
     );
 
@@ -114,6 +116,7 @@ fn draw_login(frame: &mut Frame<'_>, area: Rect, app: &App) {
         let block = Block::default()
             .title(*label)
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .border_style(if *focused {
                 styles.focus
             } else {
@@ -126,7 +129,16 @@ fn draw_login(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
     let err = app.login.error.clone().unwrap_or_default();
     frame.render_widget(Paragraph::new(err).style(styles.error), chunks[4]);
-    frame.render_widget(Paragraph::new(status_line(&app.status, &styles)), chunks[5]);
+    fill_rect(frame, chunks[6], styles.inset);
+    frame.render_widget(
+        Paragraph::new(footer_bar(
+            &app.status,
+            &[("enter", "connect"), ("tab", "field"), ("q", "quit")],
+            usize::from(area.width.max(1)),
+            &styles,
+        )),
+        chunks[6],
+    );
 }
 
 fn draw_trust(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -162,6 +174,8 @@ fn draw_trust(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
+    fill_rect(frame, area, styles.void);
+
     let metrics = LayoutMetrics::new(area.width, area.height);
     let console_h = app.console_layout_height();
     let mut vertical = vec![Constraint::Length(1)];
@@ -174,16 +188,20 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
         }
     }
     vertical.push(Constraint::Length(1));
-    vertical.push(Constraint::Length(1));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(vertical)
         .split(area);
 
-    let inner_width = usize::from(area.width.saturating_sub(2).max(1));
-    let mut spans = vec![Span::raw(" ")];
-    spans.extend(signal_rail(&app.header_signals(), inner_width, &styles).spans);
-    let header = fit_line(Line::from(spans), usize::from(area.width.max(1)));
+    fill_rect(frame, chunks[0], styles.band);
+    let header = session_header(
+        "mikrotik-tui",
+        &app.session_identity(),
+        &app.header_signals(),
+        usize::from(area.width.max(1)),
+        &styles,
+        app.show_activity(),
+    );
     frame.render_widget(Paragraph::new(header), chunks[0]);
 
     let mut chunk_idx = 1;
@@ -226,26 +244,29 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
         chunk_idx += 1;
     }
 
-    let status = if app.refreshing {
-        format!("{} · refreshing", app.status)
-    } else if app.loading {
-        format!("{} · loading", app.status)
-    } else {
-        app.status.clone()
-    };
-    frame.render_widget(
-        Paragraph::new(status_line(&status, &styles)),
-        chunks[chunk_idx],
-    );
+    let mut status = app.status.clone();
+    if !app.table.filter.is_empty() {
+        status = format!("{status}  /{}", app.table.filter);
+    }
     let hints = app.footer_action_hints();
     let hint_refs: Vec<(&str, &str)> = hints
         .iter()
         .map(|(key, label)| (key.as_str(), label.as_str()))
         .collect();
+    fill_rect(frame, chunks[chunk_idx], styles.inset);
     frame.render_widget(
-        Paragraph::new(footer_hints(&hint_refs, &styles)),
-        chunks[chunk_idx + 1],
+        Paragraph::new(footer_bar(
+            &status,
+            &hint_refs,
+            usize::from(area.width.max(1)),
+            &styles,
+        )),
+        chunks[chunk_idx],
     );
+}
+
+fn pane_block() -> Block<'static> {
+    Block::default().padding(Padding::new(2, 2, 1, 1))
 }
 
 fn draw_console(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -255,6 +276,7 @@ fn draw_console(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let block = Block::default()
         .title(app.console.title())
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(border);
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -270,46 +292,26 @@ fn draw_console(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 fn draw_nav(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
-    let items: Vec<ListItem> = app
-        .nav
-        .render_lines(
+    let block = pane_block();
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let width = usize::from(inner.width);
+    let lines = constrain_lines(
+        app.nav.render_lines(
             app.pane == Pane::Nav,
             Some(app.current_resource.as_str()),
             &styles,
-        )
-        .into_iter()
-        .map(ListItem::new)
-        .collect();
-    let border = if app.pane == Pane::Nav {
-        styles.focus
-    } else {
-        styles.border
-    };
-    let list = List::new(items).block(
-        Block::default()
-            .title(" Nav ")
-            .borders(Borders::ALL)
-            .border_style(border),
+            width,
+        ),
+        width,
+        usize::from(inner.height),
     );
-    frame.render_widget(list, area);
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_table(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
-    let border = if app.pane == Pane::Content {
-        styles.focus
-    } else {
-        styles.border
-    };
-    let title = if app.table.filter.is_empty() {
-        format!(" {} ", app.current_resource)
-    } else {
-        format!(" {}  /{} ", app.current_resource, app.table.filter)
-    };
-    let block = Block::default()
-        .title(title)
-        .borders(Borders::ALL)
-        .border_style(border);
+    let block = pane_block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -329,15 +331,7 @@ fn draw_table(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 fn draw_inspector(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
-    let border = if app.pane == Pane::Inspector {
-        styles.focus
-    } else {
-        styles.border
-    };
-    let block = Block::default()
-        .title(" Inspector ")
-        .borders(Borders::ALL)
-        .border_style(border);
+    let block = pane_block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let lines = constrain_lines(
@@ -351,15 +345,7 @@ fn draw_inspector(frame: &mut Frame<'_>, area: Rect, app: &App) {
 fn draw_dashboard(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
     let palette = app.theme.palette;
-    let border = if app.pane == Pane::Content {
-        styles.focus
-    } else {
-        styles.border
-    };
-    let block = Block::default()
-        .title(" DASHBOARD ")
-        .borders(Borders::ALL)
-        .border_style(border);
+    let block = pane_block();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 

@@ -1,7 +1,6 @@
 //! Navigation tree state and rendering.
 
 use mtui_core::NavItem;
-use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
 use crate::styles::Styles;
@@ -158,14 +157,15 @@ impl NavState {
     ///
     /// `cursor` (`selected`) is the keyboard highlight; `viewed_id` is the
     /// resource currently shown in the content pane. Those can differ while
-    /// browsing the tree before Enter. Foreground-only styling: markers plus
-    /// color so state is not color-only, never a background fill.
+    /// browsing the tree before Enter. The open item is bright text; the
+    /// focused cursor is a bounded selection bar (not a box border).
     #[must_use]
     pub fn render_lines(
         &self,
         focused: bool,
         viewed_id: Option<&str>,
         styles: &Styles,
+        width: usize,
     ) -> Vec<Line<'static>> {
         self.entries
             .iter()
@@ -176,6 +176,7 @@ impl NavState {
                     idx == self.selected,
                     viewed_id == Some(entry.id.as_str()),
                     focused,
+                    width,
                     styles,
                 )
             })
@@ -188,44 +189,32 @@ fn nav_row_line(
     is_cursor: bool,
     is_viewed: bool,
     pane_focused: bool,
+    width: usize,
     styles: &Styles,
 ) -> Line<'static> {
     let chevron = if entry.is_group {
         if entry.expanded { "▾ " } else { "▸ " }
-    } else if entry.depth == 0 {
-        "  "
     } else {
         ""
     };
     let indent = "  ".repeat(entry.depth);
     let body = format!("{chevron}{indent}{}", entry.label);
-    let viewed = styles.signal.add_modifier(Modifier::BOLD);
     let body_style = if is_viewed {
-        viewed
-    } else if is_cursor && pane_focused {
-        styles.focus
-    } else if entry.is_group {
-        styles.title
-    } else if is_cursor {
-        styles.muted
-    } else {
         styles.text
-    };
-    let mut spans = Vec::with_capacity(3);
-    if is_cursor && is_viewed && pane_focused {
-        spans.push(Span::styled(">", styles.focus));
-        spans.push(Span::styled("●", viewed));
-    } else if is_viewed {
-        spans.push(Span::styled("● ", viewed));
-    } else if is_cursor && pane_focused {
-        spans.push(Span::styled("> ", styles.focus));
-    } else if is_cursor {
-        spans.push(Span::styled("- ", styles.muted));
+    } else if entry.depth > 0 {
+        styles.quiet
     } else {
-        spans.push(Span::styled("  ", styles.text));
+        styles.muted
+    };
+    let line = Line::from(vec![Span::styled(body, body_style)]);
+    if is_cursor && pane_focused {
+        crate::layout::fit_line(
+            crate::paint::line_on_bg(line, styles.selection),
+            width.max(1),
+        )
+    } else {
+        line
     }
-    spans.push(Span::styled(body, body_style));
-    Line::from(spans)
 }
 
 struct RevealTarget {
@@ -376,55 +365,82 @@ mod render_tests {
         let styles = styles();
         let mut state = NavState::new(&tree());
         state.move_by(1);
-        let lines = state.render_lines(true, Some("dashboard"), &styles);
+        let lines = state.render_lines(true, Some("dashboard"), &styles, 24);
         let selected = state.selected;
         assert_eq!(state.selected_id(), Some("bridge-group"));
-        assert_eq!(lines[selected].spans[0].style, styles.focus);
-        assert_eq!(lines[selected].spans[0].content, "> ");
-        assert!(line_text(&lines[selected]).starts_with("> ▸ "));
-        assert!(line_text(&lines[0]).starts_with("● "));
+        assert!(
+            lines[selected]
+                .spans
+                .iter()
+                .all(|span| span.style.bg == Some(styles.selection)),
+            "cursor row must be a bounded fill: {:?}",
+            lines[selected]
+        );
+        assert!(line_text(&lines[selected]).contains("▸ "));
+        assert!(!line_text(&lines[selected]).contains('›'));
+        assert!(line_text(&lines[0]).contains("Dashboard"));
+        assert!(
+            lines[0].spans.iter().all(|span| span.style.bg.is_none()),
+            "unfocused nav rows stay without fill"
+        );
         assert_eq!(
-            lines[0].spans.last().map(|span| span.style),
-            Some(styles.signal.add_modifier(Modifier::BOLD))
+            lines[0].spans.last().map(|span| span.style.fg),
+            Some(styles.text.fg)
         );
     }
 
     #[test]
-    fn viewed_and_focused_row_combines_markers() {
+    fn viewed_and_focused_row_uses_cursor_and_text() {
         let styles = styles();
         let mut state = NavState::new(&tree());
         assert!(state.select_id("arp"));
-        let lines = state.render_lines(true, Some("arp"), &styles);
+        let lines = state.render_lines(true, Some("arp"), &styles, 24);
         let selected = state.selected;
-        assert_eq!(lines[selected].spans[0].content, ">");
-        assert_eq!(lines[selected].spans[0].style, styles.focus);
-        assert_eq!(lines[selected].spans[1].content, "●");
-        assert_eq!(
-            lines[selected].spans[1].style,
-            styles.signal.add_modifier(Modifier::BOLD)
+        assert!(
+            lines[selected]
+                .spans
+                .iter()
+                .all(|span| span.style.bg == Some(styles.selection))
         );
-        assert!(line_text(&lines[selected]).starts_with(">●"));
+        assert_eq!(
+            lines[selected]
+                .spans
+                .iter()
+                .find(|span| !span.content.chars().all(|ch| ch == ' '))
+                .and_then(|span| span.style.fg),
+            styles.text.fg
+        );
+        assert!(!line_text(&lines[selected]).contains('›'));
     }
 
     #[test]
-    fn viewed_row_keeps_open_marker_when_nav_unfocused() {
+    fn viewed_row_drops_cursor_when_nav_unfocused() {
         let styles = styles();
         let mut state = NavState::new(&tree());
         assert!(state.select_id("arp"));
-        let lines = state.render_lines(false, Some("arp"), &styles);
+        let lines = state.render_lines(false, Some("arp"), &styles, 24);
         let selected = state.selected;
-        assert!(line_text(&lines[selected]).starts_with("● "));
-        assert!(!line_text(&lines[selected]).contains('>'));
+        assert!(
+            lines[selected]
+                .spans
+                .iter()
+                .all(|span| span.style.bg.is_none())
+        );
+        assert!(!line_text(&lines[selected]).contains('›'));
+        assert_eq!(
+            lines[selected].spans.last().map(|span| span.style.fg),
+            Some(styles.text.fg)
+        );
     }
 
     #[test]
-    fn group_rows_use_title_style_when_not_selected() {
+    fn group_rows_use_muted_style_when_not_selected() {
         let styles = styles();
         let state = NavState::new(&tree());
-        let lines = state.render_lines(true, Some("dashboard"), &styles);
+        let lines = state.render_lines(true, Some("dashboard"), &styles, 24);
         assert_eq!(
             lines[1].spans.last().map(|span| span.style),
-            Some(styles.title)
+            Some(styles.muted)
         );
         assert!(line_text(&lines[1]).contains("▸ "));
         assert!(!line_text(&lines[1]).contains("▾ "));
@@ -435,8 +451,31 @@ mod render_tests {
         let styles = styles();
         let mut state = NavState::new(&tree());
         assert!(state.select_id("bridge-group"));
-        let lines = state.render_lines(false, Some("bridges"), &styles);
+        let lines = state.render_lines(false, Some("bridges"), &styles, 24);
         assert!(line_text(&lines[1]).contains("▾ "));
+    }
+
+    #[test]
+    fn nested_rows_are_quieter_than_top_level() {
+        let styles = styles();
+        let mut state = NavState::new(&tree());
+        assert!(state.select_id("bridges"));
+        let lines = state.render_lines(false, Some("bridges"), &styles, 24);
+        assert_eq!(
+            lines[1].spans.last().map(|span| span.style.fg),
+            Some(styles.muted.fg),
+            "top-level group should stay muted"
+        );
+        assert_eq!(
+            lines[3].spans.last().map(|span| span.style.fg),
+            Some(styles.quiet.fg),
+            "unfocused child should recede: {}",
+            line_text(&lines[3])
+        );
+        assert_eq!(
+            lines[2].spans.last().map(|span| span.style.fg),
+            Some(styles.text.fg)
+        );
     }
 
     #[test]

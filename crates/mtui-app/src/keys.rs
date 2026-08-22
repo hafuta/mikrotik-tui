@@ -235,7 +235,7 @@ impl App {
                 }
             }
             KeyCode::Char(ch)
-                if self.pane == Pane::Content
+                if self.pane != Pane::Console
                     && self.current_resource != "logs"
                     && !self.status.starts_with("Filter:")
                     && key.modifiers.is_empty()
@@ -1359,6 +1359,6 @@ mod console_tests {
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
         assert_eq!(app.console_layout_height(), 6);
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));
-        assert_eq!(app.console_layout_height(), 21);
+        assert_eq!(app.console_layout_height(), 22);
     }
 }

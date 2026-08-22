@@ -20,7 +20,7 @@ pub fn console_pane_height(terminal_height: u16, visible: bool, fullscreen: bool
     if !visible {
         return 0;
     }
-    let chrome = 3; // header, status, footer
+    let chrome = 2; // header and footer bands
     let available = terminal_height.saturating_sub(chrome);
     if available == 0 {
         return 0;
@@ -498,14 +498,14 @@ mod tests {
         assert_eq!(console_pane_height(24, false, false), 0);
         assert_eq!(console_pane_height(24, true, false), 6);
         assert_eq!(console_pane_height(40, true, false), 10);
-        assert_eq!(console_pane_height(24, true, true), 21);
+        assert_eq!(console_pane_height(24, true, true), 22);
     }
 
     #[test]
     fn short_terminals_keep_a_body_slot() {
         let height = console_pane_height(10, true, false);
         assert!(height > 0);
-        assert!(height + 3 + 3 <= 10);
+        assert!(height + 2 + 3 <= 10);
     }
 
     #[test]

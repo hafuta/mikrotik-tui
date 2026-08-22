@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use mtui_core::ColumnSpec;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::layout::{clip_line, constrain_lines};
@@ -154,7 +154,7 @@ impl TableState {
     /// Scroll the horizontal column window by `delta` columns, clamped so the
     /// remaining columns still fill the current viewport width when possible.
     pub fn scroll_columns(&mut self, delta: isize) {
-        let max = self.max_col_offset(self.viewport_width);
+        let max = self.max_col_offset(self.content_width());
         self.col_offset = add_clamped(self.col_offset, delta, max);
     }
 
@@ -163,7 +163,7 @@ impl TableState {
     }
 
     pub fn scroll_columns_end(&mut self) {
-        self.col_offset = self.max_col_offset(self.viewport_width);
+        self.col_offset = self.max_col_offset(self.content_width());
     }
 
     /// Remember the pane size and keep selection plus offsets inside it.
@@ -199,7 +199,6 @@ impl TableState {
     /// Build the styled header line, honoring column offset and pane width.
     #[must_use]
     pub fn header_line(&self, styles: &Styles, width: usize) -> Line<'static> {
-        let style = styles.muted.add_modifier(Modifier::BOLD);
         packed_row_line(
             &self.columns,
             self.effective_col_offset(width),
@@ -212,14 +211,13 @@ impl TableState {
                         SortDir::Desc => " ↓",
                     });
                 }
-                title
+                (title, styles.muted)
             },
-            style,
         )
     }
 
     /// Build a styled line for `row`, honoring column offset and pane width.
-    /// Selection is conveyed through `styles.focus` text, never a background fill.
+    /// The selected row is a fully painted selection rectangle (no box borders).
     #[must_use]
     pub fn row_line(
         &self,
@@ -228,14 +226,21 @@ impl TableState {
         styles: &Styles,
         width: usize,
     ) -> Line<'static> {
-        let style = if selected { styles.focus } else { styles.text };
-        packed_row_line(
+        let line = packed_row_line(
             &self.columns,
             self.effective_col_offset(width),
             width,
-            |_, col| row.get(col.key).cloned().unwrap_or_default(),
-            style,
-        )
+            |_, col| {
+                let text = row.get(col.key).cloned().unwrap_or_default();
+                let style = cell_style(col.key, &text, selected, styles);
+                (text, style)
+            },
+        );
+        if selected {
+            crate::layout::fit_line(crate::paint::line_on_bg(line, styles.selection), width)
+        } else {
+            line
+        }
     }
 
     /// Render header + visible rows into a `width` × `height` canvas.
@@ -315,7 +320,7 @@ impl TableState {
             return 0;
         }
         let cells: usize = cols.iter().map(|col| usize::from(col.width).max(1)).sum();
-        cells.saturating_add(cols.len().saturating_sub(1))
+        cells.saturating_add(cols.len().saturating_sub(1).saturating_mul(2))
     }
 
     fn reconcile_offsets(&mut self) {
@@ -327,7 +332,11 @@ impl TableState {
         self.row_offset = self.clamped_row_offset(body_h);
         self.col_offset = self
             .col_offset
-            .min(self.max_col_offset(self.viewport_width));
+            .min(self.max_col_offset(self.content_width()));
+    }
+
+    fn content_width(&self) -> usize {
+        self.viewport_width
     }
 
     fn recompute(&mut self) {
@@ -378,10 +387,9 @@ fn packed_row_line<F>(
     col_offset: usize,
     max_width: usize,
     mut cell_text: F,
-    style: Style,
 ) -> Line<'static>
 where
-    F: FnMut(usize, &ColumnSpec) -> String,
+    F: FnMut(usize, &ColumnSpec) -> (String, Style),
 {
     if max_width == 0 {
         return Line::default();
@@ -389,18 +397,20 @@ where
     let mut spans = Vec::new();
     let mut used = 0;
     for (idx, col) in columns.iter().enumerate().skip(col_offset) {
-        let sep = usize::from(!spans.is_empty());
+        let sep_w = 2;
+        let sep = if spans.is_empty() { 0 } else { sep_w };
         if used + sep >= max_width {
             break;
         }
         let available = max_width - used - sep;
         let col_w = usize::from(col.width).max(1);
         let cell_w = col_w.min(available);
-        let text = clip_line(&cell_text(idx, col), cell_w);
+        let (raw, style) = cell_text(idx, col);
+        let text = clip_line(&raw, cell_w);
         let padded = format!("{text:<cell_w$}");
-        if sep == 1 {
-            spans.push(Span::styled(" ", style));
-            used += 1;
+        if sep > 0 {
+            spans.push(Span::styled(" ".repeat(sep), style));
+            used += sep;
         }
         spans.push(Span::styled(padded, style));
         used += cell_w;
@@ -409,6 +419,45 @@ where
         }
     }
     Line::from(spans)
+}
+
+fn cell_style(key: &str, value: &str, selected: bool, styles: &Styles) -> Style {
+    let lower = value.trim().to_ascii_lowercase();
+    let positive = matches!(
+        lower.as_str(),
+        "true" | "yes" | "1" | "running" | "up" | "enabled"
+    );
+    let negative = matches!(
+        lower.as_str(),
+        "false" | "no" | "0" | "down" | "disabled" | "offline"
+    );
+    if matches!(key, "running" | "status") || key.ends_with("-status") {
+        if positive {
+            return styles.signal;
+        }
+        if negative {
+            return styles.muted;
+        }
+    }
+    if matches!(key, "disabled" | "invalid") {
+        if positive {
+            return styles.alert;
+        }
+        return styles.muted;
+    }
+    if selected && is_live_rate_key(key) {
+        return styles.alert;
+    }
+    if is_live_rate_key(key) {
+        return styles.data;
+    }
+    styles.text
+}
+
+fn is_live_rate_key(key: &str) -> bool {
+    matches!(key, "rx" | "tx" | "rx-byte" | "tx-byte" | "rate")
+        || (key.contains("rx") && (key.contains("byte") || key.contains("rate")))
+        || (key.contains("tx") && (key.contains("byte") || key.contains("rate")))
 }
 
 #[cfg(test)]
@@ -553,9 +602,52 @@ mod scroll_tests {
     }
 
     #[test]
-    fn header_and_row_line_render_without_panicking() {
-        let state = TableState::new(&columns());
-        let header = state.header_line(&styles(), 40);
-        assert!(!header.spans.is_empty());
+    fn selected_row_marks_cursor_and_colors_status() {
+        let mut state = TableState::new(&[
+            ColumnSpec {
+                key: "name",
+                title: "Name",
+                width: 8,
+            },
+            ColumnSpec {
+                key: "running",
+                title: "Run",
+                width: 8,
+            },
+            ColumnSpec {
+                key: "rx-byte",
+                title: "RX",
+                width: 10,
+            },
+        ]);
+        let mut row = HashMap::new();
+        row.insert("name".into(), "ether1".into());
+        row.insert("running".into(), "true".into());
+        row.insert("rx-byte".into(), "84.2 Mb/s".into());
+        state.set_rows(vec![row]);
+        let styles = styles();
+        let line = state.row_line(state.selected_row().expect("row"), true, &styles, 40);
+        let plain = crate::layout::line_plain(&line);
+        assert!(plain.contains("ether1"), "{plain}");
+        assert!(!plain.contains('›'));
+        assert_eq!(crate::layout::line_width(&line), 40);
+        assert!(
+            line.spans
+                .iter()
+                .any(|span| { span.content.contains("true") && span.style.fg == styles.signal.fg }),
+            "running cell should be signal: {line:?}"
+        );
+        assert!(
+            line.spans
+                .iter()
+                .any(|span| { span.content.contains("84.2") && span.style.fg == styles.alert.fg }),
+            "selected rx should be alert: {line:?}"
+        );
+        assert!(
+            line.spans
+                .iter()
+                .all(|span| span.style.bg == Some(styles.selection)),
+            "selected row must be a bounded fill: {line:?}"
+        );
     }
 }
