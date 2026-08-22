@@ -37,6 +37,24 @@ pub struct FormSession {
     pub confirm_discard: bool,
     pub prompt_command: Option<&'static str>,
     pub prompt_schema: Option<&'static FormSchema>,
+    pub lookup: Option<Box<LookupPicker>>,
+}
+
+/// Nested live-lookup picker sitting on a form sheet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LookupPicker {
+    pub field_key: String,
+    pub resource_id: &'static str,
+    pub value_key: &'static str,
+    pub multiple: bool,
+    pub filter: String,
+    pub options: Vec<String>,
+    pub selected: Vec<String>,
+    pub focus: usize,
+    pub loading: bool,
+    pub error: Option<String>,
+    pub request_id: u64,
+    pub generation: u64,
 }
 
 impl FormSession {
@@ -62,6 +80,7 @@ impl FormSession {
             confirm_discard: false,
             prompt_command: None,
             prompt_schema: None,
+            lookup: None,
         }
     }
 
@@ -90,6 +109,7 @@ impl FormSession {
             confirm_discard: false,
             prompt_command: None,
             prompt_schema: None,
+            lookup: None,
         }
     }
 
@@ -133,6 +153,7 @@ impl FormSession {
             confirm_discard: false,
             prompt_command: Some(command),
             prompt_schema: Some(schema),
+            lookup: None,
         }
     }
 
@@ -159,6 +180,7 @@ impl FormSession {
             confirm_discard: false,
             prompt_command: Some(command),
             prompt_schema: Some(schema),
+            lookup: None,
         }
     }
 
@@ -304,6 +326,32 @@ impl FormSession {
                 let next = values[(idx + 1) % values.len()];
                 self.values.insert(field.key.to_string(), next.to_string());
             }
+            FieldKind::Lookup {
+                resource_id,
+                value_key,
+                multiple,
+            } => {
+                let selected =
+                    split_ros_list(self.values.get(field.key).map_or("", String::as_str));
+                let generation = self
+                    .lookup
+                    .as_ref()
+                    .map_or(1, |picker| picker.generation.wrapping_add(1));
+                self.lookup = Some(Box::new(LookupPicker {
+                    field_key: field.key.to_string(),
+                    resource_id,
+                    value_key,
+                    multiple,
+                    filter: String::new(),
+                    options: Vec::new(),
+                    selected,
+                    focus: 0,
+                    loading: true,
+                    error: None,
+                    request_id: 0,
+                    generation,
+                }));
+            }
             _ => {}
         }
     }
@@ -313,6 +361,120 @@ impl FormSession {
         self.visible_fields(schema)
             .get(self.focus)
             .map(|(_, field)| *field)
+    }
+
+    #[must_use]
+    pub fn lookup_open(&self) -> bool {
+        self.lookup.is_some()
+    }
+
+    pub fn close_lookup(&mut self) {
+        self.lookup = None;
+    }
+
+    pub fn apply_lookup_result(
+        &mut self,
+        request_id: u64,
+        generation: u64,
+        options: Vec<String>,
+        error: Option<String>,
+    ) -> bool {
+        let Some(picker) = &self.lookup else {
+            return false;
+        };
+        if picker.request_id != request_id || picker.generation != generation {
+            return false;
+        }
+        let current = self
+            .values
+            .get(&picker.field_key)
+            .cloned()
+            .unwrap_or_default();
+        let picker = self.lookup.as_mut().expect("lookup still open");
+        picker.loading = false;
+        picker.error = error;
+        picker.options = options;
+        let filtered = filtered_lookup_options(&picker.options, &picker.filter);
+        if picker.focus >= filtered.len() {
+            picker.focus = filtered.len().saturating_sub(1);
+        }
+        if !picker.multiple
+            && let Some(idx) = filtered.iter().position(|option| *option == current)
+        {
+            picker.focus = idx;
+        }
+        true
+    }
+
+    pub fn lookup_move(&mut self, delta: isize) {
+        let Some(picker) = self.lookup.as_mut() else {
+            return;
+        };
+        let len = filtered_lookup_options(&picker.options, &picker.filter).len();
+        if len == 0 {
+            picker.focus = 0;
+            return;
+        }
+        let cur = isize::try_from(picker.focus).unwrap_or(0);
+        let max = isize::try_from(len.saturating_sub(1)).unwrap_or(0);
+        picker.focus = usize::try_from((cur + delta).clamp(0, max)).unwrap_or(0);
+    }
+
+    pub fn lookup_insert_char(&mut self, ch: char) {
+        if !is_printable_char(ch) {
+            return;
+        }
+        let Some(picker) = self.lookup.as_mut() else {
+            return;
+        };
+        picker.filter.push(ch);
+        picker.focus = 0;
+    }
+
+    pub fn lookup_backspace(&mut self) {
+        let Some(picker) = self.lookup.as_mut() else {
+            return;
+        };
+        picker.filter.pop();
+        picker.focus = 0;
+    }
+
+    pub fn lookup_toggle_focused(&mut self) {
+        let Some(picker) = self.lookup.as_mut() else {
+            return;
+        };
+        if !picker.multiple {
+            return;
+        }
+        let Some(value) = filtered_lookup_options(&picker.options, &picker.filter)
+            .get(picker.focus)
+            .cloned()
+        else {
+            return;
+        };
+        if let Some(idx) = picker.selected.iter().position(|item| item == &value) {
+            picker.selected.remove(idx);
+        } else {
+            picker.selected.push(value);
+        }
+    }
+
+    pub fn lookup_confirm(&mut self) {
+        let Some(picker) = self.lookup.take() else {
+            return;
+        };
+        let picker = *picker;
+        if picker.multiple {
+            self.values
+                .insert(picker.field_key, join_ros_list(&picker.selected));
+            return;
+        }
+        let filtered = filtered_lookup_options(&picker.options, &picker.filter);
+        let Some(value) = filtered.get(picker.focus) else {
+            self.lookup = Some(Box::new(picker));
+            return;
+        };
+        self.values.insert(picker.field_key, value.clone());
     }
 }
 
@@ -441,6 +603,68 @@ pub const FETCH_FORM: FormSchema = FormSchema {
     create_sections: FETCH_SECTIONS,
 };
 
+const LOOKUP_INTERFACE: FieldSpec = FieldSpec {
+    key: "interface",
+    label: "Interface",
+    kind: FieldKind::Lookup {
+        resource_id: "interfaces",
+        value_key: "name",
+        multiple: false,
+    },
+};
+
+const LOOKUP_PORTS: FieldSpec = FieldSpec {
+    key: "ports",
+    label: "Ports",
+    kind: FieldKind::Lookup {
+        resource_id: "interfaces",
+        value_key: "name",
+        multiple: true,
+    },
+};
+
+const LOOKUP_TEST_SECTIONS: &[FormSection] = &[FormSection {
+    id: "general",
+    label: "General",
+    read_only: false,
+    fields: &[LOOKUP_INTERFACE, LOOKUP_PORTS],
+}];
+
+/// Test-only schema that exercises live lookup without production write wiring.
+pub const LOOKUP_TEST_FORM: FormSchema = FormSchema {
+    title_key: "interface",
+    subtitle_keys: &[],
+    sections: LOOKUP_TEST_SECTIONS,
+    create_sections: LOOKUP_TEST_SECTIONS,
+};
+
+fn split_ros_list(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for part in raw.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !out.iter().any(|item| item == trimmed) {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
+}
+
+fn join_ros_list(values: &[String]) -> String {
+    values.join(",")
+}
+
+fn filtered_lookup_options(options: &[String], filter: &str) -> Vec<String> {
+    let q = filter.to_ascii_lowercase();
+    options
+        .iter()
+        .filter(|option| q.is_empty() || option.to_ascii_lowercase().contains(&q))
+        .cloned()
+        .collect()
+}
+
 /// Paint a centered properties sheet over the dimmed canvas.
 pub fn render_form_sheet(
     frame: &mut Frame<'_>,
@@ -517,6 +741,10 @@ pub fn render_form_sheet(
         Paragraph::new(Line::from(Span::styled(hint, hint_style))),
         chunks[2],
     );
+
+    if let Some(picker) = &session.lookup {
+        render_lookup_picker(frame, area, picker, styles);
+    }
 }
 
 fn sheet_field_lines(
@@ -592,6 +820,120 @@ fn sheet_hint(
     } else {
         format!("tab field   {field_hint}   ctrl+s save   esc")
     }
+}
+
+fn render_lookup_picker(frame: &mut Frame<'_>, area: Rect, picker: &LookupPicker, styles: &Styles) {
+    dim_canvas(frame, area, styles);
+    let width = area.width.saturating_sub(8).clamp(20, 52);
+    let height = area.height.saturating_sub(4).clamp(5, 16);
+    let rect = compact_modal_rect(area, width, height);
+    frame.render_widget(Clear, rect);
+
+    let title = if picker.multiple {
+        " Lookup (multi) "
+    } else {
+        " Lookup "
+    };
+    let block = Block::default()
+        .title(Span::styled(title, styles.title))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(styles.border)
+        .style(styles.text)
+        .padding(Padding::new(1, 1, 0, 0));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+    let list_width = usize::from(chunks[0].width.max(1));
+    let list_height = usize::from(chunks[0].height.max(1));
+    frame.render_widget(
+        Paragraph::new(lookup_picker_lines(picker, list_width, list_height, styles)),
+        chunks[0],
+    );
+    if chunks[1].height > 0 {
+        let hint = if picker.multiple {
+            "type filter   ↑↓   space toggle   enter ok   esc"
+        } else {
+            "type filter   ↑↓   enter select   esc"
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(hint, styles.muted))),
+            chunks[1],
+        );
+    }
+}
+
+fn lookup_picker_lines(
+    picker: &LookupPicker,
+    width: usize,
+    height: usize,
+    styles: &Styles,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    if height == 0 {
+        return lines;
+    }
+    let filter = format!("/{}", picker.filter);
+    lines.push(Line::from(Span::styled(
+        clip_line(&filter, width),
+        styles.focus,
+    )));
+    if lines.len() >= height {
+        return lines;
+    }
+    if picker.loading {
+        lines.push(Line::from(Span::styled("loading…", styles.muted)));
+        return lines;
+    }
+    if let Some(err) = &picker.error {
+        lines.push(Line::from(Span::styled(
+            clip_line(err, width),
+            styles.alert,
+        )));
+        return lines;
+    }
+    if picker.multiple && !picker.selected.is_empty() && lines.len() < height {
+        let selected = format!("selected {}", join_ros_list(&picker.selected));
+        lines.push(Line::from(Span::styled(
+            clip_line(&selected, width),
+            styles.signal,
+        )));
+    }
+    let filtered = filtered_lookup_options(&picker.options, &picker.filter);
+    if filtered.is_empty() && lines.len() < height {
+        lines.push(Line::from(Span::styled("no matches", styles.muted)));
+        return lines;
+    }
+    let start = picker
+        .focus
+        .saturating_sub(height.saturating_sub(lines.len() + 1));
+    for (idx, option) in filtered.iter().enumerate().skip(start) {
+        if lines.len() >= height {
+            break;
+        }
+        let marked = picker.selected.iter().any(|item| item == option);
+        let caret = if idx == picker.focus { ">" } else { " " };
+        let mark = if picker.multiple {
+            if marked { "[x] " } else { "[ ] " }
+        } else {
+            ""
+        };
+        let body = format!("{caret} {mark}{option}");
+        let style = if idx == picker.focus {
+            styles.focus
+        } else {
+            styles.text
+        };
+        lines.push(Line::from(Span::styled(clip_line(&body, width), style)));
+    }
+    lines
 }
 
 /// Numbered tabs with a bracketed active tab and an underline so selection
@@ -837,7 +1179,7 @@ fn field_control(
             let body = pad_visual(raw, width);
             vec![Span::styled(body, styles.muted)]
         }
-        FieldKind::Text | FieldKind::Number => slot_control(
+        FieldKind::Text | FieldKind::Number | FieldKind::Lookup { .. } => slot_control(
             raw,
             '[',
             ' ',
@@ -1326,5 +1668,168 @@ mod tests {
         assert!(rendered.contains("URL"));
         assert!(rendered.contains("Password"));
         assert!(rendered.contains("secret"));
+    }
+
+    fn lookup_session() -> (FormSchema, FormSession) {
+        let schema = LOOKUP_TEST_FORM;
+        let session = FormSession::create("bridge", &schema);
+        (schema, session)
+    }
+
+    #[test]
+    fn activate_opens_lookup_picker_without_network() {
+        let (schema, mut session) = lookup_session();
+        session.insert_char(&schema, 'e');
+        session.insert_char(&schema, '\0');
+        assert_eq!(
+            session.values.get("interface").map(String::as_str),
+            Some("e")
+        );
+        session.activate(&schema);
+        let picker = session.lookup.as_ref().expect("picker");
+        assert_eq!(picker.field_key, "interface");
+        assert_eq!(picker.resource_id, "interfaces");
+        assert_eq!(picker.value_key, "name");
+        assert!(!picker.multiple);
+        assert!(picker.loading);
+        assert!(picker.options.is_empty());
+        assert_eq!(picker.request_id, 0);
+        assert_eq!(
+            session.values.get("interface").map(String::as_str),
+            Some("e")
+        );
+    }
+
+    #[test]
+    fn apply_lookup_result_happy_stale_and_error() {
+        let (schema, mut session) = lookup_session();
+        session.activate(&schema);
+        let picker = session.lookup.as_mut().expect("picker");
+        picker.request_id = 7;
+        let generation = picker.generation;
+
+        assert!(session.apply_lookup_result(
+            7,
+            generation,
+            vec!["ether1".into(), "ether2".into()],
+            None,
+        ));
+        let picker = session.lookup.as_ref().expect("picker");
+        assert!(!picker.loading);
+        assert_eq!(picker.options, ["ether1", "ether2"]);
+        assert!(picker.error.is_none());
+
+        assert!(!session.apply_lookup_result(8, generation, vec!["wlan1".into()], None));
+        assert_eq!(
+            session.lookup.as_ref().unwrap().options,
+            ["ether1", "ether2"]
+        );
+
+        assert!(session.apply_lookup_result(
+            7,
+            generation,
+            Vec::new(),
+            Some("unknown resource".into())
+        ));
+        let picker = session.lookup.as_ref().expect("picker");
+        assert_eq!(picker.error.as_deref(), Some("unknown resource"));
+        assert!(!picker.loading);
+    }
+
+    #[test]
+    fn lookup_single_select_writes_value() {
+        let (schema, mut session) = lookup_session();
+        session.activate(&schema);
+        let picker = session.lookup.as_mut().expect("picker");
+        picker.request_id = 1;
+        let generation = picker.generation;
+        session.apply_lookup_result(1, generation, vec!["ether1".into(), "bridge".into()], None);
+        session.lookup_move(1);
+        session.lookup_confirm();
+        assert!(session.lookup.is_none());
+        assert_eq!(
+            session.values.get("interface").map(String::as_str),
+            Some("bridge")
+        );
+    }
+
+    #[test]
+    fn lookup_multi_select_joins_commas() {
+        let (schema, mut session) = lookup_session();
+        session.focus = 1;
+        session.values.insert("ports".into(), "ether1".into());
+        session.activate(&schema);
+        let picker = session.lookup.as_mut().expect("picker");
+        picker.request_id = 2;
+        let generation = picker.generation;
+        session.apply_lookup_result(
+            2,
+            generation,
+            vec!["ether1".into(), "ether2".into(), "wlan1".into()],
+            None,
+        );
+        session.lookup_move(1);
+        session.lookup_toggle_focused();
+        session.lookup_move(1);
+        session.lookup_toggle_focused();
+        session.lookup_confirm();
+        assert_eq!(
+            session.values.get("ports").map(String::as_str),
+            Some("ether1,ether2,wlan1")
+        );
+    }
+
+    #[test]
+    fn lookup_picker_renders_states_on_tiny_rects() {
+        let (schema, mut session) = lookup_session();
+        session.activate(&schema);
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(12, 6);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw loading");
+
+        let picker = session.lookup.as_mut().expect("picker");
+        picker.request_id = 1;
+        let generation = picker.generation;
+        session.apply_lookup_result(1, generation, Vec::new(), Some("offline".into()));
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw error");
+
+        session.apply_lookup_result(1, generation, Vec::new(), None);
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw empty");
+
+        session.apply_lookup_result(1, generation, vec!["ether1".into()], None);
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                frame.render_widget(Paragraph::new("backdrop"), frame.area());
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw populated");
+        let buf = terminal.backend().buffer();
+        assert_eq!(buf[(0, 0)].bg, Color::Reset);
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(rendered.contains("ether1"));
+        assert!(rendered.contains("Lookup"));
+        assert!(rendered.contains("lookup"));
+        assert!(rendered.contains("space pick"));
     }
 }

@@ -314,6 +314,20 @@ fn dispatch_commands(
                     let _ = tx.send(msg);
                 });
             }
+            AppCommand::FetchLookup {
+                request_id,
+                generation,
+                resource_id,
+                value_key,
+            } => {
+                let tx = tx.clone();
+                let client = app.client.clone();
+                rt.spawn(async move {
+                    let msg =
+                        fetch_lookup(client, request_id, generation, resource_id, value_key).await;
+                    let _ = tx.send(msg);
+                });
+            }
         }
     }
 }
@@ -408,6 +422,68 @@ async fn fetch_resource(
             error: Some(err.to_string()),
         },
     }
+}
+
+async fn fetch_lookup(
+    client: Option<Arc<Client>>,
+    request_id: u64,
+    generation: u64,
+    resource_id: String,
+    value_key: String,
+) -> WorkerMsg {
+    let Some(spec) = mtui_core::resource_by_id(&resource_id) else {
+        return WorkerMsg::LookupResult {
+            request_id,
+            generation,
+            options: Vec::new(),
+            error: Some("unknown resource".into()),
+        };
+    };
+    let Some(client) = client else {
+        return WorkerMsg::LookupResult {
+            request_id,
+            generation,
+            options: Vec::new(),
+            error: Some("not connected".into()),
+        };
+    };
+    let result = match spec.fetch {
+        FetchKind::Local => Ok(Vec::new()),
+        FetchKind::List { endpoint } => client.list(endpoint).await,
+        FetchKind::System { endpoint } => client.system(endpoint).await.map(|r| vec![r]),
+    };
+    match result {
+        Ok(rows) => WorkerMsg::LookupResult {
+            request_id,
+            generation,
+            options: lookup_option_values(&rows, &value_key),
+            error: None,
+        },
+        Err(err) => WorkerMsg::LookupResult {
+            request_id,
+            generation,
+            options: Vec::new(),
+            error: Some(err.to_string()),
+        },
+    }
+}
+
+fn lookup_option_values(rows: &[mtui_routeros::Resource], value_key: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for row in rows {
+        let value = if value_key == ".id" {
+            Some(row.id.as_str())
+        } else {
+            row.field(value_key)
+        };
+        let Some(value) = value.filter(|item| !item.is_empty()) else {
+            continue;
+        };
+        if !out.iter().any(|item| item == value) {
+            out.push(value.to_string());
+        }
+    }
+    out
 }
 
 async fn fetch_header(client: Arc<Client>, request_id: u64, generation: u64) -> WorkerMsg {
@@ -595,5 +671,43 @@ async fn fetch_probe(
             rows: Vec::new(),
             error: Some(err.to_string()),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lookup_option_values;
+    use mtui_routeros::Resource;
+    use std::collections::HashMap;
+
+    #[test]
+    fn lookup_skips_empty_values_and_dedupes() {
+        let mut first = HashMap::new();
+        first.insert("name".into(), "ether1".into());
+        let mut empty = HashMap::new();
+        empty.insert("name".into(), String::new());
+        let mut again = HashMap::new();
+        again.insert("name".into(), "ether1".into());
+        let mut second = HashMap::new();
+        second.insert("name".into(), "ether2".into());
+        let rows = vec![
+            Resource {
+                id: "*1".into(),
+                fields: first,
+            },
+            Resource {
+                id: "*2".into(),
+                fields: empty,
+            },
+            Resource {
+                id: "*3".into(),
+                fields: again,
+            },
+            Resource {
+                id: "*4".into(),
+                fields: second,
+            },
+        ];
+        assert_eq!(lookup_option_values(&rows, "name"), ["ether1", "ether2"]);
     }
 }
