@@ -2,11 +2,8 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [master]
-    paths:
-      - "website/**"
-      - "justfile"
-      - ".github/workflows/pages.yml"
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
