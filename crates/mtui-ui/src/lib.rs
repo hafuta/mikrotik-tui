@@ -41,7 +41,7 @@ pub use login::{LoginField, LoginForm, is_printable_char};
 pub use navigation::{FlatNavEntry, NavState, ToggleHidden, flatten_nav};
 pub use overlay::{
     Modal, ModalButton, ModalButtonKind, ModalKind, ModalPanel, compact_modal_rect, dim_canvas,
-    format_fingerprint, modal_rect, render_modal, render_modal_frame,
+    format_fingerprint, modal_max_scroll, modal_rect, render_modal, render_modal_frame,
 };
 pub use paint::{fill_rect, line_on_bg};
 pub use palette::{Command, CommandPalette, PALETTE_VISIBLE_ROWS, highlight_match};

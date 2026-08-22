@@ -29,7 +29,7 @@ where WebFig allows remove/disconnect.
 
 - Live dashboard for CPU, memory, WAN throughput, and firewall activity
 - Browse live RouterOS operational state across the common WebFig operator menus
-- Search, sorting, detail inspector, application log console, command palette, and in-app keyboard help
+- Search, sorting, detail inspector, application log console, command palette, in-app keyboard help, and per-screen RouterOS summaries
 - Hide unused sidebar menus (categories or screens) and reveal them later to restore
 - HTTPS with a custom CA or a pinned device certificate (the pin takes
   precedence when both are set)
@@ -122,7 +122,8 @@ action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palet
 `ctrl+l` logs out, `` ` `` toggles the application log console, `-` hides the
 selected sidebar item after confirmation (or restores it when hidden menus are
 showing), `.` shows hidden menus (marked with `×`
-and strikethrough) so they can be restored, `?` opens help, `esc` closes overlays or clears the
+and strikethrough) so they can be restored, `?` opens help, `i` or `F1` opens a short description
+of the current screen, `esc` closes overlays or clears the
 filter, and `q` quits. Logging out removes the saved local profile and
 credential; quitting keeps them for automatic reconnection.
 

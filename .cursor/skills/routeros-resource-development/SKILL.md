@@ -14,7 +14,11 @@ description: Develop and review MikroTik RouterOS resources, API mappings, mutat
    they reach a component; add a marker-secret regression test.
 6. Add table-driven tests for decoding, encoding, optional fields, RouterOS error replies, cancellation, and malformed data. Use fakes; tests must not require a router.
 7. Run `cargo fmt`, the affected crate tests, and `cargo test --workspace`.
-8. Group property-sheet fields using the tab rules below. Do not invent a
+8. Add a `ScreenGuide` in `about.rs` for every new resource id (and dashboard).
+   Paraphrase the RouterOS manual; do not invent protocol claims or copy
+   property tables. Prefer a conceptual `manual.mikrotik.com` URL when one
+   exists; the CLI reference URL is derived from the resource path.
+9. Group property-sheet fields using the tab rules below. Do not invent a
    “tiny General / leftover Advanced” split.
 
 ## Property-sheet tabs
