@@ -1,8 +1,6 @@
 # MikroTik TUI
 
 [![Rust](https://img.shields.io/badge/Rust-1.98+-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![MSRV](https://img.shields.io/badge/MSRV-1.98-orange?logo=rust&logoColor=white)](https://github.com/hafuta/mikrotik-tui/blob/main/rust-toolchain.toml)
-[![Edition](https://img.shields.io/badge/edition-2024-blue?logo=rust&logoColor=white)](https://doc.rust-lang.org/edition-guide/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/hafuta/mikrotik-tui/ci.yml?branch=main&label=CI)](https://github.com/hafuta/mikrotik-tui/actions/workflows/ci.yml)
 
