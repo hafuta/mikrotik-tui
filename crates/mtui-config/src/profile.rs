@@ -24,12 +24,18 @@ const PROFILE_FILE_VERSION: u32 = 1;
 /// i.e. `"default"`).
 pub const THEME_PREFERENCE_KEY: &str = "theme";
 
+/// Preference key for sidebar items the operator has tucked away.
+/// Value is a comma-separated list of navigation ids (groups or resources).
+pub const HIDDEN_NAV_PREFERENCE_KEY: &str = "hidden_nav";
+
 /// Per-profile UI preferences. String values keep the on-disk format stable
 /// while letting the UI add new preferences without a schema migration.
 ///
 /// Well-known keys:
 /// - [`THEME_PREFERENCE_KEY`] (`"theme"`): theme id to activate for this
 ///   profile (e.g. `"default"`).
+/// - [`HIDDEN_NAV_PREFERENCE_KEY`] (`"hidden_nav"`): comma-separated nav ids
+///   to omit from the sidebar until the operator reveals them.
 pub type Preferences = HashMap<String, String>;
 
 /// A named `RouterOS` connection. Passwords and other secrets intentionally
@@ -63,6 +69,33 @@ impl Profile {
             .insert(THEME_PREFERENCE_KEY.to_string(), theme_id.into());
     }
 
+    /// Reads tucked-away navigation ids. See [`HIDDEN_NAV_PREFERENCE_KEY`].
+    #[must_use]
+    pub fn hidden_nav_ids(&self) -> Vec<String> {
+        parse_hidden_nav(
+            self.preferences
+                .get(HIDDEN_NAV_PREFERENCE_KEY)
+                .map_or("", String::as_str),
+        )
+    }
+
+    /// Replaces tucked-away navigation ids. An empty list removes the key.
+    pub fn set_hidden_nav_ids(&mut self, ids: impl IntoIterator<Item = impl AsRef<str>>) {
+        let mut ids: Vec<String> = ids
+            .into_iter()
+            .map(|id| id.as_ref().trim().to_string())
+            .filter(|id| !id.is_empty())
+            .collect();
+        ids.sort();
+        ids.dedup();
+        if ids.is_empty() {
+            self.preferences.remove(HIDDEN_NAV_PREFERENCE_KEY);
+        } else {
+            self.preferences
+                .insert(HIDDEN_NAV_PREFERENCE_KEY.to_string(), ids.join(","));
+        }
+    }
+
     /// Validates required fields. Called by [`ProfileStore::load`] and
     /// [`ProfileStore::save`] so callers cannot persist an incomplete
     /// profile.
@@ -78,6 +111,27 @@ impl Profile {
         }
         Ok(())
     }
+}
+
+fn parse_hidden_nav(raw: &str) -> Vec<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    if raw.starts_with('[')
+        && let Ok(ids) = serde_json::from_str::<Vec<String>>(raw)
+    {
+        return ids
+            .into_iter()
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+            .collect();
+    }
+    raw.split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -316,5 +370,32 @@ mod tests {
         let store = ProfileStore::new(dir.path());
         let err = store.load().unwrap_err();
         assert!(matches!(err, ConfigError::UnsupportedVersion { .. }));
+    }
+
+    #[test]
+    fn hidden_nav_roundtrips_sorted_unique_ids() {
+        let mut profile = sample("router1");
+        profile.set_hidden_nav_ids(["vlan", "ppp-group", "vlan", ""]);
+        assert_eq!(profile.hidden_nav_ids(), ["ppp-group", "vlan"]);
+        assert_eq!(
+            profile
+                .preferences
+                .get(HIDDEN_NAV_PREFERENCE_KEY)
+                .map(String::as_str),
+            Some("ppp-group,vlan")
+        );
+        profile.set_hidden_nav_ids(Vec::<String>::new());
+        assert!(profile.hidden_nav_ids().is_empty());
+        assert!(!profile.preferences.contains_key(HIDDEN_NAV_PREFERENCE_KEY));
+    }
+
+    #[test]
+    fn hidden_nav_accepts_json_array_from_hand_edited_files() {
+        let mut profile = sample("router1");
+        profile.preferences.insert(
+            HIDDEN_NAV_PREFERENCE_KEY.into(),
+            r#"["bridge-group","arp"]"#.into(),
+        );
+        assert_eq!(profile.hidden_nav_ids(), ["bridge-group", "arp"]);
     }
 }

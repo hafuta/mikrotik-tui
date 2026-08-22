@@ -29,6 +29,7 @@ groups remain read-only until they reuse the same action catalog.
 - Live dashboard for CPU, memory, WAN throughput, and firewall activity
 - Browse live RouterOS operational state; coverage is still expanding
 - Search, sorting, detail inspector, application log console, command palette, and in-app keyboard help
+- Hide unused sidebar menus (categories or screens) and reveal them later to restore
 - HTTPS with a custom CA or a pinned device certificate (the pin takes
   precedence when both are set)
 - One saved connection profile and machine-local credentials
@@ -55,7 +56,9 @@ never hard-codes product hex values - it uses `Styles::from_palette`.
 
 Profiles may store `preferences.theme = "default"` (see
 `mtui_config::THEME_PREFERENCE_KEY`) so additional themes can be selected later
-without schema changes.
+without schema changes. Hidden sidebar items persist as
+`preferences.hidden_nav` (`mtui_config::HIDDEN_NAV_PREFERENCE_KEY`), a
+comma-separated list of navigation ids.
 
 ## Tooling
 
@@ -115,7 +118,10 @@ cycles sort (not on Logs), `r` refreshes, `g`/`G` or Home/End jump, `pgup`/
 `pgdn` and `ctrl+u`/`ctrl+d` page, `e` edits, `n` adds, `d` enables or disables,
 `c` copies, `x` removes, `z` resets counters, `t` opens torch, `a` opens the
 action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,
-`ctrl+l` logs out, `` ` `` toggles the application log console, `?` opens help, `esc` closes overlays or clears the
+`ctrl+l` logs out, `` ` `` toggles the application log console, `-` hides the
+selected sidebar item after confirmation (or restores it when hidden menus are
+showing), `.` shows hidden menus (marked with `×`
+and strikethrough) so they can be restored, `?` opens help, `esc` closes overlays or clears the
 filter, and `q` quits. Logging out removes the saved local profile and
 credential; quitting keeps them for automatic reconnection.
 

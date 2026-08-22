@@ -68,6 +68,19 @@ impl App {
             ("ctrl+k".into(), "commands".into()),
             ("`".into(), "console".into()),
         ];
+        if self.nav.show_hidden {
+            if self.pane == Pane::Nav {
+                hints.push(("-".into(), "restore".into()));
+            }
+            hints.push((".".into(), "done".into()));
+        } else {
+            if self.pane == Pane::Nav {
+                hints.push(("-".into(), "hide".into()));
+            }
+            if !self.nav.hidden.is_empty() {
+                hints.push((".".into(), "hidden".into()));
+            }
+        }
         if self.resource_actions_allowed() {
             let row = self.table.selected_row();
             for action in self
