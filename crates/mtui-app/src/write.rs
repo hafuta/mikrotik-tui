@@ -120,6 +120,7 @@ impl App {
                 ("f".into(), "fullscreen".into()),
                 ("/".into(), "search".into()),
                 ("enter".into(), "expand".into()),
+                ("h/l".into(), "json".into()),
                 ("c".into(), "copy".into()),
                 ("`".into(), "hide".into()),
                 ("q".into(), "quit".into()),

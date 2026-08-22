@@ -1,8 +1,11 @@
 //! Application log console: aligned columns, vim search, expand, copy text.
 
+use std::collections::HashSet;
+
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use crate::json_tree::{self, JsonRow};
 use crate::layout::{constrain_lines, fit_cell};
 use crate::login::is_printable_char;
 use crate::styles::Styles;
@@ -102,14 +105,55 @@ impl ConsoleEntry {
             out.push_str("  ");
             out.push_str(key);
             out.push_str(": ");
-            out.push_str(value);
+            if let Some(parsed) = json_tree::parse_container(value) {
+                out.push('\n');
+                for line in json_tree::pretty(&parsed).lines() {
+                    out.push_str("    ");
+                    out.push_str(line);
+                    out.push('\n');
+                }
+                out.pop();
+            } else {
+                out.push_str(value);
+            }
         }
         out
     }
 
-    fn expanded_height(&self) -> usize {
-        1 + self.fields.len().max(1)
+    fn expanded_height(&self, json_open: &HashSet<String>) -> usize {
+        1 + self.detail_rows(json_open).len()
     }
+
+    fn detail_rows(&self, json_open: &HashSet<String>) -> Vec<DetailRow> {
+        if self.fields.is_empty() {
+            return vec![DetailRow::Field {
+                key: "target".into(),
+                value: "(none)".into(),
+            }];
+        }
+        let mut rows = Vec::new();
+        for (key, value) in &self.fields {
+            if let Some(parsed) = json_tree::parse_container(value) {
+                rows.extend(
+                    json_tree::flatten(&parsed, key, json_open)
+                        .into_iter()
+                        .map(DetailRow::Json),
+                );
+            } else {
+                rows.push(DetailRow::Field {
+                    key: key.clone(),
+                    value: value.clone(),
+                });
+            }
+        }
+        rows
+    }
+}
+
+#[derive(Debug, Clone)]
+enum DetailRow {
+    Field { key: String, value: String },
+    Json(JsonRow),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -119,9 +163,14 @@ pub struct ConsoleState {
     pub fullscreen: bool,
     pub selected: usize,
     pub row_offset: usize,
-    /// When true, the focused row shows extra fields. Moving the cursor keeps
-    /// this flag so each iterated row is expanded.
+    /// When true, the focused row shows extra fields. Moving between log
+    /// rows keeps this flag so each iterated row is expanded.
     pub expanded: bool,
+    /// `0` is the log summary. Values above that index expanded detail rows,
+    /// including collapsed JSON bodies.
+    pub expand_cursor: usize,
+    expand_line_offset: usize,
+    json_open: HashSet<String>,
     pub searching: bool,
     pub query: String,
 }
@@ -191,6 +240,7 @@ impl ConsoleState {
         if filtered_len == 0 {
             self.selected = 0;
             self.row_offset = 0;
+            self.reset_inspect();
             return;
         }
         if self.selected >= filtered_len {
@@ -199,11 +249,16 @@ impl ConsoleState {
     }
 
     pub fn move_selection(&mut self, delta: isize, filtered_len: usize) {
+        let previous = self.selected;
         let Some(max) = filtered_len.checked_sub(1) else {
             self.selected = 0;
+            self.reset_inspect();
             return;
         };
         self.selected = add_clamped(self.selected, delta, max);
+        if self.selected != previous {
+            self.reset_inspect();
+        }
     }
 
     pub fn page_by(&mut self, direction: isize, page: usize, filtered_len: usize) {
@@ -212,19 +267,125 @@ impl ConsoleState {
     }
 
     pub fn select_first(&mut self) {
+        if self.selected != 0 {
+            self.reset_inspect();
+        }
         self.selected = 0;
     }
 
     pub fn select_last(&mut self, filtered_len: usize) {
-        self.selected = filtered_len.saturating_sub(1);
+        let next = filtered_len.saturating_sub(1);
+        if self.selected != next {
+            self.reset_inspect();
+        }
+        self.selected = next;
     }
 
     pub fn toggle_expanded(&mut self, filtered_len: usize) {
         if filtered_len == 0 {
             self.expanded = false;
+            self.reset_inspect();
             return;
         }
         self.expanded = !self.expanded;
+        self.reset_inspect();
+    }
+
+    /// Enter: expand/collapse the log, or toggle the focused JSON node.
+    pub fn activate(&mut self, entries: &[ConsoleEntry], filtered_len: usize) {
+        if self.expanded && self.expand_cursor > 0 && self.toggle_json_at_cursor(entries) {
+            return;
+        }
+        self.toggle_expanded(filtered_len);
+    }
+
+    /// Right/`l`: step into details, or expand a collapsed JSON node.
+    pub fn enter_detail(&mut self, entries: &[ConsoleEntry]) {
+        if !self.expanded {
+            return;
+        }
+        let Some(entry) = self.selected_entry(entries) else {
+            return;
+        };
+        let rows = entry.detail_rows(&self.json_open);
+        if rows.is_empty() {
+            return;
+        }
+        if self.expand_cursor == 0 {
+            self.expand_cursor = 1;
+            return;
+        }
+        if let Some(row) = self.focused_json_row(entries)
+            && row.expandable
+            && !row.expanded
+        {
+            self.json_open.insert(row.path);
+            return;
+        }
+        let max = rows.len();
+        if self.expand_cursor < max {
+            self.expand_cursor += 1;
+        }
+    }
+
+    /// Left/`h`: collapse an open JSON node, or step back toward the summary.
+    pub fn leave_detail(&mut self, entries: &[ConsoleEntry]) {
+        if !self.expanded || self.expand_cursor == 0 {
+            return;
+        }
+        if let Some(row) = self.focused_json_row(entries)
+            && row.expandable
+            && row.expanded
+        {
+            self.json_open.remove(&row.path);
+            return;
+        }
+        self.expand_cursor = self.expand_cursor.saturating_sub(1);
+    }
+
+    /// `j`/`k` move between logs from the summary, or among detail rows once
+    /// the cursor has entered the expanded block.
+    pub fn move_cursor(&mut self, delta: isize, entries: &[ConsoleEntry], filtered_len: usize) {
+        if self.expanded
+            && self.expand_cursor > 0
+            && let Some(entry) = self.selected_entry(entries)
+        {
+            let max = entry.detail_rows(&self.json_open).len();
+            self.expand_cursor = add_clamped(self.expand_cursor, delta, max);
+            return;
+        }
+        self.move_selection(delta, filtered_len);
+    }
+
+    fn reset_inspect(&mut self) {
+        self.expand_cursor = 0;
+        self.expand_line_offset = 0;
+        self.json_open.clear();
+    }
+
+    fn focused_json_row(&self, entries: &[ConsoleEntry]) -> Option<JsonRow> {
+        let entry = self.selected_entry(entries)?;
+        let rows = entry.detail_rows(&self.json_open);
+        let index = self.expand_cursor.checked_sub(1)?;
+        match rows.get(index)? {
+            DetailRow::Json(row) => Some(row.clone()),
+            DetailRow::Field { .. } => None,
+        }
+    }
+
+    fn toggle_json_at_cursor(&mut self, entries: &[ConsoleEntry]) -> bool {
+        let Some(row) = self.focused_json_row(entries) else {
+            return false;
+        };
+        if !row.expandable {
+            return false;
+        }
+        if row.expanded {
+            self.json_open.remove(&row.path);
+        } else {
+            self.json_open.insert(row.path);
+        }
+        true
     }
 
     /// Jump to the next (or previous) filtered row. With an active query the
@@ -254,11 +415,11 @@ impl ConsoleState {
         self.clamp_selection(indices.len());
         if indices.is_empty() || viewport == 0 {
             self.row_offset = 0;
+            self.expand_line_offset = 0;
             return;
         }
         if self.selected < self.row_offset {
             self.row_offset = self.selected;
-            return;
         }
         loop {
             let used = self.span_lines(entries, &indices, self.row_offset, self.selected);
@@ -266,6 +427,58 @@ impl ConsoleState {
                 break;
             }
             self.row_offset += 1;
+        }
+        self.clamp_expand_cursor(entries);
+        self.ensure_expand_line_visible(entries, &indices, viewport);
+    }
+
+    fn clamp_expand_cursor(&mut self, entries: &[ConsoleEntry]) {
+        if !self.expanded {
+            self.expand_cursor = 0;
+            return;
+        }
+        let max = self
+            .selected_entry(entries)
+            .map_or(0, |entry| entry.detail_rows(&self.json_open).len());
+        if self.expand_cursor > max {
+            self.expand_cursor = max;
+        }
+    }
+
+    fn ensure_expand_line_visible(
+        &mut self,
+        entries: &[ConsoleEntry],
+        indices: &[usize],
+        viewport: usize,
+    ) {
+        if !self.expanded {
+            self.expand_line_offset = 0;
+            return;
+        }
+        let Some(&entry_index) = indices.get(self.selected) else {
+            self.expand_line_offset = 0;
+            return;
+        };
+        let Some(entry) = entries.get(entry_index) else {
+            return;
+        };
+        let height = entry.expanded_height(&self.json_open);
+        let above = if self.selected <= self.row_offset {
+            0
+        } else {
+            self.span_lines(entries, indices, self.row_offset, self.selected - 1)
+        };
+        let available = viewport.saturating_sub(above).max(1);
+        if self.expand_cursor < self.expand_line_offset {
+            self.expand_line_offset = self.expand_cursor;
+        }
+        let last = self.expand_line_offset + available - 1;
+        if self.expand_cursor > last {
+            self.expand_line_offset = self.expand_cursor + 1 - available;
+        }
+        let max_off = height.saturating_sub(available);
+        if self.expand_line_offset > max_off {
+            self.expand_line_offset = max_off;
         }
     }
 
@@ -291,7 +504,7 @@ impl ConsoleState {
 
     fn row_height(&self, entry: Option<&ConsoleEntry>, filtered_index: usize) -> usize {
         if self.expanded && filtered_index == self.selected {
-            entry.map_or(1, ConsoleEntry::expanded_height)
+            entry.map_or(1, |item| item.expanded_height(&self.json_open))
         } else {
             1
         }
@@ -343,7 +556,21 @@ impl ConsoleState {
             let is_selected = pos == state.selected;
             let expand = state.expanded && is_selected;
             let remaining = body_height - used;
-            let row_lines = entry_lines(entry, width, styles, is_selected, expand, focused);
+            let mut row_lines = entry_lines(
+                entry,
+                width,
+                styles,
+                is_selected,
+                focused,
+                expand.then_some((state.expand_cursor, &state.json_open)),
+            );
+            if expand && state.expand_line_offset > 0 {
+                if state.expand_line_offset < row_lines.len() {
+                    row_lines = row_lines.split_off(state.expand_line_offset);
+                } else {
+                    row_lines.clear();
+                }
+            }
             for line in row_lines.into_iter().take(remaining) {
                 out.push(line);
                 used += 1;
@@ -396,22 +623,24 @@ fn entry_lines(
     width: usize,
     styles: &Styles,
     selected: bool,
-    expanded: bool,
     focused: bool,
+    expand: Option<(usize, &HashSet<String>)>,
 ) -> Vec<Line<'static>> {
-    let summary_style = if focused && selected {
+    let expand_cursor = expand.map_or(0, |(cursor, _)| cursor);
+    let summary_focused = focused && selected && expand_cursor == 0;
+    let summary_style = if summary_focused {
         styles.focus
     } else if selected {
         styles.text.add_modifier(Modifier::BOLD)
     } else {
         styles.text
     };
-    let time_style = if focused && selected {
+    let time_style = if summary_focused {
         styles.focus
     } else {
         styles.muted
     };
-    let level_style = if focused && selected {
+    let level_style = if summary_focused {
         styles.focus
     } else {
         level_style(entry.level, styles)
@@ -426,33 +655,56 @@ fn entry_lines(
         Span::styled(fit_cell(&entry.message, msg_w), summary_style),
     ])];
 
-    if expanded {
-        let detail_style = if focused && selected {
-            styles.alert
-        } else {
-            styles.muted
-        };
-        let details = if entry.fields.is_empty() {
-            vec![("target".into(), String::from("(none)"))]
-        } else {
-            entry.fields.clone()
-        };
-        for (key, value) in details {
+    if let Some((expand_cursor, json_open)) = expand {
+        for (index, row) in entry.detail_rows(json_open).into_iter().enumerate() {
+            let cursor_here = focused && selected && expand_cursor == index + 1;
+            let style = if cursor_here {
+                styles.focus
+            } else {
+                styles.muted
+            };
+            lines.push(detail_line(&row, width, style));
+        }
+    }
+    lines
+}
+
+fn detail_line(row: &DetailRow, width: usize, style: Style) -> Line<'static> {
+    match row {
+        DetailRow::Field { key, value } => {
             let indent = "  ";
-            let key_cell = fit_cell(&key, DETAIL_KEY_COL);
+            let key_cell = fit_cell(key, DETAIL_KEY_COL);
             let value_w = width
                 .saturating_sub(indent.len())
                 .saturating_sub(DETAIL_KEY_COL)
                 .saturating_sub(COL_GAP);
-            lines.push(Line::from(vec![
-                Span::styled(indent.to_string(), detail_style),
-                Span::styled(key_cell, detail_style),
+            Line::from(vec![
+                Span::styled(indent.to_string(), style),
+                Span::styled(key_cell, style),
                 Span::raw(" ".repeat(COL_GAP)),
-                Span::styled(fit_cell(&value, value_w), detail_style),
-            ]));
+                Span::styled(fit_cell(value, value_w), style),
+            ])
+        }
+        DetailRow::Json(json) => {
+            let indent = "  ".repeat(json.depth + 1);
+            let chevron = if json.expandable {
+                if json.expanded { "▾ " } else { "▸ " }
+            } else {
+                "  "
+            };
+            let prefix = format!("{indent}{chevron}");
+            let mut text = json.label.clone();
+            if !json.value.is_empty() {
+                text.push(' ');
+                text.push_str(&json.value);
+            }
+            let value_w = width.saturating_sub(prefix.len());
+            Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(fit_cell(&text, value_w), style),
+            ])
         }
     }
-    lines
 }
 
 fn level_style(level: ConsoleLevel, styles: &Styles) -> Style {
@@ -565,7 +817,10 @@ mod tests {
         assert!(plain.contains("two"));
         assert_eq!(plain.matches("target").count(), 1);
         assert_eq!(second[2].spans[0].style, styles.focus);
-        assert_eq!(second[3].spans[1].style, styles.alert);
+        assert_eq!(second[3].spans[0].style, styles.muted);
+        state.expand_cursor = 1;
+        let inner = state.lines(&entries, &styles, 80, 10, true);
+        assert_eq!(inner[3].spans[0].style, styles.focus);
     }
 
     #[test]
@@ -603,5 +858,53 @@ mod tests {
         assert!(text.contains("INFO"));
         assert!(text.contains("outbound request"));
         assert!(text.contains("endpoint: /rest/interface"));
+    }
+
+    #[test]
+    fn json_body_starts_collapsed_and_expands_into_keys() {
+        let styles = styles();
+        let mut body = entry("response PUT /rest/interface/list", ConsoleLevel::Error);
+        body.fields.push((
+            "body".into(),
+            r#"{"error":400,"message":"Bad Request","detail":"no such item"}"#.into(),
+        ));
+        let entries = vec![body];
+        let mut state = ConsoleState {
+            expanded: true,
+            ..ConsoleState::default()
+        };
+        let collapsed = state.lines(&entries, &styles, 88, 12, true);
+        let collapsed_plain = collapsed
+            .iter()
+            .map(line_plain)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(collapsed_plain.contains("▸"));
+        assert!(collapsed_plain.contains("body"));
+        assert!(!collapsed_plain.contains("no such item"));
+
+        state.expand_cursor = 3; // target, endpoint, then body
+        state.enter_detail(&entries);
+        let expanded = state.lines(&entries, &styles, 88, 16, true);
+        let expanded_plain = expanded
+            .iter()
+            .map(line_plain)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(expanded_plain.contains("▾"));
+        assert!(expanded_plain.contains("error"));
+        assert!(expanded_plain.contains("no such item"));
+    }
+
+    #[test]
+    fn copy_text_pretty_prints_json_bodies() {
+        let mut body = entry("response PUT /rest/interface/list", ConsoleLevel::Error);
+        body.fields.push((
+            "body".into(),
+            r#"{"error":400,"message":"Bad Request"}"#.into(),
+        ));
+        let text = body.copy_text();
+        assert!(text.contains("{\n"));
+        assert!(text.contains("\"error\": 400"));
     }
 }

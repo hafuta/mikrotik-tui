@@ -299,6 +299,7 @@ impl App {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn keys_console(&mut self, key: KeyEvent) -> Vec<AppCommand> {
         if self.console.searching {
             return self.keys_console_search(key);
@@ -352,15 +353,25 @@ impl App {
                 }
             }
             KeyCode::Enter => {
-                self.console.toggle_expanded(filtered_len);
+                self.console.activate(&self.console_entries, filtered_len);
+                self.sync_console_viewport();
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                self.console.enter_detail(&self.console_entries);
+                self.sync_console_viewport();
+            }
+            KeyCode::Left | KeyCode::Char('h') => {
+                self.console.leave_detail(&self.console_entries);
                 self.sync_console_viewport();
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                self.console.move_selection(-1, filtered_len);
+                self.console
+                    .move_cursor(-1, &self.console_entries, filtered_len);
                 self.sync_console_viewport();
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.console.move_selection(1, filtered_len);
+                self.console
+                    .move_cursor(1, &self.console_entries, filtered_len);
                 self.sync_console_viewport();
             }
             KeyCode::PageUp => {
@@ -1619,7 +1630,8 @@ mod console_tests {
 
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use mtui_config::{LogLevel, LogStore};
-    use mtui_ui::{ConsoleEntry, ConsoleLevel};
+    use mtui_core::{DefaultTheme, Theme};
+    use mtui_ui::{ConsoleEntry, ConsoleLevel, Styles, line_plain};
 
     use crate::app::{App, Pane, Screen};
     use crate::event::AppEvent;
@@ -1641,8 +1653,14 @@ mod console_tests {
             ConsoleEntry {
                 time: "2026-08-22 03:25:02.000".into(),
                 level: ConsoleLevel::Error,
-                message: "response error".into(),
-                fields: vec![("status".into(), "500".into())],
+                message: "response PUT /rest/interface/list".into(),
+                fields: vec![
+                    ("status".into(), "400".into()),
+                    (
+                        "body".into(),
+                        r#"{"error":400,"message":"Bad Request","detail":"no such item"}"#.into(),
+                    ),
+                ],
             },
             ConsoleEntry {
                 time: "2026-08-22 03:25:03.000".into(),
@@ -1747,6 +1765,31 @@ mod console_tests {
         assert!(app.console.expanded);
         let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
         assert!(!app.console.expanded);
+    }
+
+    #[test]
+    fn expanded_console_can_open_json_body() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('j'))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(app.console.expanded);
+        assert_eq!(app.console.selected, 1);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('l'))));
+        assert_eq!(app.console.expand_cursor, 1);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('j'))));
+        assert_eq!(app.console.selected, 1);
+        assert_eq!(app.console.expand_cursor, 2);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let lines = app.console.lines(
+            &app.console_entries,
+            &Styles::from_palette(DefaultTheme::new().palette()),
+            88,
+            16,
+            true,
+        );
+        let plain = lines.iter().map(line_plain).collect::<Vec<_>>().join("\n");
+        assert!(plain.contains("no such item"));
     }
 
     #[test]
