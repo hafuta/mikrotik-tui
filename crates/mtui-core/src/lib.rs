@@ -9,6 +9,7 @@ mod bridge_write;
 mod forms;
 mod interface_write;
 mod ip_write;
+mod ipsec_write;
 mod ipv6_write;
 mod ppp_write;
 mod queue_write;

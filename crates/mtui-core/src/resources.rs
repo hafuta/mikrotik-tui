@@ -1854,6 +1854,154 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::ip_write::ADDRESS_LIST_FORM),
     },
     ResourceSpec {
+        id: "ipsec-peers",
+        group: "ip-group",
+        label: "Peers",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/ipsec/peer",
+        },
+        columns: &[
+            col!("name", "Name", 16),
+            col!("address", "Address", 20),
+            col!("profile", "Profile", 14),
+            col!("exchange-mode", "Exchange", 12),
+            col!("passive", "Passive", 8),
+            col!("send-initial-contact", "Init contact", 12),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ipsec_write::IPSEC_PEER_FORM),
+    },
+    ResourceSpec {
+        id: "ipsec-identities",
+        group: "ip-group",
+        label: "Identities",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/ipsec/identity",
+        },
+        columns: &[
+            col!("peer", "Peer", 16),
+            col!("auth-method", "Auth", 16),
+            col!("my-id", "My ID", 18),
+            col!("remote-id", "Remote ID", 18),
+            col!("generate-policy", "Gen policy", 12),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ipsec_write::IPSEC_IDENTITY_FORM),
+    },
+    ResourceSpec {
+        id: "ipsec-policies",
+        group: "ip-group",
+        label: "Policies",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/ipsec/policy",
+        },
+        columns: &[
+            col!("src-address", "Source", 20),
+            col!("dst-address", "Destination", 20),
+            col!("src-port", "Src port", 10),
+            col!("dst-port", "Dst port", 10),
+            col!("protocol", "Protocol", 9),
+            col!("action", "Action", 10),
+            col!("level", "Level", 10),
+            col!("ipsec-protocols", "Protocols", 12),
+            col!("proposal", "Proposal", 14),
+            col!("peer", "Peer", 16),
+            col!("tunnel", "Tunnel", 7),
+            col!("sa-src-address", "SA src", 18),
+            col!("sa-dst-address", "SA dst", 18),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ipsec_write::IPSEC_POLICY_FORM),
+    },
+    ResourceSpec {
+        id: "ipsec-proposals",
+        group: "ip-group",
+        label: "Proposals",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/ipsec/proposal",
+        },
+        columns: &[
+            col!("name", "Name", 16),
+            col!("auth-algorithms", "Auth", 18),
+            col!("enc-algorithms", "Enc", 22),
+            col!("pfs-group", "PFS", 10),
+            col!("lifetime", "Lifetime", 12),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ipsec_write::IPSEC_PROPOSAL_FORM),
+    },
+    ResourceSpec {
+        id: "ipsec-profiles",
+        group: "ip-group",
+        label: "Profiles",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/ipsec/profile",
+        },
+        columns: &[
+            col!("name", "Name", 16),
+            col!("hash-algorithm", "Hash", 12),
+            col!("enc-algorithm", "Enc", 16),
+            col!("dh-group", "DH", 12),
+            col!("proposal-check", "Check", 12),
+            col!("lifetime", "Lifetime", 12),
+            col!("nat-traversal", "NAT-T", 6),
+            col!("dpd-interval", "DPD", 10),
+            col!("dpd-maximum-failures", "DPD max", 8),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::ipsec_write::IPSEC_PROFILE_FORM),
+    },
+    ResourceSpec {
+        id: "ipsec-installed-sa",
+        group: "ip-group",
+        label: "Installed SAs",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/ipsec/installed-sa",
+        },
+        columns: &[
+            col!("src-address", "Source", 20),
+            col!("dst-address", "Destination", 20),
+            col!("spi", "SPI", 12),
+            col!("auth-algorithm", "Auth", 12),
+            col!("enc-algorithm", "Enc", 14),
+            col!("state", "State", 10),
+            col!("current-bytes", "Bytes", 12),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::DISCONNECT_ACTIONS,
+        form: None,
+    },
+    ResourceSpec {
+        id: "ipsec-settings",
+        group: "ip-group",
+        label: "IPsec Settings",
+        fetch: FetchKind::System {
+            endpoint: "/rest/ip/ipsec/settings",
+        },
+        columns: &[
+            col!("accounting", "Accounting", 11),
+            col!("interim-update", "Interim", 12),
+            col!("xauth-use-radius", "XAuth RADIUS", 13),
+            col!("uniq-id-accounting", "Uniq-id acct", 13),
+            col!("identities-matching", "ID match", 12),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ipsec_write::IPSEC_SETTINGS_FORM),
+    },
+    ResourceSpec {
         id: "user-groups",
         group: "system-group",
         label: "User Groups",
@@ -2977,12 +3125,26 @@ mod tests {
                 "firewall-nat",
                 "firewall-mangle",
                 "address-list",
+                "ipsec-peers",
+                "ipsec-identities",
+                "ipsec-policies",
+                "ipsec-proposals",
+                "ipsec-profiles",
+                "ipsec-installed-sa",
+                "ipsec-settings",
             ]
         );
         assert_unique_endpoints("ip-group");
         assert!(resource_by_id("dns").is_some_and(ResourceSpec::is_singleton));
+        assert!(resource_by_id("ipsec-settings").is_some_and(ResourceSpec::is_singleton));
         assert!(resource_by_id("routes").is_some_and(|spec| spec.form.is_some()));
         assert!(resource_by_id("neighbors").is_some_and(|spec| spec.form.is_none()));
+        assert!(resource_by_id("ipsec-installed-sa").is_some_and(|spec| spec.form.is_none()));
+        assert!(
+            !column_keys("ipsec-installed-sa")
+                .iter()
+                .any(|key| { key.contains("key") || *key == "secret" || key.contains("auth-key") })
+        );
     }
 
     #[test]
