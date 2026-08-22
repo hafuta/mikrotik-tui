@@ -546,7 +546,12 @@ pub static LIST_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, COMMENT],
+        fields: &[
+            NAME,
+            COMMENT,
+            f!("include", "Include", FieldKind::Text),
+            f!("exclude", "Exclude", FieldKind::Text),
+        ],
     }],
 };
 
@@ -569,8 +574,10 @@ pub static MEMBER_FORM: FormSchema = FormSchema {
         label: "General",
         read_only: false,
         fields: &[
+            DISABLED,
             f!("list", "List", FieldKind::Text),
             f!("interface", "Interface", FieldKind::Text),
+            COMMENT,
         ],
     }],
 };
@@ -754,6 +761,32 @@ mod tests {
             .iter()
             .flat_map(|section| section.fields.iter().map(|field| field.key))
             .collect()
+    }
+
+    #[test]
+    fn list_and_member_create_fields() {
+        assert_eq!(
+            create_keys(&LIST_FORM),
+            ["name", "comment", "include", "exclude"]
+        );
+        assert!(
+            LIST_FORM
+                .writable_keys()
+                .iter()
+                .all(|key| *key != "disabled")
+        );
+        assert_eq!(
+            create_keys(&MEMBER_FORM),
+            ["disabled", "list", "interface", "comment"]
+        );
+        assert_eq!(
+            MEMBER_FORM.field("disabled").map(|field| field.label),
+            Some("Disabled")
+        );
+        assert_eq!(
+            MEMBER_FORM.field("disabled").map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
     }
 
     #[test]

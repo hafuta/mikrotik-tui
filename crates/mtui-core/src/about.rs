@@ -131,12 +131,15 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "interface-lists",
-        "Named groups of interfaces used by firewall, neighbor discovery, detect-internet, \
-         and bridge VLAN membership. Built-in lists include all, none, static, and dynamic.",
-        "Use lists instead of repeating interface names in many rules. Changing membership \
-         updates every consumer of that list.",
-        "include/exclude nest other lists. Members themselves live on Interface List Members. \
-         Adding a bridge is not the same as adding its ports.",
+        "Named sets of interfaces used by firewall, neighbor discovery, detect-internet, \
+         and similar consumers. Built-in sets include all, none, static, and dynamic; \
+         you can add your own names.",
+        "Define the set here, then attach interfaces on List members. Use include/exclude \
+         to nest other lists instead of repeating the same members. Changing a list updates \
+         every rule that refers to it.",
+        "name is the set. include and exclude nest other lists. Lists have no disabled flag. \
+         Membership joins live on List members — adding a bridge is not the same as adding \
+         its ports.",
         "https://help.mikrotik.com/docs/spaces/ROS/pages/47579180/Interface+Lists"
     ),
     guide!(
@@ -150,10 +153,12 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "interface-list-members",
-        "Static membership of an interface in an interface list. Dynamic members created by \
-         include/exclude are not shown here.",
-        "Assign LAN/WAN (or custom lists) so firewall and discovery can match a set of ports.",
-        "list is the target list; interface is the member. Built-in lists still accept members."
+        "Joins that attach an interface to a list. This table is the membership, not the \
+         named set itself (that lives on Lists).",
+        "Assign LAN/WAN or a custom list so firewall and discovery can match a group of \
+         ports. Dynamic members created by include/exclude on Lists are not shown here.",
+        "list is the target set; interface is the member. disabled parks a join without \
+         deleting it. Built-in lists still accept members."
     ),
     guide!(
         "eoip",
@@ -1084,5 +1089,18 @@ mod tests {
                 .contains("https://manual.mikrotik.com/docs/cli-reference/interface/vlan/")
         );
         assert_eq!(copy.title, "About VLAN");
+    }
+
+    #[test]
+    fn interface_list_guides_cross_link_definitions_and_members() {
+        let lists = about_copy("interface-lists").expect("lists");
+        let members = about_copy("interface-list-members").expect("members");
+        assert_eq!(lists.title, "About Lists");
+        assert_eq!(members.title, "About List members");
+        assert!(lists.body.contains("List members"));
+        assert!(members.body.contains("Lists"));
+        assert!(lists.body.to_ascii_lowercase().contains("include"));
+        assert!(lists.body.to_ascii_lowercase().contains("exclude"));
+        assert!(members.body.contains("join") || members.body.contains("Joins"));
     }
 }
