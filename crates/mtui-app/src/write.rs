@@ -638,6 +638,54 @@ mod tests {
     }
 
     #[test]
+    fn digits_type_into_text_and_number_fields_instead_of_jumping_tabs() {
+        let mut app = open_vlan_editor();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('2'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form");
+        };
+        assert_eq!(session.section, 0);
+        assert_eq!(
+            session.values.get("name").map(String::as_str),
+            Some("vlan102")
+        );
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('2'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form");
+        };
+        assert_eq!(session.section, 0);
+        assert_eq!(
+            session.values.get("vlan-id").map(String::as_str),
+            Some("102")
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(']'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form");
+        };
+        assert_eq!(session.section, 1);
+    }
+
+    #[test]
+    fn digits_still_jump_tabs_from_a_toggle() {
+        let mut app = open_vlan_editor();
+        for _ in 0..4 {
+            let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        }
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form");
+        };
+        assert_eq!(session.focus, 4);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('2'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form");
+        };
+        assert_eq!(session.section, 1);
+        assert_eq!(session.focus, 0);
+    }
+
+    #[test]
     fn wireguard_enter_opens_edit_and_n_opens_create() {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;

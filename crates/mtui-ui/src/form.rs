@@ -423,7 +423,11 @@ fn sheet_hint(
         }
     });
     if show_tabs {
-        format!("[ / ] tabs   1-9 jump   ↑↓ field   tab field   {field_hint}   ctrl+s save   esc")
+        let typing = session
+            .focused_spec(schema)
+            .is_some_and(|field| field.kind.takes_typed_input());
+        let tab_jump = if typing { "" } else { "1-9 jump   " };
+        format!("[ / ] tabs   {tab_jump}↑↓ field   tab field   {field_hint}   ctrl+s save   esc")
     } else {
         format!("tab field   {field_hint}   ctrl+s save   esc")
     }
@@ -893,9 +897,40 @@ mod tests {
         assert!(rendered.contains('['));
         assert!(rendered.contains("toggle"));
         assert!(
+            !rendered.contains("1-9 jump"),
+            "digit tab-jump is hidden while typing"
+        );
+        assert!(
             !rendered.contains("> General"),
             "tabs replace the left section rail"
         );
+    }
+
+    #[test]
+    fn tab_jump_hint_shows_when_not_typing() {
+        let schema = sample_schema();
+        let mut row = HashMap::new();
+        row.insert("name".into(), "ether1".into());
+        let mut session = FormSession::edit("interfaces", "*1", &row, &schema);
+        session.focus = 1;
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(rendered.contains("1-9 jump"));
+        assert!(rendered.contains("space toggle"));
     }
 
     #[test]

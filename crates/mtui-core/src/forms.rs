@@ -50,6 +50,12 @@ impl FieldKind {
             Self::Readonly => "read only",
         }
     }
+
+    /// Whether printable keys, including digits, should go into this field.
+    #[must_use]
+    pub fn takes_typed_input(self) -> bool {
+        matches!(self, Self::Text | Self::Number | Self::Secret)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,5 +270,7 @@ mod tests {
             FieldKind::Enum { values: &["a"] }.edit_hint(),
             "space cycle"
         );
+        assert!(FieldKind::Number.takes_typed_input());
+        assert!(!FieldKind::Toggle.takes_typed_input());
     }
 }
