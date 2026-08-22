@@ -154,6 +154,11 @@ Linux or Windows test module.
 the binary to `bin/` and `dist/` respectively. `just --list` shows the rest
 (`fmt-fix`, `clippy`, `test`, `run`, `clean`).
 
+Pushing a `v*` tag runs GitHub Actions `Release`. It publishes unsigned
+archives for Linux (amd64, arm64), macOS (arm64, amd64), and Windows (amd64),
+plus `checksums.txt`. Mac Gatekeeper and Windows SmartScreen may warn until
+the binaries are signed.
+
 ## Docker
 
 The TUI needs an interactive terminal and a path to the router. On Linux,
