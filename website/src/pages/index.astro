@@ -107,18 +107,11 @@ const releases = `${repo}/releases`;
           <div>
             <p class="prose">
               Linux, macOS, and Windows binaries ship unsigned from GitHub
-              Releases. Docker needs an interactive TTY and a path to the
-              device. First launch asks for the HTTPS URL, username, and
+              Releases. First launch asks for the HTTPS URL, username, and
               password.
             </p>
             <pre class="term"><code><span class="cmt"># unpack a release, then</span>
-./mikrotik-tui
-
-<span class="cmt"># docker on linux</span>
-docker build -t mikrotik-tui .
-docker run --rm -it --network host \
-  -v mikrotik-tui-data:/data \
-  mikrotik-tui</code></pre>
+./mikrotik-tui</code></pre>
           </div>
           <p class="note">
             Needs RouterOS v7 with REST over HTTPS. Saved files live under your

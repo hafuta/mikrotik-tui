@@ -7,8 +7,8 @@
 > rely on it for production operations.
 
 MikroTik TUI is a keyboard-first terminal client for MikroTik RouterOS. It
-connects over HTTPS REST and presents live operational state—interfaces,
-addressing, DHCP, firewall, hardware, and logs—so any RouterOS device can be
+connects over HTTPS REST and presents live operational state - interfaces,
+addressing, DHCP, firewall, hardware, and logs - so any RouterOS device can be
 inspected without leaving the terminal. Interface screens can create, edit,
 and run per-row actions (enable/disable, copy, remove, torch, reset counters)
 through confirmation dialogs and a sectioned properties sheet. Other resource
@@ -17,12 +17,7 @@ groups remain read-only until they reuse the same action catalog.
 ## Features
 
 - Live dashboard for CPU, memory, WAN throughput, and firewall activity
-- Interface, list, Ethernet, VLAN, tunnel, bonding, WiFi, WireGuard, and VRF views
-- PPP secrets, profiles, AAA, active sessions, and PPPoE/PPTP/L2TP/SSTP/OpenVPN client and server views
-- Bridge, port, host, VLAN, MDB, MSTI, filter, NAT, settings, and port-controller views
-- Switch chip, port, VLAN, host, ACL rule, port-isolation, and L3HW views
-- IP addresses, ARP, DHCP servers, networks, leases, and firewall filter rules
-- Users, RouterBOARD, NTP client, clock, and RouterOS log streaming
+- Browse live RouterOS operational state; coverage is still expanding
 - Search, sorting, detail inspector, application log console, command palette, and in-app keyboard help
 - HTTPS with a custom CA or a pinned device certificate (the pin takes
   precedence when both are set)
@@ -46,7 +41,7 @@ for the menus you edit; other views still work with read-only REST access.
 
 Semantic colors live in `mtui_core::Palette`. The built-in look is
 `DefaultTheme` (`id = "default"`), registered in `ThemeRegistry`. UI code
-never hard-codes product hex values — it uses `Styles::from_palette`.
+never hard-codes product hex values - it uses `Styles::from_palette`.
 
 Profiles may store `preferences.theme = "default"` (see
 `mtui_config::THEME_PREFERENCE_KEY`) so additional themes can be selected later
@@ -159,35 +154,6 @@ Pushing a `v*` tag runs GitHub Actions `Release`. It publishes unsigned
 archives for Linux (amd64, arm64), macOS (arm64, amd64), and Windows (amd64),
 plus `checksums.txt`. Mac Gatekeeper and Windows SmartScreen may warn until
 the binaries are signed.
-
-## Docker
-
-The TUI needs an interactive terminal and a path to the router. On Linux,
-`--network host` reaches LAN devices as the host would:
-
-```sh
-docker run --rm -it --network host \
-  -v mikrotik-tui-data:/data \
-  mikrotik-tui
-```
-
-On Docker Desktop (Windows/macOS), host networking is not equivalent; publish
-or attach the container so it can still reach the router's HTTPS port.
-
-The image sets `XDG_CONFIG_HOME=/data/config` and `XDG_STATE_HOME=/data/state`.
-Mount `/data` to retain the profile, certificate pin, credential, and logs.
-
-## Architecture
-
-`mtui-app` owns application state. Network calls run as tokio worker tasks;
-stale replies are dropped when the screen or request generation changes.
-Feature screens are data descriptors over shared table and inspector widgets
-in `mtui-ui`. Theme styles, profile storage, credentials, and logging each
-live in dedicated crates with test seams.
-
-The current client is RouterOS v7 REST. Resource descriptors sit above that
-transport so a native API-SSL path could be added later for subscriptions
-without rewriting screens.
 
 ## License
 
