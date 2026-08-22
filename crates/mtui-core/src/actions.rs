@@ -413,6 +413,41 @@ pub const VIRTUAL_IFACE_ACTIONS: &[ActionSpec] = &[
 
 pub const LIST_ACTIONS: &[ActionSpec] = &[ACTION_ADD, ACTION_EDIT, ACTION_COPY, ACTION_REMOVE];
 
+pub const ACTION_NEW_LIST: ActionSpec = ActionSpec {
+    id: "add",
+    label: "New list",
+    key: Some('n'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Create,
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_NEW_LIST_MEMBER: ActionSpec = ActionSpec {
+    id: "add",
+    label: "New list member",
+    key: Some('n'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Create,
+    when: ActionWhen::Always,
+};
+
+/// Interface list *definitions* (`/interface/list`). Do not reuse for other `LIST_ACTIONS` screens.
+pub const INTERFACE_LIST_DEF_ACTIONS: &[ActionSpec] =
+    &[ACTION_NEW_LIST, ACTION_EDIT, ACTION_COPY, ACTION_REMOVE];
+
+/// Interface list membership (`/interface/list/member`).
+pub const INTERFACE_LIST_MEMBER_ACTIONS: &[ActionSpec] = &[
+    ACTION_NEW_LIST_MEMBER,
+    ACTION_EDIT,
+    ACTION_TOGGLE,
+    ACTION_COPY,
+    ACTION_REMOVE,
+];
+
 pub const ACTION_SIGN: ActionSpec = ActionSpec {
     id: "sign",
     label: "Sign",
@@ -573,8 +608,8 @@ pub const INTERFACE_CREATE_TARGETS: &[(&str, &str)] = &[
     ("macvlan", "MACVLAN"),
     ("macsec", "MACsec"),
     ("macsec-profiles", "MACsec Profile"),
-    ("interface-lists", "Interface List"),
-    ("interface-list-members", "List Member"),
+    ("interface-lists", "Lists"),
+    ("interface-list-members", "List members"),
     ("vrf", "VRF"),
     ("wifi", "WiFi"),
 ];
@@ -737,5 +772,41 @@ mod tests {
         assert!(!FILE_ACTIONS[3].needs_selection);
         assert!(FILE_ACTIONS[4].needs_selection);
         assert!(FILE_ACTIONS[5].needs_selection);
+    }
+
+    #[test]
+    fn interface_list_add_labels_are_local_not_global() {
+        assert_eq!(ACTION_ADD.label, "Add");
+        assert_eq!(LIST_ACTIONS[0].label, "Add");
+        assert_eq!(MEMBER_ACTIONS[0].label, "Add");
+        assert_eq!(INTERFACE_LIST_DEF_ACTIONS[0].id, "add");
+        assert_eq!(INTERFACE_LIST_DEF_ACTIONS[0].key, Some('n'));
+        assert_eq!(INTERFACE_LIST_DEF_ACTIONS[0].kind, ActionKind::Create);
+        assert_eq!(INTERFACE_LIST_DEF_ACTIONS[0].label, "New list");
+        assert_eq!(INTERFACE_LIST_MEMBER_ACTIONS[0].id, "add");
+        assert_eq!(INTERFACE_LIST_MEMBER_ACTIONS[0].key, Some('n'));
+        assert_eq!(INTERFACE_LIST_MEMBER_ACTIONS[0].kind, ActionKind::Create);
+        assert_eq!(INTERFACE_LIST_MEMBER_ACTIONS[0].label, "New list member");
+        assert!(
+            INTERFACE_LIST_MEMBER_ACTIONS
+                .iter()
+                .any(|action| action.id == "toggle-disabled")
+        );
+        assert_eq!(
+            INTERFACE_CREATE_TARGETS
+                .iter()
+                .copied()
+                .find(|(id, _)| *id == "interface-lists")
+                .map(|(_, label)| label),
+            Some("Lists")
+        );
+        assert_eq!(
+            INTERFACE_CREATE_TARGETS
+                .iter()
+                .copied()
+                .find(|(id, _)| *id == "interface-list-members")
+                .map(|(_, label)| label),
+            Some("List members")
+        );
     }
 }

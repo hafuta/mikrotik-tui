@@ -129,7 +129,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
     ResourceSpec {
         id: "interface-lists",
         group: "interfaces-group",
-        label: "Interface List",
+        label: "Lists",
         fetch: FetchKind::List {
             endpoint: "/rest/interface/list",
         },
@@ -141,8 +141,26 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("comment", "Comment", 28),
         ],
         refresh: Duration::from_secs(30),
-        actions: crate::actions::LIST_ACTIONS,
+        actions: crate::actions::INTERFACE_LIST_DEF_ACTIONS,
         form: Some(&crate::interface_write::LIST_FORM),
+    },
+    ResourceSpec {
+        id: "interface-list-members",
+        group: "interfaces-group",
+        label: "List members",
+        fetch: FetchKind::List {
+            endpoint: "/rest/interface/list/member",
+        },
+        columns: &[
+            col!("list", "List", 16),
+            col!("interface", "Interface", 18),
+            col!("dynamic", "Dyn", 5),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::INTERFACE_LIST_MEMBER_ACTIONS,
+        form: Some(&crate::interface_write::MEMBER_FORM),
     },
     ResourceSpec {
         id: "ethernet",
@@ -174,24 +192,6 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         refresh: Duration::from_secs(5),
         actions: crate::actions::ETHERNET_ACTIONS,
         form: Some(&crate::interface_write::ETHERNET_FORM),
-    },
-    ResourceSpec {
-        id: "interface-list-members",
-        group: "interfaces-group",
-        label: "List Members",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/list/member",
-        },
-        columns: &[
-            col!("list", "List", 16),
-            col!("interface", "Interface", 18),
-            col!("dynamic", "Dyn", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::MEMBER_ACTIONS,
-        form: Some(&crate::interface_write::MEMBER_FORM),
     },
     ResourceSpec {
         id: "eoip",
@@ -2833,6 +2833,10 @@ mod tests {
             ["name", "include", "exclude", "builtin", "comment"]
         );
         assert_eq!(
+            column_keys("interface-list-members"),
+            ["list", "interface", "dynamic", "disabled", "comment"]
+        );
+        assert_eq!(
             column_keys("ethernet"),
             [
                 "name",
@@ -2869,8 +2873,8 @@ mod tests {
             [
                 "interfaces",
                 "interface-lists",
-                "ethernet",
                 "interface-list-members",
+                "ethernet",
                 "eoip",
                 "ipip",
                 "gre",
@@ -2928,6 +2932,42 @@ mod tests {
                 .iter()
                 .filter(|spec| spec.group == "interfaces-group")
                 .all(|spec| !spec.columns.is_empty())
+        );
+    }
+
+    #[test]
+    fn interface_lists_and_members_are_distinct() {
+        assert_eq!(
+            resource_by_id("interface-lists").map(|spec| spec.label),
+            Some("Lists")
+        );
+        assert_eq!(
+            resource_by_id("interface-list-members").map(|spec| spec.label),
+            Some("List members")
+        );
+        assert_eq!(
+            resource_by_id("interface-lists").map(|spec| spec
+                .actions
+                .iter()
+                .find(|a| a.id == "add")
+                .map(|a| a.label)),
+            Some(Some("New list"))
+        );
+        assert_eq!(
+            resource_by_id("interface-list-members").map(|spec| spec
+                .actions
+                .iter()
+                .find(|a| a.id == "add")
+                .map(|a| a.label)),
+            Some(Some("New list member"))
+        );
+        assert_eq!(
+            resource_by_id("dhcp-networks").map(|spec| spec
+                .actions
+                .iter()
+                .find(|a| a.id == "add")
+                .map(|a| a.label)),
+            Some(Some("Add"))
         );
     }
 
