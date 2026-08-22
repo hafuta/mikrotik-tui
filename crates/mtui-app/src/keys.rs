@@ -2,7 +2,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use mtui_core::{DASHBOARD_ID, resource_by_id};
+use mtui_core::{DASHBOARD_ID, about_copy, resource_by_id};
 use mtui_routeros::Resource;
 use mtui_ui::{COPY_FORM, FormSession, LoginField};
 
@@ -164,9 +164,15 @@ impl App {
                 return vec![AppCommand::Quit];
             }
             KeyCode::Char('?') => {
-                self.overlay = Overlay::Help;
-                self.overlay_scroll = 0;
-                tracing::trace!(overlay = "help", "opened pane");
+                self.open_help();
+                return Vec::new();
+            }
+            KeyCode::Char('i') if !self.status.starts_with("Filter:") => {
+                self.open_about();
+                return Vec::new();
+            }
+            KeyCode::F(1) => {
+                self.open_about();
                 return Vec::new();
             }
             KeyCode::Char('.') if !self.status.starts_with("Filter:") => {
@@ -278,7 +284,7 @@ impl App {
 
     fn keys_overlay(&mut self, key: KeyEvent) -> Vec<AppCommand> {
         match self.overlay {
-            Overlay::Help => self.keys_help(key),
+            Overlay::Help | Overlay::About => self.keys_help(key),
             Overlay::Palette => self.keys_palette(key),
             Overlay::Confirm(_) | Overlay::HideMenu { .. } => self.keys_confirm(key),
             Overlay::Form(_) => self.keys_form(key),
@@ -301,9 +307,11 @@ impl App {
                 return vec![AppCommand::Quit];
             }
             KeyCode::Char('?') => {
-                self.overlay = Overlay::Help;
-                self.overlay_scroll = 0;
-                tracing::trace!(overlay = "help", "opened pane");
+                self.open_help();
+                return Vec::new();
+            }
+            KeyCode::Char('i') | KeyCode::F(1) => {
+                self.open_about();
                 return Vec::new();
             }
             KeyCode::Tab => self.cycle_pane(true),
@@ -657,18 +665,59 @@ impl App {
 
     fn keys_help(&mut self, key: KeyEvent) -> Vec<AppCommand> {
         match key.code {
-            KeyCode::Esc | KeyCode::Char('?') => {
+            KeyCode::Esc => {
                 self.overlay = Overlay::None;
+            }
+            KeyCode::Char('?') => {
+                if self.overlay == Overlay::Help {
+                    self.overlay = Overlay::None;
+                } else {
+                    self.open_help();
+                }
+            }
+            KeyCode::Char('i') | KeyCode::F(1) => {
+                if self.overlay == Overlay::About {
+                    self.overlay = Overlay::None;
+                } else {
+                    self.open_about();
+                }
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.overlay_scroll = self.overlay_scroll.saturating_sub(1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.overlay_scroll = self.overlay_scroll.saturating_add(1);
+                let max = crate::render::overlay_scroll_max(self);
+                self.overlay_scroll = self.overlay_scroll.saturating_add(1).min(max);
             }
             _ => {}
         }
         Vec::new()
+    }
+
+    fn open_help(&mut self) {
+        self.overlay = Overlay::Help;
+        self.overlay_scroll = 0;
+        tracing::trace!(overlay = "help", "opened pane");
+    }
+
+    fn open_about(&mut self) {
+        if about_copy(&self.current_resource).is_none() {
+            return;
+        }
+        self.overlay = Overlay::About;
+        self.overlay_scroll = 0;
+        tracing::trace!(
+            overlay = "about",
+            resource = self.current_resource.as_str(),
+            "opened pane"
+        );
+    }
+
+    pub(crate) fn clamp_overlay_scroll(&mut self) {
+        let max = crate::render::overlay_scroll_max(self);
+        if self.overlay_scroll > max {
+            self.overlay_scroll = max;
+        }
     }
 
     fn keys_palette(&mut self, key: KeyEvent) -> Vec<AppCommand> {
@@ -805,8 +854,11 @@ impl App {
                 vec![AppCommand::ClearSession]
             }
             "help" => {
-                self.overlay = Overlay::Help;
-                self.overlay_scroll = 0;
+                self.open_help();
+                Vec::new()
+            }
+            "about" => {
+                self.open_about();
                 Vec::new()
             }
             "console" => {
@@ -1157,6 +1209,96 @@ mod palette_tests {
         let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
         assert_eq!(app.overlay, Overlay::Help);
         assert!(!app.palette.visible);
+    }
+
+    #[test]
+    fn palette_about_command_opens_about_overlay() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Char('k'),
+            KeyModifiers::CONTROL,
+        )));
+        for ch in "About this screen".chars() {
+            let _ = app.update(AppEvent::Input(press_char(ch)));
+        }
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert_eq!(app.overlay, Overlay::About);
+        assert!(!app.palette.visible);
+    }
+}
+
+#[cfg(test)]
+mod about_overlay_tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use crate::app::{App, Overlay, Screen};
+    use crate::event::AppEvent;
+
+    fn press(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn press_char(ch: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE)
+    }
+
+    fn main_app() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app
+    }
+
+    #[test]
+    fn i_opens_about_for_the_current_screen() {
+        let mut app = main_app();
+        app.select_resource("macsec");
+        let _ = app.update(AppEvent::Input(press_char('i')));
+        assert_eq!(app.overlay, Overlay::About);
+        let copy = mtui_core::about_copy("macsec").expect("macsec about");
+        assert!(copy.body.contains("802.1AE"));
+        assert!(copy.body.contains("manual.mikrotik.com"));
+    }
+
+    #[test]
+    fn f1_opens_about_and_esc_closes() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::F(1))));
+        assert_eq!(app.overlay, Overlay::About);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn i_does_not_open_about_while_filtering() {
+        let mut app = main_app();
+        app.select_resource("macsec");
+        app.pane = crate::app::Pane::Content;
+        let _ = app.update(AppEvent::Input(press_char('/')));
+        let _ = app.update(AppEvent::Input(press_char('i')));
+        assert_eq!(app.overlay, Overlay::None);
+        assert!(app.table.filter.contains('i'));
+    }
+
+    #[test]
+    fn question_mark_from_about_opens_keyboard_help() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(press_char('i')));
+        assert_eq!(app.overlay, Overlay::About);
+        let _ = app.update(AppEvent::Input(press_char('?')));
+        assert_eq!(app.overlay, Overlay::Help);
+    }
+
+    #[test]
+    fn about_j_does_not_scroll_past_the_end() {
+        let mut app = main_app();
+        app.select_resource("clock");
+        let _ = app.update(AppEvent::Input(press_char('i')));
+        assert_eq!(app.overlay, Overlay::About);
+        let max = crate::render::overlay_scroll_max(&app);
+        for _ in 0..80 {
+            let _ = app.update(AppEvent::Input(press_char('j')));
+        }
+        assert_eq!(app.overlay_scroll, max);
     }
 }
 

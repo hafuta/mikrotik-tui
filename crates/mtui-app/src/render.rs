@@ -1,10 +1,11 @@
 //! Ratatui rendering — pure view from [`App`] state + theme styles.
 
-use mtui_core::DASHBOARD_ID;
+use mtui_core::{DASHBOARD_ID, WHEN_YOU_NEED_IT};
 use mtui_ui::{
     CpuCoreView, DashboardView, LayoutMetrics, Modal, ModalButton, ModalButtonKind, ModalPanel,
     constrain_lines, dashboard_content, fill_rect, footer_bar, format_fingerprint, header_line,
-    render_action_menu, render_form_sheet, render_modal, render_torch, session_header,
+    modal_max_scroll, render_action_menu, render_form_sheet, render_modal, render_torch,
+    session_header,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -29,6 +30,12 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                 Overlay::Help => {
                     let modal = Modal::new("Keyboard help", HELP_TEXT).scroll(app.overlay_scroll);
                     render_modal(frame, area, &modal, &styles);
+                }
+                Overlay::About => {
+                    if let Some(copy) = mtui_core::about_copy(&app.current_resource) {
+                        let modal = about_modal(&copy).scroll(app.overlay_scroll);
+                        render_modal(frame, area, &modal, &styles);
+                    }
                 }
                 Overlay::Palette => {
                     app.palette.render(frame, area, &styles);
@@ -432,9 +439,33 @@ ctrl+l      log out
 -           hide menu (confirm) / restore (nav)
 .           show hidden menus / done
 ?           help
+i / F1      about this screen
 q           quit
 
 Logs: space pause · f follow · e severity · c clear local
 Console: f fullscreen · pgup/pgdn · n/N next match · enter expand
 Destructive actions ask for confirmation.
 ";
+
+fn about_modal(copy: &mtui_core::AboutCopy) -> Modal<'_> {
+    Modal::new(&copy.title, &copy.body)
+        .kicker(&copy.kicker)
+        .accent_heading(WHEN_YOU_NEED_IT)
+        .hint("esc close · j/k scroll")
+}
+
+pub(crate) fn overlay_scroll_max(app: &App) -> u16 {
+    let area = Rect::new(0, 0, app.terminal_width, app.terminal_height);
+    let styles = app.styles();
+    match app.overlay {
+        Overlay::Help => modal_max_scroll(area, &Modal::new("Keyboard help", HELP_TEXT), &styles),
+        Overlay::About => {
+            let Some(copy) = mtui_core::about_copy(&app.current_resource) else {
+                return 0;
+            };
+            let modal = about_modal(&copy);
+            modal_max_scroll(area, &modal, &styles)
+        }
+        _ => 0,
+    }
+}

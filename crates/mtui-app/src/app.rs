@@ -47,6 +47,7 @@ pub enum Pane {
 pub enum Overlay {
     None,
     Help,
+    About,
     Palette,
     Confirm(ConfirmSession),
     HideMenu {
@@ -398,6 +399,7 @@ impl App {
                 self.palette.width = width.saturating_sub(4).min(64);
                 self.sync_table_viewport();
                 self.sync_console_viewport();
+                self.clamp_overlay_scroll();
                 Vec::new()
             }
         };
@@ -1152,6 +1154,8 @@ fn palette_commands_filtered(hidden: &HashSet<String>, show_hidden: bool) -> Vec
         Command::new("refresh", "Refresh").with_description("reload the current resource"),
         Command::new("logout", "Log out").with_description("forget this router session"),
         Command::new("help", "Keyboard help").with_description("show all shortcuts"),
+        Command::new("about", "About this screen")
+            .with_description("RouterOS summary for the open menu"),
         Command::new("console", "Toggle console")
             .with_description("show or hide the application log console"),
         Command::new("show-hidden-menus", show_title)

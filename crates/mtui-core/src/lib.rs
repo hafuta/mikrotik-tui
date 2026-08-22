@@ -3,6 +3,7 @@
 //! This crate has no UI or networking dependencies. Themes expose semantic
 //! palettes; concrete styling belongs in `mtui-ui`.
 
+mod about;
 mod actions;
 mod bridge_write;
 mod forms;
@@ -20,6 +21,7 @@ mod theme;
 mod tools_write;
 mod wireguard_write;
 
+pub use about::{AboutCopy, ScreenGuide, WHEN_YOU_NEED_IT, about_copy, screen_guide};
 pub use actions::{
     ACTION_ADD, ACTION_COPY, ACTION_EDIT, ACTION_REMOVE, ACTION_RESET, ACTION_TOGGLE, ACTION_TORCH,
     ActionCommand, ActionKind, ActionSpec, ActionWhen, ETHERNET_ACTIONS, INTERFACE_CREATE_TARGETS,

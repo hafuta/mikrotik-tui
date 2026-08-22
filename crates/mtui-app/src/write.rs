@@ -65,6 +65,7 @@ impl App {
         }
         let mut hints = vec![
             ("?".into(), "help".into()),
+            ("i".into(), "about".into()),
             ("ctrl+k".into(), "commands".into()),
             ("`".into(), "console".into()),
         ];

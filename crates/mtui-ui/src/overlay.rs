@@ -4,7 +4,7 @@
 //! background fill), then punch a compact bordered dialog through the center.
 
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wrap};
@@ -50,6 +50,7 @@ pub struct Modal<'a> {
     pub kicker: Option<&'a str>,
     pub body: &'a str,
     pub panel: Option<ModalPanel<'a>>,
+    pub accent_heading: Option<&'a str>,
     pub hint: Option<&'a str>,
     pub buttons: &'a [ModalButton],
     pub scroll: u16,
@@ -64,6 +65,7 @@ impl<'a> Modal<'a> {
             kicker: None,
             body,
             panel: None,
+            accent_heading: None,
             hint: None,
             buttons: &[],
             scroll: 0,
@@ -85,6 +87,12 @@ impl<'a> Modal<'a> {
     #[must_use]
     pub fn panel(mut self, panel: ModalPanel<'a>) -> Self {
         self.panel = Some(panel);
+        self
+    }
+
+    #[must_use]
+    pub fn accent_heading(mut self, heading: &'a str) -> Self {
+        self.accent_heading = Some(heading);
         self
     }
 
@@ -165,15 +173,16 @@ pub fn format_fingerprint(pin: &str) -> String {
 }
 
 /// Dim the canvas and draw a generic content-sized modal.
+///
+/// Body, kicker, and panel scroll. Hint and buttons stay pinned to the bottom
+/// of the dialog so they cannot scroll off the viewport. The dialog hugs its
+/// content; scroll stops when the last body line reaches the bottom of the
+/// viewport.
 pub fn render_modal(frame: &mut Frame<'_>, area: Rect, modal: &Modal<'_>, styles: &Styles) {
     dim_canvas(frame, area, styles);
 
-    let width = modal_outer_width(area);
-    let inner_width = usize::from(width.saturating_sub(6).max(8));
-    let lines = modal_lines(modal, inner_width, styles);
-    let content_h = u16::try_from(lines.len()).unwrap_or(u16::MAX);
-    let height = content_h.saturating_add(4).max(7);
-    let rect = compact_modal_rect(area, width, height);
+    let prepared = prepare_modal(area, modal, styles);
+    let rect = compact_modal_rect(area, prepared.width, prepared.height);
 
     frame.render_widget(Clear, rect);
     let border = match modal.kind {
@@ -191,15 +200,47 @@ pub fn render_modal(frame: &mut Frame<'_>, area: Rect, modal: &Modal<'_>, styles
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
 
-    let visible = usize::from(inner.height.max(1));
-    let start = usize::from(modal.scroll).min(lines.len().saturating_sub(1));
-    let view: Vec<Line<'static>> = lines.into_iter().skip(start).take(visible).collect();
-    frame.render_widget(
-        Paragraph::new(view)
-            .style(styles.text)
-            .wrap(Wrap { trim: false }),
-        inner,
-    );
+    let (body_area, footer_area) = split_modal_inner(inner, prepared.footer_h);
+    if let Some(body_area) = body_area {
+        let visible = usize::from(body_area.height);
+        let start = clamp_scroll(modal.scroll, prepared.body_lines.len(), visible);
+        let view: Vec<Line<'static>> = prepared
+            .body_lines
+            .into_iter()
+            .skip(start)
+            .take(visible)
+            .collect();
+        frame.render_widget(
+            Paragraph::new(view)
+                .style(styles.text)
+                .wrap(Wrap { trim: false }),
+            body_area,
+        );
+    }
+    if let Some(footer_area) = footer_area {
+        frame.render_widget(
+            Paragraph::new(prepared.footer_lines)
+                .style(styles.text)
+                .wrap(Wrap { trim: false }),
+            footer_area,
+        );
+    }
+}
+
+/// Largest `scroll` that still keeps the last body line in view.
+#[must_use]
+pub fn modal_max_scroll(area: Rect, modal: &Modal<'_>, styles: &Styles) -> u16 {
+    let prepared = prepare_modal(area, modal, styles);
+    let rect = compact_modal_rect(area, prepared.width, prepared.height);
+    let inner = Rect {
+        x: 0,
+        y: 0,
+        width: rect.width.saturating_sub(6),
+        height: rect.height.saturating_sub(4),
+    };
+    let (body_area, _) = split_modal_inner(inner, prepared.footer_h);
+    let visible = body_area.map_or(0, |rect| usize::from(rect.height));
+    u16::try_from(prepared.body_lines.len().saturating_sub(visible)).unwrap_or(u16::MAX)
 }
 
 /// Convenience wrapper for a title + plain body (help text, simple notices).
@@ -215,11 +256,58 @@ pub fn render_modal_frame(
     render_modal(frame, area, &modal, styles);
 }
 
+struct PreparedModal {
+    width: u16,
+    height: u16,
+    footer_h: u16,
+    body_lines: Vec<Line<'static>>,
+    footer_lines: Vec<Line<'static>>,
+}
+
+fn prepare_modal(area: Rect, modal: &Modal<'_>, styles: &Styles) -> PreparedModal {
+    let width = modal_outer_width(area);
+    let inner_width = usize::from(width.saturating_sub(6).max(8));
+    let body_lines = modal_body_lines(modal, inner_width, styles);
+    let footer_lines = modal_footer_lines(modal, inner_width, styles);
+    let body_h = u16::try_from(body_lines.len()).unwrap_or(u16::MAX);
+    let footer_h = u16::try_from(footer_lines.len()).unwrap_or(u16::MAX);
+    let height = body_h.saturating_add(footer_h).saturating_add(4).max(5);
+    PreparedModal {
+        width,
+        height,
+        footer_h,
+        body_lines,
+        footer_lines,
+    }
+}
+
+fn clamp_scroll(scroll: u16, line_count: usize, visible: usize) -> usize {
+    usize::from(scroll).min(line_count.saturating_sub(visible))
+}
+
 fn modal_outer_width(area: Rect) -> u16 {
     area.width.saturating_sub(4).min(64).clamp(28, 72)
 }
 
-fn modal_lines(modal: &Modal<'_>, width: usize, styles: &Styles) -> Vec<Line<'static>> {
+fn split_modal_inner(inner: Rect, footer_h: u16) -> (Option<Rect>, Option<Rect>) {
+    if inner.height == 0 {
+        return (None, None);
+    }
+    if footer_h == 0 {
+        return (Some(inner), None);
+    }
+    let footer_h = footer_h.min(inner.height);
+    if footer_h == inner.height {
+        return (None, Some(inner));
+    }
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(footer_h)])
+        .split(inner);
+    (Some(chunks[0]), Some(chunks[1]))
+}
+
+fn modal_body_lines(modal: &Modal<'_>, width: usize, styles: &Styles) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     if let Some(kicker) = modal.kicker {
         let style = match modal.kind {
@@ -236,7 +324,12 @@ fn modal_lines(modal: &Modal<'_>, width: usize, styles: &Styles) -> Vec<Line<'st
                     lines.push(Line::default());
                     continue;
                 }
-                lines.extend(wrap_styled(chunk, width, styles.text));
+                let style = if modal.accent_heading == Some(chunk) {
+                    styles.signal.add_modifier(Modifier::BOLD)
+                } else {
+                    styles.text
+                };
+                lines.extend(wrap_styled(chunk, width, style));
             }
             lines.push(Line::default());
         }
@@ -254,12 +347,18 @@ fn modal_lines(modal: &Modal<'_>, width: usize, styles: &Styles) -> Vec<Line<'st
         )));
         lines.extend(wrap_styled(panel.value, width, styles.signal));
     }
+    lines
+}
+
+fn modal_footer_lines(modal: &Modal<'_>, width: usize, styles: &Styles) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
     if let Some(hint) = modal.hint {
-        lines.push(Line::default());
         lines.extend(wrap_styled(hint, width, styles.muted));
     }
     if !modal.buttons.is_empty() {
-        lines.push(Line::default());
+        if !lines.is_empty() {
+            lines.push(Line::default());
+        }
         lines.extend(button_lines(modal.buttons, width, styles));
     }
     lines
@@ -464,9 +563,123 @@ mod tests {
     }
 
     #[test]
+    fn modal_hint_stays_pinned_when_body_scrolls() {
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 16);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let body = (0..40)
+            .map(|i| format!("line-{i:02}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        terminal
+            .draw(|frame| {
+                let modal = Modal::new("About MACsec", &body)
+                    .hint("esc close · j/k scroll")
+                    .scroll(30);
+                render_modal(frame, frame.area(), &modal, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        let mut last_content_row = 0;
+        for y in 0..buf.area.height {
+            let mut row = String::new();
+            for x in 0..buf.area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            if row.contains("esc close") {
+                last_content_row = y;
+            }
+            rendered.push_str(&row);
+            rendered.push('\n');
+        }
+        assert!(
+            rendered.contains("esc close · j/k scroll"),
+            "pinned hint missing after scroll: {rendered}"
+        );
+        assert!(
+            !rendered.contains("line-00"),
+            "scrolled body should have left the first line: {rendered}"
+        );
+        assert!(
+            last_content_row > buf.area.height / 2,
+            "hint should sit in the lower half of the canvas, got row {last_content_row}"
+        );
+    }
+
+    #[test]
+    fn modal_scroll_stops_at_last_body_line() {
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let area = Rect::new(0, 0, 80, 24);
+        let short = Modal::new("About", "one\ntwo\nthree").hint("esc close · j/k scroll");
+        assert_eq!(modal_max_scroll(area, &short, &styles), 0);
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| {
+                render_modal(frame, frame.area(), &short.clone().scroll(40), &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+        assert!(
+            rendered.contains("one"),
+            "fitting copy must stay at the top when scroll is overshot: {rendered}"
+        );
+        assert!(
+            rendered.contains("three"),
+            "last line must remain visible: {rendered}"
+        );
+    }
+
+    #[test]
     fn wrap_words_respects_width() {
         let lines = wrap_words("verify this fingerprint through a trusted channel", 18);
         assert!(lines.iter().all(|line| line.width() <= 18));
         assert!(lines.len() > 1);
+    }
+
+    #[test]
+    fn accent_heading_uses_signal_color_only_on_that_line() {
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let body = "Summary of the feature.\n\nWhen you need it\nUse this for the real job.\n\nNotable fields\nname, comment.";
+        terminal
+            .draw(|frame| {
+                let modal = Modal::new("About", body).accent_heading("When you need it");
+                render_modal(frame, frame.area(), &modal, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut saw_heading = false;
+        let mut saw_body = false;
+        for y in 0..buf.area.height {
+            let mut row = String::new();
+            for x in 0..buf.area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            if let Some(idx) = row.find("When you need it") {
+                saw_heading = true;
+                let x = u16::try_from(idx).expect("column");
+                assert_eq!(buf[(x, y)].fg, styles.signal.fg.expect("signal fg"));
+            }
+            if let Some(idx) = row.find("Use this for the real job") {
+                saw_body = true;
+                let x = u16::try_from(idx).expect("column");
+                assert_eq!(buf[(x, y)].fg, styles.text.fg.expect("text fg"));
+            }
+        }
+        assert!(saw_heading && saw_body);
     }
 }
