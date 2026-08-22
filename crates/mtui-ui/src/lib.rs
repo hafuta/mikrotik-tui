@@ -10,6 +10,7 @@ mod dashboard;
 mod firewall;
 mod form;
 mod inspector;
+mod json_tree;
 mod layout;
 mod login;
 mod navigation;

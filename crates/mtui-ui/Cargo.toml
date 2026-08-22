@@ -9,6 +9,7 @@ description = "Pure TUI widgets and layouts (no networking)"
 [dependencies]
 mtui-core = { workspace = true }
 ratatui = { workspace = true }
+serde_json = { workspace = true }
 unicode-width = { workspace = true }
 
 [lints]

@@ -19,6 +19,9 @@ pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Upper bound on the number of response bytes read for a single request.
 const MAX_RESPONSE_BYTES: usize = 8 << 20;
 
+/// Upper bound on error-response body text written to logs.
+const MAX_ERROR_BODY_LOG_BYTES: usize = 8 << 10;
+
 /// Configuration accepted by [`Client::new`].
 #[derive(Clone, Debug)]
 pub struct ClientOptions {
@@ -275,28 +278,26 @@ impl Client {
         let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         let status = response.status();
         if !status.is_success() {
-            if status.is_server_error() {
-                tracing::error!(
-                    method = method_name.as_str(),
-                    endpoint,
-                    operation,
-                    status = status.as_u16(),
-                    elapsed_ms,
-                    "response error"
-                );
-            } else {
-                tracing::warn!(
-                    method = method_name.as_str(),
-                    endpoint,
-                    operation,
-                    status = status.as_u16(),
-                    elapsed_ms,
-                    "response error"
-                );
-            }
-            return Err(self
-                .build_status_error(operation, status.as_u16(), response)
-                .await);
+            let body = response.bytes().await.unwrap_or_default();
+            let body_log = response_body_for_log(&body, |text| self.redact(text));
+            let inbound = format!("response {method_name} {endpoint}");
+            tracing::error!(
+                method = method_name.as_str(),
+                endpoint,
+                operation,
+                status = status.as_u16(),
+                bytes = body.len(),
+                elapsed_ms,
+                body = body_log.as_str(),
+                "{}",
+                inbound
+            );
+            return Err(status_error_from_body(
+                operation,
+                status.as_u16(),
+                &body,
+                |text| self.redact(text),
+            ));
         }
 
         let bytes = match response.bytes().await {
@@ -334,43 +335,6 @@ impl Client {
         Ok(bytes.to_vec())
     }
 
-    async fn build_status_error(
-        &self,
-        operation: &'static str,
-        status: u16,
-        response: reqwest::Response,
-    ) -> Error {
-        let body = response.bytes().await.unwrap_or_default();
-        let wire: WireApiError = serde_json::from_slice(&body).unwrap_or_default();
-
-        let mut message = wire
-            .message
-            .filter(|value| !value.trim().is_empty())
-            .or(wire.detail.filter(|value| !value.trim().is_empty()))
-            .unwrap_or_else(|| {
-                reqwest::StatusCode::from_u16(status)
-                    .ok()
-                    .and_then(|code| code.canonical_reason())
-                    .unwrap_or("request failed")
-                    .to_string()
-            });
-        message = self.redact(&message);
-
-        let api_code = wire.error.and_then(|value| match value {
-            serde_json::Value::String(text) => Some(text),
-            serde_json::Value::Number(number) => Some(number.to_string()),
-            _ => None,
-        });
-
-        Error::with_status(
-            kind_for_status(status),
-            operation,
-            status,
-            api_code,
-            message,
-        )
-    }
-
     fn classify_request_error(&self, operation: &'static str, err: &reqwest::Error) -> Error {
         let chain = self.redact(&error_chain_text(err)).to_lowercase();
         let kind = if err.is_timeout() {
@@ -401,6 +365,60 @@ impl Client {
         }
         redacted
     }
+}
+
+fn status_error_from_body(
+    operation: &'static str,
+    status: u16,
+    body: &[u8],
+    redact: impl Fn(&str) -> String,
+) -> Error {
+    let wire: WireApiError = serde_json::from_slice(body).unwrap_or_default();
+
+    let mut message = wire
+        .message
+        .filter(|value| !value.trim().is_empty())
+        .or(wire.detail.filter(|value| !value.trim().is_empty()))
+        .unwrap_or_else(|| {
+            reqwest::StatusCode::from_u16(status)
+                .ok()
+                .and_then(|code| code.canonical_reason())
+                .unwrap_or("request failed")
+                .to_string()
+        });
+    message = redact(&message);
+
+    let api_code = wire.error.and_then(|value| match value {
+        serde_json::Value::String(text) => Some(text),
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    });
+
+    Error::with_status(
+        kind_for_status(status),
+        operation,
+        status,
+        api_code,
+        message,
+    )
+}
+
+fn response_body_for_log(body: &[u8], redact: impl Fn(&str) -> String) -> String {
+    let truncated = body.len() > MAX_ERROR_BODY_LOG_BYTES;
+    let slice = if truncated {
+        &body[..MAX_ERROR_BODY_LOG_BYTES]
+    } else {
+        body
+    };
+    let mut text = String::from_utf8_lossy(slice).into_owned();
+    if truncated {
+        text.push_str("...[truncated]");
+    }
+    let redacted = redact(&text);
+    serde_json::from_str::<serde_json::Value>(&redacted)
+        .ok()
+        .and_then(|value| serde_json::to_string(&value).ok())
+        .unwrap_or(redacted)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -558,5 +576,31 @@ mod tests {
         assert_eq!(kind_for_status(429), ErrorKind::RateLimited);
         assert_eq!(kind_for_status(500), ErrorKind::Server);
         assert_eq!(kind_for_status(400), ErrorKind::Api);
+    }
+
+    #[test]
+    fn formats_error_response_body_for_logs() {
+        let body = br#"{"error":400,"message":"Bad Request","detail":"invalid value"}"#;
+        let logged = response_body_for_log(body, str::to_string);
+        let parsed: serde_json::Value = serde_json::from_str(&logged).unwrap();
+        assert_eq!(parsed["error"], 400);
+        assert_eq!(parsed["message"], "Bad Request");
+        assert_eq!(parsed["detail"], "invalid value");
+        assert_eq!(
+            response_body_for_log(b"secret-token", |text| text
+                .replace("secret-token", "[redacted]")),
+            "[redacted]"
+        );
+    }
+
+    #[test]
+    fn truncates_large_error_response_bodies_for_logs() {
+        let body = vec![b'x'; MAX_ERROR_BODY_LOG_BYTES + 8];
+        let logged = response_body_for_log(&body, str::to_string);
+        assert!(logged.ends_with("...[truncated]"));
+        assert_eq!(
+            logged.len(),
+            MAX_ERROR_BODY_LOG_BYTES + "...[truncated]".len()
+        );
     }
 }

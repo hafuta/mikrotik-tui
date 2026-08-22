@@ -418,11 +418,11 @@ fn draw_dashboard(frame: &mut Frame<'_>, area: Rect, app: &App) {
 const HELP_TEXT: &str = r"↑↓ / j k   move
 pgup/pgdn   page
 g / G       first / last
-h / l       columns
+h / l       columns · console: inspect JSON body
 ← →         panes (after column scroll)
 tab         cycle panes
 `           toggle log console
-enter       open / expand category; edit row; expand log
+enter       open / expand category; edit row; expand log / JSON
 /           filter · console search (when focused)
 s           cycle sort
 r           refresh
