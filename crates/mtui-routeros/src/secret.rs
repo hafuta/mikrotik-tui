@@ -73,6 +73,8 @@ mod tests {
             "comment",
             "running",
             "ckn",
+            "my-id",
+            "remote-id",
         ] {
             assert!(!is_secret_key(key), "expected {key:?} to be ordinary");
         }

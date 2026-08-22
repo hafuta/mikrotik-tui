@@ -651,6 +651,66 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "list, address, timeout, dynamic, creation-time."
     ),
     guide!(
+        "ipsec-peers",
+        "IKE peers: remote address, profile, and how this router starts or answers Phase 1.",
+        "Add one peer per remote VPN endpoint. Profiles hold the crypto; identities hold \
+         how you prove who you are.",
+        "name, address, profile, exchange-mode, port, passive, send-initial-contact.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/103841835/IPsec"
+    ),
+    guide!(
+        "ipsec-identities",
+        "Authentication for an IPsec peer: pre-shared key, certificates, or EAP, plus local \
+         and remote IDs.",
+        "Pair an identity with a peer. my-id and remote-id are identifiers, not secrets; \
+         secret is the PSK.",
+        "peer, auth-method, secret, my-id, remote-id, certificate, generate-policy.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/103841835/IPsec"
+    ),
+    guide!(
+        "ipsec-policies",
+        "Which traffic is protected (or bypassed) after IKE: selectors, tunnel vs transport, \
+         proposal, and peer.",
+        "Match src/dst prefixes to encrypt, or use generate-policy on identities for road \
+         warriors. Check ph2-state when a tunnel is up but traffic is not.",
+        "src/dst-address, ports, protocol, action, level, proposal, peer, tunnel, ph2-state.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/103841835/IPsec"
+    ),
+    guide!(
+        "ipsec-proposals",
+        "Phase 2 transform sets: integrity, encryption, PFS group, and lifetime.",
+        "Policies point at a proposal. Keep algorithms the two ends share; weaker suites \
+         are for interoperability only.",
+        "name, auth-algorithms, enc-algorithms, pfs-group, lifetime.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/103841835/IPsec"
+    ),
+    guide!(
+        "ipsec-profiles",
+        "Phase 1 crypto: hash, encryption, DH group, NAT traversal, and DPD.",
+        "Peers reference a profile. Change DPD when a remote goes silent; NAT-T when a \
+         peer is behind NAT.",
+        "name, hash-algorithm, enc-algorithm, dh-group, proposal-check, lifetime, \
+         nat-traversal, dpd-interval.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/103841835/IPsec"
+    ),
+    guide!(
+        "ipsec-installed-sa",
+        "Runtime security associations currently installed (SPI, algorithms, byte counters). \
+         This is live state, not a config list.",
+        "Confirm a tunnel actually negotiated. Removing a selected SA flushes that \
+         association so IKE can rebuild it.",
+        "src/dst-address, spi, auth-algorithm, enc-algorithm, state, current-bytes. Key \
+         material is not shown.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/103841835/IPsec"
+    ),
+    guide!(
+        "ipsec-settings",
+        "Global IPsec knobs: accounting, RADIUS for XAuth, and how identities are matched.",
+        "Leave defaults unless you account IPsec sessions or run XAuth against RADIUS.",
+        "accounting, interim-update, xauth-use-radius, uniq-id-accounting, identities-matching.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/103841835/IPsec"
+    ),
+    guide!(
         "neighbors",
         "Neighbor discovery (MNDP/CDP/LLDP): other MikroTik (and some vendor) devices seen \
          on the wire.",

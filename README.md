@@ -28,6 +28,7 @@ where WebFig allows remove/disconnect.
 ## Features
 
 - Live dashboard for CPU, memory, WAN throughput, and firewall activity
+- IPsec peers, identities, policies, proposals, profiles, installed SAs, and settings
 - Browse live RouterOS operational state across the common WebFig operator menus
 - Search, sorting, detail inspector, application log console, command palette, in-app keyboard help, and per-screen RouterOS summaries
 - Hide unused sidebar menus (categories or screens) and reveal them later to restore
