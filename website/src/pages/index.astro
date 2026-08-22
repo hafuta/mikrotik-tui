@@ -48,15 +48,20 @@ const releases = `${repo}/releases`;
         <div>
           <h2>The menus you already type, as a live table.</h2>
           <p class="prose">
-            Interface rows can be created, edited, copied, enabled, disabled,
-            torched, or removed — with a confirmation first. Other groups stay
-            read-only until they grow the same actions.
+            Interfaces and WireGuard can be created, edited, copied, enabled,
+            disabled, or removed — with a confirmation first. Torch and
+            counters sit on the interface tables. The rest of the tree stays
+            live and inspectable until it grows the same actions.
           </p>
         </div>
         <ul class="paths">
           <li class="path">
             <code>/interface</code>
-            <span>Ethernet, VLAN, bonding, WiFi, WireGuard, tunnels, VRF — plus torch and counters.</span>
+            <span>Ethernet, VLAN, bonding, WiFi, tunnels, VRF — plus torch and counters.</span>
+          </li>
+          <li class="path">
+            <code>/interface/wireguard</code>
+            <span>Interfaces and peers — keys, endpoints, and allowed addresses.</span>
           </li>
           <li class="path">
             <code>/ip</code>
