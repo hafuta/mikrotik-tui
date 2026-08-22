@@ -259,6 +259,11 @@ impl App {
     }
 
     fn open_confirm(&mut self, action: &ActionSpec, command: ActionCommand) -> Vec<AppCommand> {
+        match command {
+            ActionCommand::MoveUp => return self.move_selected(-1),
+            ActionCommand::MoveDown => return self.move_selected(1),
+            _ => {}
+        }
         let Some(spec) = resource_by_id(&self.current_resource) else {
             return Vec::new();
         };
@@ -274,7 +279,11 @@ impl App {
             .cloned()
             .unwrap_or_default();
         let record_name = row
-            .and_then(|row| row.get("name").or_else(|| row.get("interface")))
+            .and_then(|row| {
+                row.get("name")
+                    .or_else(|| row.get("interface"))
+                    .or_else(|| row.get("address"))
+            })
             .cloned()
             .unwrap_or_else(|| record_id.clone());
         if matches!(action.id, "reboot" | "shutdown" | "backup-load") {
@@ -313,6 +322,45 @@ impl App {
         });
         tracing::trace!(overlay = "confirm", action = action.id, "opened pane");
         Vec::new()
+    }
+
+    fn move_selected(&mut self, delta: isize) -> Vec<AppCommand> {
+        let Some(spec) = resource_by_id(&self.current_resource) else {
+            return Vec::new();
+        };
+        let idx = self.table.selected;
+        let Some(dest_idx) = idx.checked_add_signed(delta) else {
+            self.status = "Already first".into();
+            return Vec::new();
+        };
+        let visible = self.table.visible_rows();
+        if dest_idx >= visible.len() {
+            self.status = "Already last".into();
+            return Vec::new();
+        }
+        let selected_id = visible
+            .get(idx)
+            .and_then(|row| row.get(".id"))
+            .cloned()
+            .unwrap_or_default();
+        let destination = visible
+            .get(dest_idx)
+            .and_then(|row| row.get(".id"))
+            .cloned()
+            .unwrap_or_default();
+        if selected_id.is_empty() || destination.is_empty() {
+            self.status = "Selected row has no id".into();
+            return Vec::new();
+        }
+        let mut fields = BTreeMap::new();
+        fields.insert(".id".into(), selected_id);
+        fields.insert("destination".into(), destination);
+        self.status = "Moving…".into();
+        vec![self.mutate_command(MutationOp::Command {
+            endpoint: spec.endpoint().to_string(),
+            command: ActionCommand::MoveUp.rest_name().to_string(),
+            fields,
+        })]
     }
 
     fn open_action_menu(&mut self) -> Vec<AppCommand> {
@@ -634,6 +682,7 @@ fn confirm_body(action_id: &str, label: &str, record_name: &str) -> String {
         "backup-load" => {
             format!("Load backup {record_name}? This replaces running config and reboots.")
         }
+        "make-static" => format!("Make lease {record_name} static?"),
         _ => format!("{label} {record_name}?"),
     }
 }
@@ -641,9 +690,10 @@ fn confirm_body(action_id: &str, label: &str, record_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::Screen;
+    use crate::app::{AppCommand, Screen};
     use crate::event::AppEvent;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use mtui_core::ActionCommand;
     use mtui_routeros::{MASKED_VALUE, Resource};
 
     fn press(code: KeyCode) -> KeyEvent {
@@ -1117,5 +1167,106 @@ mod tests {
             }
             other => panic!("unexpected op {other:?}"),
         }
+    }
+
+    fn load_named_rows(resource_id: &str, rows: Vec<Resource>) -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource(resource_id);
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: resource_id.into(),
+            rows,
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        app
+    }
+
+    fn filter_rule(id: &str, comment: &str) -> Resource {
+        let mut fields = HashMap::new();
+        fields.insert("chain".into(), "forward".into());
+        fields.insert("action".into(), "accept".into());
+        fields.insert("comment".into(), comment.into());
+        Resource {
+            id: id.into(),
+            fields,
+        }
+    }
+
+    #[test]
+    fn move_up_on_middle_row_posts_previous_id() {
+        let mut app = load_named_rows(
+            "firewall-filter",
+            vec![
+                filter_rule("*1", "first"),
+                filter_rule("*2", "middle"),
+                filter_rule("*3", "last"),
+            ],
+        );
+        app.table.selected = 1;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('['))));
+        assert!(matches!(app.overlay, Overlay::None));
+        let Some(AppCommand::Mutate { op, .. }) = cmds.into_iter().next() else {
+            panic!("expected mutate command");
+        };
+        assert_eq!(
+            op,
+            MutationOp::Command {
+                endpoint: "/rest/ip/firewall/filter".into(),
+                command: "move".into(),
+                fields: BTreeMap::from([
+                    (".id".into(), "*2".into()),
+                    ("destination".into(), "*1".into()),
+                ]),
+            }
+        );
+    }
+
+    #[test]
+    fn move_up_on_first_row_is_a_noop() {
+        let mut app = load_named_rows(
+            "firewall-filter",
+            vec![filter_rule("*1", "first"), filter_rule("*2", "second")],
+        );
+        app.table.selected = 0;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('['))));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+        assert_eq!(app.status, "Already first");
+    }
+
+    #[test]
+    fn make_static_confirms_then_posts_command() {
+        let mut fields = HashMap::new();
+        fields.insert("address".into(), "192.168.88.10".into());
+        fields.insert("mac-address".into(), "00:11:22:33:44:55".into());
+        let mut app = load_named_rows(
+            "dhcp-leases",
+            vec![Resource {
+                id: "*9".into(),
+                fields,
+            }],
+        );
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('m'))));
+        assert!(cmds.is_empty());
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.body, "Make lease 192.168.88.10 static?");
+        assert_eq!(session.command, ActionCommand::MakeStatic);
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        let Some(AppCommand::Mutate { op, .. }) = cmds.into_iter().next() else {
+            panic!("expected mutate command");
+        };
+        assert_eq!(
+            op,
+            MutationOp::Command {
+                endpoint: "/rest/ip/dhcp-server/lease".into(),
+                command: "make-static".into(),
+                fields: BTreeMap::from([(".id".into(), "*9".into())]),
+            }
+        );
     }
 }

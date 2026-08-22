@@ -645,6 +645,15 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "chain, action (mark-connection/packet/routing), new-*-mark, passthrough, matchers."
     ),
     guide!(
+        "firewall-connections",
+        "IPv4 connection tracking table: live conntrack entries the firewall is following.",
+        "Inspect who is talking through the router. Remove drops that tracked entry so the \
+         next packet is treated as a new connection; it does not delete a filter rule.",
+        "src/dst-address, protocol, ports, tcp-state, timeout, orig-rate/repl-rate, \
+         connection-mark. Reply addresses and other keys show in the inspector.",
+        "https://manual.mikrotik.com/docs/firewall-and-quality-of-service/connection-tracking/"
+    ),
+    guide!(
         "address-list",
         "Named IPv4 address lists referenced by firewall matchers (and some other menus).",
         "Group IPs/prefixes for allowlists, blocks, or PCC. Timeouts make dynamic entries.",
