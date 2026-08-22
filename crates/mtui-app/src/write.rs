@@ -53,9 +53,20 @@ impl App {
     }
 
     pub(crate) fn footer_action_hints(&self) -> Vec<(String, String)> {
+        if self.pane == Pane::Console {
+            return vec![
+                ("f".into(), "fullscreen".into()),
+                ("/".into(), "search".into()),
+                ("enter".into(), "expand".into()),
+                ("c".into(), "copy".into()),
+                ("`".into(), "hide".into()),
+                ("q".into(), "quit".into()),
+            ];
+        }
         let mut hints = vec![
             ("?".into(), "help".into()),
             ("ctrl+k".into(), "commands".into()),
+            ("`".into(), "console".into()),
         ];
         if self.pane == Pane::Content && self.current_resource != "logs" {
             for action in self.current_actions().into_iter().take(5) {
@@ -153,6 +164,7 @@ impl App {
             return Vec::new();
         }
         self.overlay = Overlay::Form(FormSession::edit(spec.id, id, &row, schema));
+        tracing::trace!(resource_id = spec.id, overlay = "form", "opened pane");
         Vec::new()
     }
 
@@ -216,6 +228,7 @@ impl App {
             record_id: id,
             record_name: name,
         });
+        tracing::trace!(overlay = "confirm", action = action.id, "opened pane");
         Vec::new()
     }
 
@@ -235,6 +248,7 @@ impl App {
             return Vec::new();
         }
         self.overlay = Overlay::ActionMenu(ActionMenuState::new(items));
+        tracing::trace!(overlay = "action-menu", "opened pane");
         Vec::new()
     }
 
@@ -249,6 +263,7 @@ impl App {
             })
             .collect();
         self.overlay = Overlay::TypePicker(ActionMenuState::new(items));
+        tracing::trace!(overlay = "type-picker", "opened pane");
         Vec::new()
     }
 
@@ -264,6 +279,7 @@ impl App {
         }
         self.torch_generation = self.torch_generation.wrapping_add(1);
         self.overlay = Overlay::Torch(TorchState::new(name, id, self.torch_generation));
+        tracing::trace!(overlay = "torch", "opened pane");
         Vec::new()
     }
 

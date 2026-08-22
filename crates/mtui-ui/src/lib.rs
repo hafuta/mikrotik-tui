@@ -5,6 +5,7 @@
 mod action_menu;
 mod charts;
 mod chrome;
+mod console;
 mod dashboard;
 mod firewall;
 mod form;
@@ -23,6 +24,7 @@ pub use charts::{
     BrailleSparkline, TrafficChart, TrafficSample, format_bytes, format_rate, format_traffic_rate,
 };
 pub use chrome::{Signal, SignalLevel, footer_hints, header_line, signal_rail, status_line};
+pub use console::{ConsoleEntry, ConsoleLevel, ConsoleState, TIME_COL, console_pane_height};
 pub use dashboard::{CpuCoreView, DashboardGeometry, DashboardView, dashboard_content};
 pub use firewall::{FirewallHitChart, FirewallRuleMetric, MAX_FIREWALL_RULES};
 pub use form::{COPY_FORM, FormMode, FormSession, render_form_sheet};

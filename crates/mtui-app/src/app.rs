@@ -6,7 +6,8 @@ use std::time::Instant;
 
 use chrono::Local;
 use mtui_config::{
-    Credential, CredentialStore, EnvOverrides, FileCredentialStore, Profile, ProfileStore,
+    Credential, CredentialStore, EnvOverrides, FileCredentialStore, LogLevel, LogRecord, LogStore,
+    Profile, ProfileStore, shared_log_store,
 };
 use mtui_core::{
     ALL_RESOURCES, DASHBOARD_ID, ThemeRegistry, ThemeSet, navigation_tree, resource_by_id,
@@ -14,9 +15,9 @@ use mtui_core::{
 
 use mtui_routeros::{Client, Resource};
 use mtui_ui::{
-    ActionMenuState, Command, CommandPalette, DashboardGeometry, FirewallHitChart, FormSession,
-    InspectorState, LayoutMetrics, LoginForm, NavState, Row, Signal, SignalLevel, TableState,
-    TorchState, format_bytes,
+    ActionMenuState, Command, CommandPalette, ConsoleEntry, ConsoleLevel, ConsoleState,
+    DashboardGeometry, FirewallHitChart, FormSession, InspectorState, LayoutMetrics, LoginForm,
+    NavState, Row, Signal, SignalLevel, TableState, TorchState, console_pane_height, format_bytes,
 };
 
 use crate::event::{AppEvent, WorkerMsg};
@@ -39,6 +40,7 @@ pub enum Pane {
     Nav,
     Content,
     Inspector,
+    Console,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +90,9 @@ pub enum AppCommand {
         protocol: String,
         port: String,
     },
+    CopyToClipboard {
+        text: String,
+    },
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -130,6 +135,11 @@ pub struct App {
     pub log_follow: bool,
     pub log_severity: LogSeverity,
     pub log_unread: usize,
+    pub console: ConsoleState,
+    pub console_entries: Vec<ConsoleEntry>,
+    console_log_seq: u64,
+    pub(crate) log_store: Arc<LogStore>,
+    pane_before_console: Pane,
     profiles: ProfileStore,
     credentials: FileCredentialStore,
 }
@@ -208,6 +218,11 @@ impl App {
             log_follow: true,
             log_severity: LogSeverity::All,
             log_unread: 0,
+            console: ConsoleState::default(),
+            console_entries: Vec::new(),
+            console_log_seq: 0,
+            log_store: shared_log_store(),
+            pane_before_console: Pane::Content,
             profiles,
             credentials,
         };
@@ -285,6 +300,11 @@ impl App {
 
     pub(crate) fn connect_command(&self) -> AppCommand {
         let url = normalize_router_url(&self.login.url);
+        tracing::info!(
+            url = url.as_str(),
+            username = self.login.username.trim(),
+            "connecting"
+        );
         AppCommand::Connect {
             url: url.clone(),
             username: self.login.username.trim().to_string(),
@@ -353,6 +373,7 @@ impl App {
     }
 
     pub fn update(&mut self, event: AppEvent) -> Vec<AppCommand> {
+        self.pull_console_logs();
         match event {
             AppEvent::Input(key) => self.on_key(key),
             AppEvent::Worker(msg) => self.on_worker(msg),
@@ -362,6 +383,7 @@ impl App {
                 self.terminal_height = height.max(1);
                 self.palette.width = width.saturating_sub(4).min(64);
                 self.sync_table_viewport();
+                self.sync_console_viewport();
                 Vec::new()
             }
         }
@@ -374,6 +396,7 @@ impl App {
         let mut cmds = Vec::new();
         match &self.overlay {
             Overlay::None | Overlay::Form(_) | Overlay::Torch(_) => {
+                tracing::debug!(resource = self.current_resource.as_str(), "scheduled poll");
                 self.refreshing = true;
                 cmds.extend(self.poll_current());
             }
@@ -406,11 +429,13 @@ impl App {
                 error,
             } => {
                 if let Some(err) = error {
+                    tracing::error!(error = %err, "connection failed");
                     self.screen = Screen::Login;
                     self.login.error = Some(err);
                     self.status = "Connection failed".into();
                     return Vec::new();
                 }
+                tracing::info!("connected");
                 self.client = client;
                 if let Some(router) = router {
                     self.apply_system_resource(router);
@@ -448,9 +473,18 @@ impl App {
                 self.loading = false;
                 self.refreshing = false;
                 if let Some(err) = error {
+                    tracing::warn!(resource_id = resource_id.as_str(), error = %err, "resource refresh failed");
                     self.status = format!("Refresh failed: {err}");
                     return Vec::new();
                 }
+                let loaded = resource_loaded_message(&resource_id, &rows);
+                tracing::debug!(
+                    resource_id = resource_id.as_str(),
+                    id = loaded_entity_id(&rows).unwrap_or(""),
+                    rows = rows.len(),
+                    "{}",
+                    loaded
+                );
                 if resource_id == "logs" {
                     self.ingest_logs(rows);
                 } else {
@@ -571,6 +605,7 @@ impl App {
     }
 
     pub(crate) fn select_resource(&mut self, id: &str) {
+        tracing::trace!(resource_id = id, "opened pane");
         self.poll_generation = self.poll_generation.wrapping_add(1);
         self.torch_generation = self.torch_generation.wrapping_add(1);
         self.overlay = Overlay::None;
@@ -622,8 +657,20 @@ impl App {
             .saturating_sub(inspector)
             .saturating_sub(2)
             .max(1);
-        let inner_h = self.terminal_height.saturating_sub(5).max(1);
+        let inner_h = self
+            .terminal_height
+            .saturating_sub(5)
+            .saturating_sub(self.console_layout_height())
+            .max(1);
         (usize::from(inner_w), usize::from(inner_h))
+    }
+
+    pub(crate) fn console_layout_height(&self) -> u16 {
+        console_pane_height(
+            self.terminal_height,
+            self.console.visible,
+            self.console.fullscreen,
+        )
     }
 
     pub(crate) fn sync_table_viewport(&mut self) {
@@ -631,6 +678,87 @@ impl App {
         self.table.sync_viewport(width, height);
         self.inspector
             .clamp_to_visible(self.inspector_visible_rows());
+        self.sync_console_viewport();
+    }
+
+    pub(crate) fn sync_console_viewport(&mut self) {
+        let height = usize::from(self.console_layout_height().saturating_sub(2).max(1));
+        self.console.ensure_visible(&self.console_entries, height);
+    }
+
+    pub(crate) fn pull_console_logs(&mut self) {
+        let records = self.log_store.snapshot();
+        if records.is_empty() {
+            return;
+        }
+        let last_id = records.last().map_or(0, |record| record.id);
+        if last_id == self.console_log_seq && self.console_entries.len() == records.len() {
+            return;
+        }
+        let filtered_before = self.console.filtered_indices(&self.console_entries).len();
+        let follow = filtered_before == 0 || self.console.selected + 1 >= filtered_before;
+        self.console_entries = records.iter().map(console_entry_from_record).collect();
+        self.console_log_seq = last_id;
+        let filtered_len = self.console.filtered_indices(&self.console_entries).len();
+        if follow {
+            self.console.select_last(filtered_len);
+        } else {
+            self.console.clamp_selection(filtered_len);
+        }
+        self.sync_console_viewport();
+    }
+
+    pub(crate) fn toggle_console(&mut self) {
+        self.pull_console_logs();
+        let showing = self.console.toggle_visible();
+        if showing {
+            if self.pane != Pane::Console {
+                self.pane_before_console = self.pane;
+            }
+            self.pane = Pane::Console;
+            tracing::trace!(fullscreen = self.console.fullscreen, "opened pane");
+        } else {
+            self.pane = match self.pane_before_console {
+                Pane::Console => Pane::Content,
+                other => other,
+            };
+            tracing::trace!("closed console pane");
+        }
+        self.status = if showing {
+            "Console shown".into()
+        } else {
+            "Console hidden".into()
+        };
+        self.sync_table_viewport();
+    }
+
+    pub(crate) fn cycle_pane(&mut self, forward: bool) {
+        if self.console.fullscreen {
+            return;
+        }
+        let console = self.console.visible;
+        self.pane = if forward {
+            match self.pane {
+                Pane::Nav => Pane::Content,
+                Pane::Content => Pane::Inspector,
+                Pane::Inspector if console => Pane::Console,
+                Pane::Inspector | Pane::Console => Pane::Nav,
+            }
+        } else {
+            match self.pane {
+                Pane::Nav if console => Pane::Console,
+                Pane::Nav | Pane::Console => Pane::Inspector,
+                Pane::Content => Pane::Nav,
+                Pane::Inspector => Pane::Content,
+            }
+        };
+        if self.pane == Pane::Console {
+            tracing::trace!(pane = "console", "focused pane");
+        }
+    }
+
+    pub(crate) fn console_body_height(&self) -> usize {
+        usize::from(self.console_layout_height().saturating_sub(2).max(1))
     }
 
     pub(crate) fn inspector_visible_rows(&self) -> usize {
@@ -808,6 +936,8 @@ pub(crate) fn palette_commands() -> Vec<Command> {
         Command::new("refresh", "Refresh").with_description("reload the current resource"),
         Command::new("logout", "Log out").with_description("forget this router session"),
         Command::new("help", "Keyboard help").with_description("show all shortcuts"),
+        Command::new("console", "Toggle console")
+            .with_description("show or hide the application log console"),
         Command::new("dashboard", "Dashboard").with_description("live WAN overview"),
     ];
     commands.extend(ALL_RESOURCES.iter().map(|spec| {
@@ -856,6 +986,48 @@ pub(crate) fn is_https_router_url(url: &str) -> bool {
 
 fn format_header_clock(now: chrono::DateTime<Local>) -> String {
     now.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+fn loaded_entity_id(rows: &[Resource]) -> Option<&str> {
+    match rows {
+        [row] => {
+            let id = row.id.trim();
+            (!id.is_empty()).then_some(id)
+        }
+        _ => None,
+    }
+}
+
+fn resource_loaded_message(resource_id: &str, rows: &[Resource]) -> String {
+    match loaded_entity_id(rows) {
+        Some(id) => format!("resource loaded {resource_id} {id}"),
+        None => format!("resource loaded {resource_id}"),
+    }
+}
+
+fn console_entry_from_record(record: &LogRecord) -> ConsoleEntry {
+    let mut fields = vec![("target".into(), record.target.clone())];
+    for (key, value) in &record.fields {
+        if key != "target" {
+            fields.push((key.clone(), value.clone()));
+        }
+    }
+    ConsoleEntry {
+        time: record.timestamp_label(),
+        level: console_level(record.level),
+        message: record.message.clone(),
+        fields,
+    }
+}
+
+fn console_level(level: LogLevel) -> ConsoleLevel {
+    match level {
+        LogLevel::Trace => ConsoleLevel::Trace,
+        LogLevel::Debug => ConsoleLevel::Debug,
+        LogLevel::Info => ConsoleLevel::Info,
+        LogLevel::Warn => ConsoleLevel::Warn,
+        LogLevel::Error => ConsoleLevel::Error,
+    }
 }
 
 #[cfg(test)]
@@ -1024,6 +1196,39 @@ mod dashboard_tests {
         assert_eq!(format_header_clock(dt), "2026-08-22 01:06:05");
         assert!(is_header_clock("2026-08-22 01:26:35"));
         assert!(!is_header_clock("2026-8-22 1:26:35"));
+    }
+
+    #[test]
+    fn resource_loaded_message_includes_entity_id_when_present() {
+        let many = vec![
+            Resource {
+                id: "*1".into(),
+                ..Resource::default()
+            },
+            Resource {
+                id: "*2".into(),
+                ..Resource::default()
+            },
+        ];
+        assert_eq!(
+            resource_loaded_message("interfaces", &many),
+            "resource loaded interfaces"
+        );
+
+        let one = vec![Resource {
+            id: "*1".into(),
+            ..Resource::default()
+        }];
+        assert_eq!(
+            resource_loaded_message("ethernet", &one),
+            "resource loaded ethernet *1"
+        );
+
+        let singleton = vec![Resource::default()];
+        assert_eq!(
+            resource_loaded_message("clock", &singleton),
+            "resource loaded clock"
+        );
     }
 }
 

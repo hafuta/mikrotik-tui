@@ -21,8 +21,9 @@ networking or persistence. `mtui-routeros` contains no terminal code.
   explicitly approved SHA-256 leaf certificate pin.
 - Profile files exclude passwords. Credentials use a separate owner-only store
   with a replaceable interface for future OS keyrings.
-- Application logging is file-only while ratatui owns stdout. Redaction is
-  applied before records reach the handler.
+- Application logging writes JSON to a file and a redacted in-memory buffer
+  for the in-app console. Tracing never writes to stdout while ratatui owns
+  the terminal.
 - The client mutates RouterOS only through confirmed actions and property
   sheets. Destructive commands (remove, reset counters) use an alert overlay.
   Secrets stay masked in tables and inspectors.

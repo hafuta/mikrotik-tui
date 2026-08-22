@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -237,6 +237,16 @@ impl Client {
         body: Option<Value>,
     ) -> Result<Vec<u8>> {
         validate_endpoint(endpoint, operation)?;
+        let method_name = method.as_str().to_owned();
+        let outbound = format!("outbound {method_name} {endpoint}");
+        tracing::info!(
+            method = method_name.as_str(),
+            endpoint,
+            operation,
+            "{}",
+            outbound
+        );
+        let started = Instant::now();
         let url = format!("{}{endpoint}", self.base_url);
         let mut request = self
             .http
@@ -247,25 +257,80 @@ impl Client {
             request = request.json(&body);
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|err| self.classify_request_error(operation, &err))?;
+        let response = match request.send().await {
+            Ok(response) => response,
+            Err(err) => {
+                let classified = self.classify_request_error(operation, &err);
+                tracing::error!(
+                    method = method_name.as_str(),
+                    endpoint,
+                    operation,
+                    error = %classified,
+                    "request failed"
+                );
+                return Err(classified);
+            }
+        };
 
+        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         let status = response.status();
         if !status.is_success() {
+            if status.is_server_error() {
+                tracing::error!(
+                    method = method_name.as_str(),
+                    endpoint,
+                    operation,
+                    status = status.as_u16(),
+                    elapsed_ms,
+                    "response error"
+                );
+            } else {
+                tracing::warn!(
+                    method = method_name.as_str(),
+                    endpoint,
+                    operation,
+                    status = status.as_u16(),
+                    elapsed_ms,
+                    "response error"
+                );
+            }
             return Err(self
                 .build_status_error(operation, status.as_u16(), response)
                 .await);
         }
 
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|err| self.classify_request_error(operation, &err))?;
+        let bytes = match response.bytes().await {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                let classified = self.classify_request_error(operation, &err);
+                tracing::error!(
+                    method = method_name.as_str(),
+                    endpoint,
+                    operation,
+                    error = %classified,
+                    "response body failed"
+                );
+                return Err(classified);
+            }
+        };
         if bytes.len() > MAX_RESPONSE_BYTES {
+            tracing::error!(
+                method = method_name.as_str(),
+                endpoint,
+                operation,
+                "response body too large"
+            );
             return Err(Error::decode(operation, "response body too large"));
         }
+        tracing::debug!(
+            method = method_name.as_str(),
+            endpoint,
+            operation,
+            status = status.as_u16(),
+            bytes = bytes.len(),
+            elapsed_ms,
+            "response ok"
+        );
         Ok(bytes.to_vec())
     }
 

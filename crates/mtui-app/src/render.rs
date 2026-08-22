@@ -163,14 +163,21 @@ fn draw_trust(frame: &mut Frame<'_>, area: Rect, app: &App) {
 fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
     let metrics = LayoutMetrics::new(area.width, area.height);
+    let console_h = app.console_layout_height();
+    let mut vertical = vec![Constraint::Length(1)];
+    if app.console.fullscreen && app.console.visible {
+        vertical.push(Constraint::Min(3));
+    } else {
+        vertical.push(Constraint::Min(3));
+        if console_h > 0 {
+            vertical.push(Constraint::Length(console_h));
+        }
+    }
+    vertical.push(Constraint::Length(1));
+    vertical.push(Constraint::Length(1));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(3),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
+        .constraints(vertical)
         .split(area);
 
     let inner_width = usize::from(area.width.saturating_sub(2).max(1));
@@ -179,34 +186,44 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let header = fit_line(Line::from(spans), usize::from(area.width.max(1)));
     frame.render_widget(Paragraph::new(header), chunks[0]);
 
-    let body = chunks[1];
-    let mut constraints = Vec::new();
-    if metrics.nav_width > 0 {
-        constraints.push(Constraint::Length(metrics.nav_width));
-    }
-    constraints.push(Constraint::Min(20));
-    if metrics.inspector_width > 0 && app.current_resource != DASHBOARD_ID {
-        constraints.push(Constraint::Length(metrics.inspector_width));
-    }
-    let panes = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(body);
+    let mut chunk_idx = 1;
+    if !(app.console.fullscreen && app.console.visible) {
+        let body = chunks[chunk_idx];
+        chunk_idx += 1;
+        let mut constraints = Vec::new();
+        if metrics.nav_width > 0 {
+            constraints.push(Constraint::Length(metrics.nav_width));
+        }
+        constraints.push(Constraint::Min(20));
+        if metrics.inspector_width > 0 && app.current_resource != DASHBOARD_ID {
+            constraints.push(Constraint::Length(metrics.inspector_width));
+        }
+        let panes = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(constraints)
+            .split(body);
 
-    let mut idx = 0;
-    if metrics.nav_width > 0 {
-        draw_nav(frame, panes[idx], app);
+        let mut idx = 0;
+        if metrics.nav_width > 0 {
+            draw_nav(frame, panes[idx], app);
+            idx += 1;
+        }
+        let content = panes[idx];
+        if app.current_resource == DASHBOARD_ID {
+            draw_dashboard(frame, content, app);
+        } else {
+            draw_table(frame, content, app);
+        }
         idx += 1;
+        if metrics.inspector_width > 0 && app.current_resource != DASHBOARD_ID && idx < panes.len()
+        {
+            draw_inspector(frame, panes[idx], app);
+        }
     }
-    let content = panes[idx];
-    if app.current_resource == DASHBOARD_ID {
-        draw_dashboard(frame, content, app);
-    } else {
-        draw_table(frame, content, app);
-    }
-    idx += 1;
-    if metrics.inspector_width > 0 && app.current_resource != DASHBOARD_ID && idx < panes.len() {
-        draw_inspector(frame, panes[idx], app);
+
+    if console_h > 0 {
+        draw_console(frame, chunks[chunk_idx], app);
+        chunk_idx += 1;
     }
 
     let status = if app.refreshing {
@@ -216,13 +233,39 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
     } else {
         app.status.clone()
     };
-    frame.render_widget(Paragraph::new(status_line(&status, &styles)), chunks[2]);
+    frame.render_widget(
+        Paragraph::new(status_line(&status, &styles)),
+        chunks[chunk_idx],
+    );
     let hints = app.footer_action_hints();
     let hint_refs: Vec<(&str, &str)> = hints
         .iter()
         .map(|(key, label)| (key.as_str(), label.as_str()))
         .collect();
-    frame.render_widget(Paragraph::new(footer_hints(&hint_refs, &styles)), chunks[3]);
+    frame.render_widget(
+        Paragraph::new(footer_hints(&hint_refs, &styles)),
+        chunks[chunk_idx + 1],
+    );
+}
+
+fn draw_console(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let styles = app.styles();
+    let focused = app.pane == Pane::Console;
+    let border = if focused { styles.focus } else { styles.border };
+    let block = Block::default()
+        .title(app.console.title())
+        .borders(Borders::ALL)
+        .border_style(border);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let lines = app.console.lines(
+        &app.console_entries,
+        &styles,
+        usize::from(inner.width),
+        usize::from(inner.height),
+        focused,
+    );
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_nav(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -362,14 +405,15 @@ pgup/pgdn   page
 g / G       first / last
 h / l       columns
 tab         cycle panes
-enter       open / expand category; edit row
-/           filter
+`           toggle log console
+enter       open / expand category; edit row; expand log
+/           filter · console search (when focused)
 s           cycle sort
 r           refresh
 e           edit
 n           add
 d           enable / disable
-c           copy
+c           copy · console: copy focused log
 x           remove
 z           reset counters
 t           torch
@@ -383,5 +427,6 @@ ctrl+l      log out
 q           quit
 
 Logs: space pause · f follow · e severity · c clear local
+Console: f fullscreen · pgup/pgdn · n/N next match · enter expand
 Destructive actions ask for confirmation.
 ";

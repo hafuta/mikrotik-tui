@@ -22,11 +22,11 @@ groups remain read-only until they reuse the same action catalog.
 - Switch chip, port, VLAN, host, ACL rule, port-isolation, and L3HW views
 - IP addresses, ARP, DHCP servers, networks, leases, and firewall filter rules
 - Users, RouterBOARD, NTP client, clock, and RouterOS log streaming
-- Search, sorting, detail inspector, command palette, and in-app keyboard help
+- Search, sorting, detail inspector, application log console, command palette, and in-app keyboard help
 - HTTPS with a custom CA or a pinned device certificate (the pin takes
   precedence when both are set)
 - One saved connection profile and machine-local credentials
-- Structured, redacted application logs on disk
+- Structured, redacted application logs on disk and in the in-app console
 
 RouterOS v7 with `www-ssl` and REST access is required. Use a dedicated,
 least-privileged RouterOS account. Interface screens require write permission
@@ -97,7 +97,7 @@ machine or `MIKROTIK_TUI_PASSWORD_FILE`.
 - `MIKROTIK_TUI_PASSWORD_FILE` (preferred for containers)
 - `MIKROTIK_TUI_CA_FILE`
 - `MIKROTIK_TUI_CERT_FINGERPRINT`
-- `MIKROTIK_TUI_LOG` (tracing filter for the file log; default `info`)
+- `MIKROTIK_TUI_LOG` (tracing filter; default `info,mtui_app=trace,mtui_routeros=info,mtui_config=info`)
 
 ## Keyboard
 
@@ -109,9 +109,15 @@ cycles sort (not on Logs), `r` refreshes, `g`/`G` or Home/End jump, `pgup`/
 `pgdn` and `ctrl+u`/`ctrl+d` page, `e` edits, `n` adds, `d` enables or disables,
 `c` copies, `x` removes, `z` resets counters, `t` opens torch, `a` opens the
 action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,
-`ctrl+l` logs out, `?` opens help, `esc` closes overlays or clears the
+`ctrl+l` logs out, `` ` `` toggles the application log console, `?` opens help, `esc` closes overlays or clears the
 filter, and `q` quits. Logging out removes the saved local profile and
 credential; quitting keeps them for automatic reconnection.
+
+The log console is hidden by default and docks to the lower quarter of the
+screen. Focus it with `` ` `` or `tab`, press `f` for fullscreen (header and
+footer stay), `/` for case-insensitive search, `enter` to expand extra fields
+(one row at a time; moving `j`/`k` keeps the expansion), `pgup`/`pgdn` to page,
+and `c` to copy the focused record.
 
 The Logs page keeps a bounded 500-event local stream with stable deduplication
 and continues polling after a failed fetch. `space` pauses the view while

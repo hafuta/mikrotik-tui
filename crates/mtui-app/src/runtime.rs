@@ -45,6 +45,7 @@ pub fn run(alt_screen: bool) -> anyhow::Result<()> {
         dispatch_commands(&rt, &tx, &mut app, startup);
         let mut tick = tokio::time::interval(Duration::from_secs(2));
         loop {
+            app.pull_console_logs();
             terminal.draw(|f| render::draw(f, &app))?;
 
             if app.should_quit {
@@ -198,8 +199,24 @@ fn dispatch_commands(
                     let _ = tx.send(msg);
                 });
             }
+            AppCommand::CopyToClipboard { text } => match copy_to_clipboard(&text) {
+                Ok(()) => {
+                    tracing::info!("copied log to clipboard");
+                    app.status = "Copied log to clipboard".into();
+                }
+                Err(err) => {
+                    tracing::warn!(error = %err, "clipboard copy failed");
+                    app.status = format!("Clipboard copy failed: {err}");
+                }
+            },
         }
     }
+}
+
+fn copy_to_clipboard(text: &str) -> Result<(), String> {
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.set_text(text.to_string()))
+        .map_err(|err| err.to_string())
 }
 
 async fn connect_worker(

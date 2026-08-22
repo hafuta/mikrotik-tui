@@ -100,18 +100,34 @@ impl App {
                 KeyCode::Char('k') => {
                     self.overlay = Overlay::Palette;
                     self.palette.open();
+                    tracing::trace!(overlay = "palette", "opened pane");
                     return Vec::new();
                 }
                 KeyCode::Char('l') => {
+                    tracing::info!("logout");
                     self.logout();
                     return vec![AppCommand::ClearSession];
                 }
                 KeyCode::Char('u') => {
-                    self.page_content(-1);
+                    if self.pane == Pane::Console {
+                        let page = self.console_body_height();
+                        let len = self.console.filtered_indices(&self.console_entries).len();
+                        self.console.page_by(-1, page, len);
+                        self.sync_console_viewport();
+                    } else {
+                        self.page_content(-1);
+                    }
                     return Vec::new();
                 }
                 KeyCode::Char('d') => {
-                    self.page_content(1);
+                    if self.pane == Pane::Console {
+                        let page = self.console_body_height();
+                        let len = self.console.filtered_indices(&self.console_entries).len();
+                        self.console.page_by(1, page, len);
+                        self.sync_console_viewport();
+                    } else {
+                        self.page_content(1);
+                    }
                     return Vec::new();
                 }
                 KeyCode::Left => {
@@ -130,7 +146,19 @@ impl App {
             }
         }
 
+        if self.pane == Pane::Console {
+            if matches!(key.code, KeyCode::Char('`')) && !self.console.searching {
+                self.toggle_console();
+                return Vec::new();
+            }
+            return self.keys_console(key);
+        }
+
         match key.code {
+            KeyCode::Char('`') if !self.console.searching => {
+                self.toggle_console();
+                return Vec::new();
+            }
             KeyCode::Char('q') => {
                 self.should_quit = true;
                 return vec![AppCommand::Quit];
@@ -138,22 +166,11 @@ impl App {
             KeyCode::Char('?') => {
                 self.overlay = Overlay::Help;
                 self.overlay_scroll = 0;
+                tracing::trace!(overlay = "help", "opened pane");
                 return Vec::new();
             }
-            KeyCode::Tab => {
-                self.pane = match self.pane {
-                    Pane::Nav => Pane::Content,
-                    Pane::Content => Pane::Inspector,
-                    Pane::Inspector => Pane::Nav,
-                };
-            }
-            KeyCode::BackTab => {
-                self.pane = match self.pane {
-                    Pane::Nav => Pane::Inspector,
-                    Pane::Content => Pane::Nav,
-                    Pane::Inspector => Pane::Content,
-                };
-            }
+            KeyCode::Tab => self.cycle_pane(true),
+            KeyCode::BackTab => self.cycle_pane(false),
             KeyCode::Char('r') => return self.refresh_now(),
             KeyCode::Char('/') if self.pane == Pane::Content => {
                 // simple: clear filter on empty, otherwise append handled below
@@ -262,6 +279,140 @@ impl App {
             Overlay::Torch(_) => self.keys_torch(key),
             Overlay::None => Vec::new(),
         }
+    }
+
+    fn keys_console(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        if self.console.searching {
+            return self.keys_console_search(key);
+        }
+
+        let filtered_len = self.console.filtered_indices(&self.console_entries).len();
+        match key.code {
+            KeyCode::Char('q') => {
+                self.should_quit = true;
+                return vec![AppCommand::Quit];
+            }
+            KeyCode::Char('?') => {
+                self.overlay = Overlay::Help;
+                self.overlay_scroll = 0;
+                tracing::trace!(overlay = "help", "opened pane");
+                return Vec::new();
+            }
+            KeyCode::Tab => self.cycle_pane(true),
+            KeyCode::BackTab => self.cycle_pane(false),
+            KeyCode::Char('r') => return self.refresh_now(),
+            KeyCode::Char('f') => {
+                self.console.toggle_fullscreen();
+                tracing::trace!(fullscreen = self.console.fullscreen, "console fullscreen");
+                self.sync_table_viewport();
+                self.status = if self.console.fullscreen {
+                    "Console fullscreen".into()
+                } else {
+                    "Console docked".into()
+                };
+            }
+            KeyCode::Char('/') => {
+                self.console.start_search();
+                self.status =
+                    "Console search (case-insensitive) · Enter confirm · Esc cancel".into();
+            }
+            KeyCode::Char('n') => {
+                self.console.jump_match(true, filtered_len);
+                self.sync_console_viewport();
+            }
+            KeyCode::Char('N') => {
+                self.console.jump_match(false, filtered_len);
+                self.sync_console_viewport();
+            }
+            KeyCode::Char('c') => {
+                if let Some(entry) = self.console.selected_entry(&self.console_entries) {
+                    return vec![AppCommand::CopyToClipboard {
+                        text: entry.copy_text(),
+                    }];
+                }
+            }
+            KeyCode::Enter => {
+                self.console.toggle_expanded(filtered_len);
+                self.sync_console_viewport();
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.console.move_selection(-1, filtered_len);
+                self.sync_console_viewport();
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.console.move_selection(1, filtered_len);
+                self.sync_console_viewport();
+            }
+            KeyCode::PageUp => {
+                self.console
+                    .page_by(-1, self.console_body_height(), filtered_len);
+                self.sync_console_viewport();
+            }
+            KeyCode::PageDown => {
+                self.console
+                    .page_by(1, self.console_body_height(), filtered_len);
+                self.sync_console_viewport();
+            }
+            KeyCode::Home | KeyCode::Char('g') => {
+                self.console.select_first();
+                self.sync_console_viewport();
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                self.console.select_last(filtered_len);
+                self.sync_console_viewport();
+            }
+            KeyCode::Esc => {
+                if self.console.escape_search() {
+                    self.console.clamp_selection(
+                        self.console.filtered_indices(&self.console_entries).len(),
+                    );
+                    self.sync_console_viewport();
+                    self.status = "Console search cleared".into();
+                } else {
+                    self.toggle_console();
+                }
+            }
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    fn keys_console_search(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        match key.code {
+            KeyCode::Esc => {
+                self.console.escape_search();
+                let len = self.console.filtered_indices(&self.console_entries).len();
+                self.console.clamp_selection(len);
+                self.sync_console_viewport();
+                self.status = "Console search canceled".into();
+            }
+            KeyCode::Enter => {
+                self.console.confirm_search();
+                let len = self.console.filtered_indices(&self.console_entries).len();
+                self.console.clamp_selection(len);
+                self.console.select_first();
+                self.sync_console_viewport();
+                self.status = if self.console.query.is_empty() {
+                    "Console search cleared".into()
+                } else {
+                    format!("Console search: {}", self.console.query)
+                };
+            }
+            KeyCode::Backspace | KeyCode::Delete | KeyCode::Char('\u{8}' | '\u{7f}') => {
+                self.console.search_backspace();
+                let len = self.console.filtered_indices(&self.console_entries).len();
+                self.console.clamp_selection(len);
+                self.sync_console_viewport();
+            }
+            KeyCode::Char(ch) if key.modifiers.is_empty() => {
+                self.console.insert_search_char(ch);
+                let len = self.console.filtered_indices(&self.console_entries).len();
+                self.console.clamp_selection(len);
+                self.sync_console_viewport();
+            }
+            _ => {}
+        }
+        Vec::new()
     }
 
     fn keys_confirm(&mut self, key: KeyEvent) -> Vec<AppCommand> {
@@ -619,6 +770,11 @@ impl App {
             Pane::Inspector => self
                 .inspector
                 .scroll_by(delta, self.inspector_visible_rows()),
+            Pane::Console => {
+                let len = self.console.filtered_indices(&self.console_entries).len();
+                self.console.move_selection(delta, len);
+                self.sync_console_viewport();
+            }
         }
     }
 
@@ -636,6 +792,10 @@ impl App {
             "help" => {
                 self.overlay = Overlay::Help;
                 self.overlay_scroll = 0;
+                Vec::new()
+            }
+            "console" => {
+                self.toggle_console();
                 Vec::new()
             }
             "dashboard" => self.open_resource(DASHBOARD_ID),
@@ -1038,5 +1198,167 @@ mod nav_accordion_tests {
             )),
             "expected PPP secrets load, got {cmds:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod console_tests {
+    use std::sync::Arc;
+
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use mtui_config::{LogLevel, LogStore};
+    use mtui_ui::{ConsoleEntry, ConsoleLevel};
+
+    use crate::app::{App, Pane, Screen};
+    use crate::event::AppEvent;
+
+    fn press(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn main_app() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.console_entries = vec![
+            ConsoleEntry {
+                time: "2026-08-22 03:25:01.000".into(),
+                level: ConsoleLevel::Info,
+                message: "outbound request".into(),
+                fields: vec![("endpoint".into(), "/rest/interface".into())],
+            },
+            ConsoleEntry {
+                time: "2026-08-22 03:25:02.000".into(),
+                level: ConsoleLevel::Error,
+                message: "response error".into(),
+                fields: vec![("status".into(), "500".into())],
+            },
+            ConsoleEntry {
+                time: "2026-08-22 03:25:03.000".into(),
+                level: ConsoleLevel::Warn,
+                message: "opened pane".into(),
+                fields: vec![("kind".into(), "help".into())],
+            },
+        ];
+        app
+    }
+
+    #[test]
+    fn console_starts_hidden_and_backtick_toggles_it() {
+        let mut app = main_app();
+        assert!(!app.console.visible);
+        assert_eq!(app.pane, Pane::Nav);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        assert!(app.console.visible);
+        assert!(!app.console.fullscreen);
+        assert_eq!(app.pane, Pane::Console);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        assert!(!app.console.visible);
+        assert_eq!(app.pane, Pane::Nav);
+    }
+
+    #[test]
+    fn closed_console_keeps_ingested_logs_until_shown() {
+        let store = Arc::new(LogStore::with_capacity(16));
+        store.push(
+            chrono::Local::now(),
+            LogLevel::Info,
+            "mtui_routeros::client".into(),
+            "outbound GET /rest/interface".into(),
+            std::collections::BTreeMap::new(),
+        );
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.log_store = store;
+        assert!(!app.console.visible);
+        assert!(app.console_entries.is_empty());
+
+        let _ = app.update(AppEvent::Tick);
+        assert!(!app.console.visible);
+        assert_eq!(app.console_entries.len(), 1);
+        assert_eq!(
+            app.console_entries[0].message,
+            "outbound GET /rest/interface"
+        );
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        assert!(app.console.visible);
+        assert_eq!(app.console_entries.len(), 1);
+        assert_eq!(
+            app.console
+                .selected_entry(&app.console_entries)
+                .map(|e| e.message.as_str()),
+            Some("outbound GET /rest/interface")
+        );
+    }
+
+    #[test]
+    fn f_makes_the_focused_console_fullscreen() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));
+        assert!(app.console.fullscreen);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));
+        assert!(!app.console.fullscreen);
+    }
+
+    #[test]
+    fn slash_search_is_case_insensitive() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('/'))));
+        for ch in "OUTBOUND".chars() {
+            let _ = app.update(AppEvent::Input(press(KeyCode::Char(ch))));
+        }
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert_eq!(app.console.filtered_indices(&app.console_entries), vec![0]);
+    }
+
+    #[test]
+    fn page_keys_move_the_console_cursor() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::PageDown)));
+        assert_eq!(app.console.selected, 2);
+        let _ = app.update(AppEvent::Input(press(KeyCode::PageUp)));
+        assert_eq!(app.console.selected, 0);
+    }
+
+    #[test]
+    fn enter_expands_and_iteration_keeps_expansion() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(app.console.expanded);
+        assert_eq!(app.console.selected, 0);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('j'))));
+        assert_eq!(app.console.selected, 1);
+        assert!(app.console.expanded);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(!app.console.expanded);
+    }
+
+    #[test]
+    fn c_copies_the_focused_log() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('c'))));
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                crate::app::AppCommand::CopyToClipboard { text }
+                    if text.contains("outbound request") && text.contains("endpoint: /rest/interface")
+            )),
+            "expected copy command, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn docked_console_uses_a_quarter_of_the_terminal() {
+        let mut app = main_app();
+        app.terminal_height = 24;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
+        assert_eq!(app.console_layout_height(), 6);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));
+        assert_eq!(app.console_layout_height(), 21);
     }
 }
