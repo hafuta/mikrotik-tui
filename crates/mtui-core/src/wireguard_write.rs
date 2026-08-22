@@ -12,12 +12,23 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_WG: FieldKind = FieldKind::Lookup {
+    resource_id: "wireguard",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_VRF: FieldKind = FieldKind::Lookup {
+    resource_id: "vrf",
+    value_key: "name",
+    multiple: false,
+};
+
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
 const MTU: FieldSpec = f!("mtu", "MTU", FieldKind::Number);
 const RUNNING: FieldSpec = f!("running", "Running", FieldKind::Readonly);
-const INTERFACE: FieldSpec = f!("interface", "Interface", FieldKind::Text);
+const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_WG);
 const PUBLIC_KEY: FieldSpec = f!("public-key", "Public key", FieldKind::Text);
 const PRIVATE_KEY: FieldSpec = f!("private-key", "Private key", FieldKind::Secret);
 
@@ -34,7 +45,7 @@ pub static WIREGUARD_FORM: FormSchema = FormSchema {
                 f!("listen-port", "Listen port", FieldKind::Number),
                 MTU,
                 PRIVATE_KEY,
-                f!("vrf", "VRF", FieldKind::Text),
+                f!("vrf", "VRF", LOOKUP_VRF),
                 COMMENT,
                 DISABLED,
             ],
@@ -235,5 +246,64 @@ mod tests {
         row.insert("dynamic".into(), "true".into());
         let extras = extra_status_fields(&WIREGUARD_PEER_FORM, &row);
         assert_eq!(extras, vec![("dynamic".into(), "true".into())]);
+    }
+
+    fn assert_lookup(form: &FormSchema, key: &str, resource_id: &'static str) {
+        assert_eq!(
+            form.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key: "name",
+                multiple: false,
+            }),
+            "{key}"
+        );
+    }
+
+    #[test]
+    fn lookup_fields_point_at_named_resources() {
+        assert_lookup(&WIREGUARD_PEER_FORM, "interface", "wireguard");
+        assert_lookup(&WIREGUARD_FORM, "vrf", "vrf");
+        assert_eq!(
+            WIREGUARD_PEER_FORM
+                .create_sections
+                .iter()
+                .flat_map(|section| section.fields.iter())
+                .find(|field| field.key == "interface")
+                .map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id: "wireguard",
+                value_key: "name",
+                multiple: false,
+            })
+        );
+    }
+
+    #[test]
+    fn non_resource_fields_stay_plain_text_or_secret() {
+        assert_eq!(
+            WIREGUARD_PEER_FORM
+                .field("public-key")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            WIREGUARD_PEER_FORM
+                .field("private-key")
+                .map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(
+            WIREGUARD_PEER_FORM
+                .field("allowed-address")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            WIREGUARD_PEER_FORM
+                .field("endpoint-address")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
     }
 }

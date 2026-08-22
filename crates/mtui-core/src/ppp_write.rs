@@ -12,23 +12,49 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_PPP_PROFILE: FieldKind = FieldKind::Lookup {
+    resource_id: "ppp-profiles",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_BRIDGE: FieldKind = FieldKind::Lookup {
+    resource_id: "bridges",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_IFACE_LIST: FieldKind = FieldKind::Lookup {
+    resource_id: "interface-lists",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_CERT: FieldKind = FieldKind::Lookup {
+    resource_id: "certificates",
+    value_key: "name",
+    multiple: false,
+};
+
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
 const USER: FieldSpec = f!("user", "User", FieldKind::Text);
 const PASSWORD: FieldSpec = f!("password", "Password", FieldKind::Secret);
-const PROFILE: FieldSpec = f!("profile", "Profile", FieldKind::Text);
+const PROFILE: FieldSpec = f!("profile", "Profile", LOOKUP_PPP_PROFILE);
 const RUNNING: FieldSpec = f!("running", "Running", FieldKind::Readonly);
-const INTERFACE: FieldSpec = f!("interface", "Interface", FieldKind::Text);
+const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
 const CONNECT_TO: FieldSpec = f!("connect-to", "Connect to", FieldKind::Text);
 const ADD_DEFAULT_ROUTE: FieldSpec = f!("add-default-route", "Default", FieldKind::Toggle);
-const DEFAULT_PROFILE: FieldSpec = f!("default-profile", "Profile", FieldKind::Text);
+const DEFAULT_PROFILE: FieldSpec = f!("default-profile", "Profile", LOOKUP_PPP_PROFILE);
 const AUTHENTICATION: FieldSpec = f!("authentication", "Auth", FieldKind::Text);
 const KEEPALIVE: FieldSpec = f!("keepalive-timeout", "Keepalive", FieldKind::Text);
 const MAX_MTU: FieldSpec = f!("max-mtu", "Max MTU", FieldKind::Number);
 const MAX_MRU: FieldSpec = f!("max-mru", "Max MRU", FieldKind::Number);
 const ENABLED: FieldSpec = f!("enabled", "Enabled", FieldKind::Toggle);
-const CERTIFICATE: FieldSpec = f!("certificate", "Certificate", FieldKind::Text);
+const CERTIFICATE: FieldSpec = f!("certificate", "Certificate", LOOKUP_CERT);
 const USE_IPSEC: FieldSpec = f!("use-ipsec", "IPsec", FieldKind::Toggle);
 const IPSEC_SECRET: FieldSpec = f!("ipsec-secret", "IPsec secret", FieldKind::Secret);
 const SERVICE_NAME: FieldSpec = f!("service-name", "Service", FieldKind::Text);
@@ -87,8 +113,8 @@ pub static PPP_PROFILE_FORM: FormSchema = FormSchema {
             f!("use-encryption", "Encrypt", FieldKind::Text),
             f!("use-compression", "Compress", FieldKind::Text),
             f!("change-tcp-mss", "MSS", FieldKind::Text),
-            f!("bridge", "Bridge", FieldKind::Text),
-            f!("interface-list", "List", FieldKind::Text),
+            f!("bridge", "Bridge", LOOKUP_BRIDGE),
+            f!("interface-list", "List", LOOKUP_IFACE_LIST),
             COMMENT,
         ],
     }],
@@ -610,5 +636,99 @@ mod tests {
         row.insert("dynamic".into(), "true".into());
         let extras = extra_status_fields(&PPPOE_CLIENT_FORM, &row);
         assert_eq!(extras, vec![("dynamic".into(), "true".into())]);
+    }
+
+    fn assert_lookup(form: &FormSchema, key: &str, resource_id: &'static str) {
+        assert_eq!(
+            form.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key: "name",
+                multiple: false,
+            }),
+            "{key}"
+        );
+    }
+
+    #[test]
+    fn lookup_fields_point_at_named_resources() {
+        for form in [
+            &PPP_SECRET_FORM,
+            &PPP_CLIENT_FORM,
+            &PPPOE_CLIENT_FORM,
+            &PPTP_CLIENT_FORM,
+            &L2TP_CLIENT_FORM,
+            &SSTP_CLIENT_FORM,
+            &OVPN_CLIENT_FORM,
+        ] {
+            assert_lookup(form, "profile", "ppp-profiles");
+        }
+        for form in [
+            &PPPOE_SERVER_FORM,
+            &PPTP_SERVER_FORM,
+            &L2TP_SERVER_FORM,
+            &SSTP_SERVER_FORM,
+            &OVPN_SERVER_FORM,
+        ] {
+            assert_lookup(form, "default-profile", "ppp-profiles");
+        }
+        assert_lookup(&PPP_PROFILE_FORM, "bridge", "bridges");
+        assert_lookup(&PPP_PROFILE_FORM, "interface-list", "interface-lists");
+        assert_lookup(&PPPOE_CLIENT_FORM, "interface", "interfaces");
+        assert_lookup(&PPPOE_SERVER_FORM, "interface", "interfaces");
+        for form in [
+            &SSTP_CLIENT_FORM,
+            &SSTP_SERVER_FORM,
+            &OVPN_CLIENT_FORM,
+            &OVPN_SERVER_FORM,
+        ] {
+            assert_lookup(form, "certificate", "certificates");
+        }
+    }
+
+    #[test]
+    fn non_resource_fields_stay_plain_text_or_secret() {
+        assert_eq!(
+            PPP_SECRET_FORM.field("password").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(
+            PPP_SECRET_FORM
+                .field("local-address")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            PPP_CLIENT_FORM.field("phone").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            PPPOE_CLIENT_FORM
+                .field("service-name")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            PPPOE_SERVER_FORM
+                .field("authentication")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            OVPN_CLIENT_FORM.field("auth").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            OVPN_CLIENT_FORM.field("cipher").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            PPP_CLIENT_FORM.field("port").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            PPTP_CLIENT_FORM.field("connect-to").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
     }
 }

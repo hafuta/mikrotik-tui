@@ -23,13 +23,34 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_PEER: FieldKind = FieldKind::Lookup {
+    resource_id: "ipsec-peers",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_PROFILE: FieldKind = FieldKind::Lookup {
+    resource_id: "ipsec-profiles",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_PROPOSAL: FieldKind = FieldKind::Lookup {
+    resource_id: "ipsec-proposals",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_CERT: FieldKind = FieldKind::Lookup {
+    resource_id: "certificates",
+    value_key: "name",
+    multiple: false,
+};
+
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
-const PEER: FieldSpec = f!("peer", "Peer", FieldKind::Text);
-const PROFILE: FieldSpec = f!("profile", "Profile", FieldKind::Text);
-const PROPOSAL: FieldSpec = f!("proposal", "Proposal", FieldKind::Text);
+const PEER: FieldSpec = f!("peer", "Peer", LOOKUP_PEER);
+const PROFILE: FieldSpec = f!("profile", "Profile", LOOKUP_PROFILE);
+const PROPOSAL: FieldSpec = f!("proposal", "Proposal", LOOKUP_PROPOSAL);
 const DYNAMIC: FieldSpec = f!("dynamic", "Dynamic", FieldKind::Readonly);
 
 pub static IPSEC_PEER_FORM: FormSchema = FormSchema {
@@ -101,8 +122,8 @@ pub static IPSEC_IDENTITY_FORM: FormSchema = FormSchema {
                 f!("secret", "Secret", FieldKind::Secret),
                 f!("my-id", "My ID", FieldKind::Text),
                 f!("remote-id", "Remote ID", FieldKind::Text),
-                f!("certificate", "Certificate", FieldKind::Text),
-                f!("remote-certificate", "Remote certificate", FieldKind::Text),
+                f!("certificate", "Certificate", LOOKUP_CERT),
+                f!("remote-certificate", "Remote certificate", LOOKUP_CERT),
                 f!("generate-policy", "Generate policy", FieldKind::Text),
                 f!(
                     "policy-template-group",
@@ -403,5 +424,61 @@ mod tests {
         row.insert("unexpected-flag".into(), "yes".into());
         let extras = extra_status_fields(&IPSEC_SETTINGS_FORM, &row);
         assert_eq!(extras, vec![("unexpected-flag".into(), "yes".into())]);
+    }
+
+    fn assert_lookup(form: &FormSchema, key: &str, resource_id: &'static str) {
+        assert_eq!(
+            form.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key: "name",
+                multiple: false,
+            }),
+            "{key}"
+        );
+    }
+
+    #[test]
+    fn lookup_fields_point_at_named_resources() {
+        assert_lookup(&IPSEC_IDENTITY_FORM, "peer", "ipsec-peers");
+        assert_lookup(&IPSEC_PEER_FORM, "profile", "ipsec-profiles");
+        assert_lookup(&IPSEC_POLICY_FORM, "proposal", "ipsec-proposals");
+        assert_lookup(&IPSEC_IDENTITY_FORM, "certificate", "certificates");
+        assert_lookup(&IPSEC_IDENTITY_FORM, "remote-certificate", "certificates");
+        assert_lookup(&IPSEC_POLICY_FORM, "peer", "ipsec-peers");
+    }
+
+    #[test]
+    fn non_resource_fields_stay_plain_text_or_secret() {
+        assert_eq!(
+            IPSEC_PEER_FORM.field("address").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            IPSEC_IDENTITY_FORM.field("secret").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(
+            IPSEC_IDENTITY_FORM.field("my-id").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            IPSEC_IDENTITY_FORM
+                .field("auth-method")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            IPSEC_PROPOSAL_FORM
+                .field("auth-algorithms")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            IPSEC_PROPOSAL_FORM
+                .field("enc-algorithms")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
     }
 }

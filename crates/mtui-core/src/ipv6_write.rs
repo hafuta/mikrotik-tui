@@ -23,13 +23,39 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_IFACE_LIST: FieldKind = FieldKind::Lookup {
+    resource_id: "interface-lists",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_ROUTING_TABLE: FieldKind = FieldKind::Lookup {
+    resource_id: "routing-tables",
+    value_key: "name",
+    multiple: false,
+};
+
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Text);
-const INTERFACE: FieldSpec = f!("interface", "Interface", FieldKind::Text);
+const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const CHAIN: FieldSpec = f!("chain", "Chain", FieldKind::Text);
 const ACTION: FieldSpec = f!("action", "Action", FieldKind::Text);
+const IN_INTERFACE: FieldSpec = f!("in-interface", "In interface", LOOKUP_IFACE);
+const OUT_INTERFACE: FieldSpec = f!("out-interface", "Out interface", LOOKUP_IFACE);
+const IN_INTERFACE_LIST: FieldSpec =
+    f!("in-interface-list", "In interface list", LOOKUP_IFACE_LIST);
+const OUT_INTERFACE_LIST: FieldSpec = f!(
+    "out-interface-list",
+    "Out interface list",
+    LOOKUP_IFACE_LIST
+);
+const ROUTING_TABLE: FieldSpec = f!("routing-table", "Routing table", LOOKUP_ROUTING_TABLE);
 
 pub static IPV6_ADDRESS_FORM: FormSchema = FormSchema {
     title_key: "address",
@@ -145,7 +171,7 @@ pub static IPV6_ROUTE_FORM: FormSchema = FormSchema {
                 f!("dst-address", "Dst address", FieldKind::Text),
                 f!("gateway", "Gateway", FieldKind::Text),
                 f!("distance", "Distance", FieldKind::Text),
-                f!("routing-table", "Routing table", FieldKind::Text),
+                ROUTING_TABLE,
                 COMMENT,
                 DISABLED,
             ],
@@ -224,8 +250,10 @@ pub static IPV6_FIREWALL_FILTER_FORM: FormSchema = FormSchema {
                 f!("src-address", "Src address", FieldKind::Text),
                 f!("dst-address", "Dst address", FieldKind::Text),
                 f!("protocol", "Protocol", FieldKind::Text),
-                f!("in-interface", "In interface", FieldKind::Text),
-                f!("out-interface", "Out interface", FieldKind::Text),
+                IN_INTERFACE,
+                OUT_INTERFACE,
+                IN_INTERFACE_LIST,
+                OUT_INTERFACE_LIST,
                 COMMENT,
                 DISABLED,
             ],
@@ -264,6 +292,22 @@ mod tests {
             .collect()
     }
 
+    fn assert_lookup(
+        schema: &FormSchema,
+        key: &str,
+        resource_id: &'static str,
+        value_key: &'static str,
+    ) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key,
+                multiple: false,
+            })
+        );
+    }
+
     #[test]
     fn ipv6_address_matches_webfig() {
         assert_eq!(
@@ -279,6 +323,9 @@ mod tests {
             ]
         );
         assert_eq!(create_keys(&IPV6_ADDRESS_FORM), ["address", "interface"]);
+        assert_lookup(&IPV6_ADDRESS_FORM, "interface", "interfaces", "name");
+        assert_lookup(&IPV6_NEIGHBOR_FORM, "interface", "interfaces", "name");
+        assert_lookup(&IPV6_ND_FORM, "interface", "interfaces", "name");
         assert!(
             IPV6_ADDRESS_FORM
                 .sections
@@ -314,6 +361,7 @@ mod tests {
         assert_eq!(create_keys(&IPV6_ROUTE_FORM), ["dst-address", "gateway"]);
         assert!(!IPV6_ROUTE_FORM.writable_keys().contains(&"active"));
         assert!(IPV6_ROUTE_FORM.writable_keys().contains(&"routing-table"));
+        assert_lookup(&IPV6_ROUTE_FORM, "routing-table", "routing-tables", "name");
     }
 
     #[test]
@@ -336,6 +384,63 @@ mod tests {
                 .contains(&"packets")
         );
         assert!(IPV6_FIREWALL_FILTER_FORM.known_keys().contains(&"invalid"));
+        assert!(
+            IPV6_FIREWALL_FILTER_FORM
+                .writable_keys()
+                .contains(&"in-interface-list")
+        );
+        assert!(
+            IPV6_FIREWALL_FILTER_FORM
+                .writable_keys()
+                .contains(&"out-interface-list")
+        );
+        assert_lookup(
+            &IPV6_FIREWALL_FILTER_FORM,
+            "in-interface",
+            "interfaces",
+            "name",
+        );
+        assert_lookup(
+            &IPV6_FIREWALL_FILTER_FORM,
+            "out-interface",
+            "interfaces",
+            "name",
+        );
+        assert_lookup(
+            &IPV6_FIREWALL_FILTER_FORM,
+            "in-interface-list",
+            "interface-lists",
+            "name",
+        );
+        assert_lookup(
+            &IPV6_FIREWALL_FILTER_FORM,
+            "out-interface-list",
+            "interface-lists",
+            "name",
+        );
+        let general = IPV6_FIREWALL_FILTER_FORM
+            .sections
+            .iter()
+            .find(|section| section.id == "general")
+            .expect("general");
+        assert!(
+            general
+                .fields
+                .iter()
+                .any(|field| field.key == "in-interface-list")
+        );
+        assert!(
+            general
+                .fields
+                .iter()
+                .any(|field| field.key == "out-interface-list")
+        );
+        assert!(
+            IPV6_FIREWALL_FILTER_FORM
+                .sections
+                .iter()
+                .all(|section| section.id != "advanced")
+        );
     }
 
     #[test]

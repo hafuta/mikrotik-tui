@@ -12,10 +12,32 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_IFACES: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
+    multiple: true,
+};
+const LOOKUP_BRIDGE: FieldKind = FieldKind::Lookup {
+    resource_id: "bridges",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_SWITCH: FieldKind = FieldKind::Lookup {
+    resource_id: "switch",
+    value_key: "name",
+    multiple: false,
+};
+
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
-const BRIDGE: FieldSpec = f!("bridge", "Bridge", FieldKind::Text);
+const BRIDGE: FieldSpec = f!("bridge", "Bridge", LOOKUP_BRIDGE);
+const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
 const PVID: FieldSpec = f!("pvid", "PVID", FieldKind::Number);
 const FRAME_TYPES: FieldSpec = f!("frame-types", "Frame types", FieldKind::Text);
 const INGRESS: FieldSpec = f!("ingress-filtering", "Ingress filtering", FieldKind::Toggle);
@@ -25,11 +47,11 @@ const ACTION: FieldSpec = f!("action", "Action", FieldKind::Text);
 const MAC_PROTOCOL: FieldSpec = f!("mac-protocol", "MAC protocol", FieldKind::Text);
 const SRC_MAC: FieldSpec = f!("src-mac-address", "Src MAC", FieldKind::Text);
 const DST_MAC: FieldSpec = f!("dst-mac-address", "Dst MAC", FieldKind::Text);
-const IN_IFACE: FieldSpec = f!("in-interface", "In interface", FieldKind::Text);
-const OUT_IFACE: FieldSpec = f!("out-interface", "Out interface", FieldKind::Text);
+const IN_IFACE: FieldSpec = f!("in-interface", "In interface", LOOKUP_IFACE);
+const OUT_IFACE: FieldSpec = f!("out-interface", "Out interface", LOOKUP_IFACE);
 const PACKETS: FieldSpec = f!("packets", "Packets", FieldKind::Readonly);
 const BYTES: FieldSpec = f!("bytes", "Bytes", FieldKind::Readonly);
-const SWITCH: FieldSpec = f!("switch", "Switch", FieldKind::Text);
+const SWITCH: FieldSpec = f!("switch", "Switch", LOOKUP_SWITCH);
 const CONTROL_PORTS: FieldSpec = f!("control-ports", "Control ports", FieldKind::Text);
 const STATUS: FieldSpec = f!("status", "Status", FieldKind::Readonly);
 const DYNAMIC: FieldSpec = f!("dynamic", "Dynamic", FieldKind::Readonly);
@@ -92,7 +114,7 @@ pub static BRIDGE_PORT_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                f!("interface", "Interface", FieldKind::Text),
+                INTERFACE,
                 BRIDGE,
                 PVID,
                 f!("hw", "HW", FieldKind::Toggle),
@@ -122,7 +144,7 @@ pub static BRIDGE_PORT_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[f!("interface", "Interface", FieldKind::Text), BRIDGE],
+        fields: &[INTERFACE, BRIDGE],
     }],
 };
 
@@ -137,8 +159,8 @@ pub static BRIDGE_VLAN_FORM: FormSchema = FormSchema {
             fields: &[
                 BRIDGE,
                 f!("vlan-ids", "VLAN IDs", FieldKind::Text),
-                f!("tagged", "Tagged", FieldKind::Text),
-                f!("untagged", "Untagged", FieldKind::Text),
+                f!("tagged", "Tagged", LOOKUP_IFACES),
+                f!("untagged", "Untagged", LOOKUP_IFACES),
                 COMMENT,
                 DISABLED,
             ],
@@ -719,5 +741,97 @@ mod tests {
         row.insert("hw-offload".into(), "true".into());
         let extras = extra_status_fields(&BRIDGE_VLAN_FORM, &row);
         assert_eq!(extras, vec![("hw-offload".into(), "true".into())]);
+    }
+
+    fn assert_lookup(
+        schema: &FormSchema,
+        key: &str,
+        resource_id: &'static str,
+        value_key: &'static str,
+        multiple: bool,
+    ) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key,
+                multiple,
+            })
+        );
+    }
+
+    #[test]
+    fn bridge_lookups_target_catalog_resources() {
+        assert_lookup(&BRIDGE_PORT_FORM, "interface", "interfaces", "name", false);
+        assert_lookup(&BRIDGE_PORT_FORM, "bridge", "bridges", "name", false);
+        assert_eq!(
+            BRIDGE_PORT_FORM.field("comment").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+
+        assert_lookup(&BRIDGE_VLAN_FORM, "bridge", "bridges", "name", false);
+        assert_lookup(&BRIDGE_VLAN_FORM, "tagged", "interfaces", "name", true);
+        assert_lookup(&BRIDGE_VLAN_FORM, "untagged", "interfaces", "name", true);
+        assert_eq!(
+            BRIDGE_VLAN_FORM.field("vlan-ids").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+
+        assert_lookup(&BRIDGE_MDB_FORM, "bridge", "bridges", "name", false);
+        assert_eq!(
+            BRIDGE_MDB_FORM.field("vid").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_lookup(&BRIDGE_MSTI_FORM, "bridge", "bridges", "name", false);
+
+        assert_lookup(
+            &BRIDGE_FILTER_FORM,
+            "in-interface",
+            "interfaces",
+            "name",
+            false,
+        );
+        assert_lookup(
+            &BRIDGE_FILTER_FORM,
+            "out-interface",
+            "interfaces",
+            "name",
+            false,
+        );
+        assert_lookup(
+            &BRIDGE_NAT_FORM,
+            "in-interface",
+            "interfaces",
+            "name",
+            false,
+        );
+        assert_lookup(
+            &BRIDGE_NAT_FORM,
+            "out-interface",
+            "interfaces",
+            "name",
+            false,
+        );
+
+        assert_lookup(
+            &BRIDGE_PORT_CONTROLLER_FORM,
+            "switch",
+            "switch",
+            "name",
+            false,
+        );
+        assert_lookup(
+            &BRIDGE_PORT_CONTROLLER_FORM,
+            "bridge",
+            "bridges",
+            "name",
+            false,
+        );
+        assert_eq!(
+            BRIDGE_PORT_CONTROLLER_FORM
+                .field("cascade-ports")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
     }
 }

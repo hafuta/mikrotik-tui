@@ -20,11 +20,17 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_ROUTING_TABLE: FieldKind = FieldKind::Lookup {
+    resource_id: "routing-tables",
+    value_key: "name",
+    multiple: false,
+};
+
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
 const ACTION: FieldSpec = f!("action", "Action", FieldKind::Text);
-const TABLE: FieldSpec = f!("table", "Table", FieldKind::Text);
+const TABLE: FieldSpec = f!("table", "Table", LOOKUP_ROUTING_TABLE);
 
 pub static ROUTING_TABLE_FORM: FormSchema = FormSchema {
     title_key: "name",
@@ -137,11 +143,28 @@ mod tests {
             .collect()
     }
 
+    fn assert_lookup(
+        schema: &FormSchema,
+        key: &str,
+        resource_id: &'static str,
+        value_key: &'static str,
+    ) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key,
+                multiple: false,
+            })
+        );
+    }
+
     #[test]
     fn routing_table_and_rule_create() {
         assert_eq!(create_keys(&ROUTING_TABLE_FORM), ["name"]);
         assert!(ROUTING_TABLE_FORM.writable_keys().contains(&"fib"));
         assert_eq!(create_keys(&ROUTING_RULE_FORM), ["action", "table"]);
+        assert_lookup(&ROUTING_RULE_FORM, "table", "routing-tables", "name");
         assert!(ROUTING_RULE_FORM.writable_keys().contains(&"routing-mark"));
     }
 

@@ -20,10 +20,23 @@ macro_rules! f {
     };
 }
 
+const LOOKUP_QUEUE_TREE: FieldKind = FieldKind::Lookup {
+    resource_id: "queue-tree",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_QUEUE_TYPE: FieldKind = FieldKind::Lookup {
+    resource_id: "queue-type",
+    value_key: "name",
+    multiple: false,
+};
+
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
 const MAX_LIMIT: FieldSpec = f!("max-limit", "Max limit", FieldKind::Text);
+const PARENT: FieldSpec = f!("parent", "Parent", LOOKUP_QUEUE_TREE);
+const QUEUE: FieldSpec = f!("queue", "Queue", LOOKUP_QUEUE_TYPE);
 
 pub static QUEUE_SIMPLE_FORM: FormSchema = FormSchema {
     title_key: "name",
@@ -75,7 +88,7 @@ pub static QUEUE_TREE_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("parent", "Parent", FieldKind::Text),
+            PARENT,
             f!("packet-mark", "Packet mark", FieldKind::Text),
             MAX_LIMIT,
             f!("limit-at", "Limit at", FieldKind::Text),
@@ -89,7 +102,7 @@ pub static QUEUE_TREE_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, f!("parent", "Parent", FieldKind::Text)],
+        fields: &[NAME, PARENT],
     }],
 };
 
@@ -123,10 +136,7 @@ pub static QUEUE_INTERFACE_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[
-            f!("interface", "Interface", FieldKind::Readonly),
-            f!("queue", "Queue", FieldKind::Text),
-        ],
+        fields: &[f!("interface", "Interface", FieldKind::Readonly), QUEUE],
     }],
     create_sections: &[],
 };
@@ -145,17 +155,38 @@ mod tests {
             .collect()
     }
 
+    fn assert_lookup(
+        schema: &FormSchema,
+        key: &str,
+        resource_id: &'static str,
+        value_key: &'static str,
+    ) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id,
+                value_key,
+                multiple: false,
+            })
+        );
+    }
+
     #[test]
     fn queue_simple_status_is_runtime_only() {
         assert_eq!(create_keys(&QUEUE_SIMPLE_FORM), ["name", "target"]);
         assert!(!QUEUE_SIMPLE_FORM.writable_keys().contains(&"rate"));
         assert!(!QUEUE_SIMPLE_FORM.writable_keys().contains(&"dropped"));
         assert!(QUEUE_SIMPLE_FORM.writable_keys().contains(&"burst-time"));
+        assert_eq!(
+            QUEUE_SIMPLE_FORM.field("target").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
     }
 
     #[test]
     fn queue_tree_and_type_create() {
         assert_eq!(create_keys(&QUEUE_TREE_FORM), ["name", "parent"]);
+        assert_lookup(&QUEUE_TREE_FORM, "parent", "queue-tree", "name");
         assert_eq!(create_keys(&QUEUE_TYPE_FORM), ["name", "kind"]);
         assert!(QUEUE_TREE_FORM.writable_keys().contains(&"packet-mark"));
         assert!(QUEUE_TYPE_FORM.writable_keys().contains(&"pfifo-limit"));
@@ -166,6 +197,7 @@ mod tests {
         assert!(QUEUE_INTERFACE_FORM.create_sections.is_empty());
         assert_eq!(QUEUE_INTERFACE_FORM.writable_keys(), ["queue"]);
         assert_eq!(QUEUE_INTERFACE_FORM.known_keys(), ["interface", "queue"]);
+        assert_lookup(&QUEUE_INTERFACE_FORM, "queue", "queue-type", "name");
     }
 
     #[test]
