@@ -40,6 +40,9 @@ allows remove/disconnect.
 - Confirmed reboot and shutdown from System Resources, plus named backup save
   and `.backup` load from Files
 - Named device profiles with last-used auto-reconnect, optional remember-password, and TOTP at connect time
+- Demo profile (`--demo` or the Demo row on the login list) for learning navigation without a router
+- Save preview of changed fields before `ctrl+s`, copy of the selected row (`y`) or filtered table (`Y`), and bulk check on firewall, DHCP, and queues
+- Menus that need a missing RouterOS package stay tucked away and show a `!package` badge when hidden menus are revealed
 - Structured, redacted application logs on disk and in the in-app console
 
 RouterOS v7 with `api-ssl` enabled is required. Use a dedicated,
@@ -115,7 +118,7 @@ just run
 
 Equivalent: `cargo run -p mikrotik-tui`.
 
-Flags: `--version`, `--no-alt-screen`.
+Flags: `--version`, `--no-alt-screen`, `--demo` (fixture profile, no router).
 
 On first launch, pick a saved router or add a named profile: host
 (`192.168.88.1` or `host:8729`), username, password, and an optional TOTP.
@@ -156,6 +159,7 @@ row. `/` filters the table, `s`
 cycles sort (not on Logs), `r` refreshes, `g`/`G` or Home/End jump, `pgup`/
 `pgdn` and `ctrl+u`/`ctrl+d` page, `e` edits, `n` adds, `d` enables or disables,
 `c` copies, `x` removes, `y` copies the selected row or inspector details to clipboard,
+`Y` copies every filtered table row, `space` checks rows on firewall/DHCP/queue lists (`*` all, `esc` clears),
 `z` resets counters, `[` / `]` move a filter-like rule
 up or down, `m` makes a DHCP lease static, `t` opens torch, `b` reboots on
 Resources or saves a backup on Files, `o` shuts down (power off) on Resources,
@@ -163,7 +167,7 @@ Resources or saves a backup on Files, `o` shuts down (power off) on Resources,
 (`a`) for `.backup` rows. `p` opens ping on the Ping tool screen (Enter starts
 traceroute on Traceroute). On Certificates, `g` signs, `p` imports a file already
 on the router, and `w` exports PEM/PKCS12 (passphrases stay secret). `a` opens the
-action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,
+action menu, `ctrl+s` previews changed fields then saves a properties sheet, `ctrl+k` opens the command palette,
 `ctrl+l` logs out (saved devices stay), `` ` `` toggles the application log console, `-` hides the
 selected sidebar item after confirmation (or restores it when hidden menus are
 showing), `.` shows hidden menus (marked with `×`

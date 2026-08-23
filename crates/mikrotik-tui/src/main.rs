@@ -9,11 +9,14 @@ struct Args {
     /// Disable the alternate screen buffer.
     #[arg(long)]
     no_alt_screen: bool,
+    /// Open the fixture demo profile (no router required).
+    #[arg(long)]
+    demo: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let _ = mtui_config::init_file_logging();
     tracing::info!(theme = DefaultTheme::ID, "starting mikrotik-tui (Rust)");
-    mtui_app::run(!args.no_alt_screen)
+    mtui_app::run(!args.no_alt_screen, args.demo)
 }

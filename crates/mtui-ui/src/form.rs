@@ -11,7 +11,9 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph};
 
 use crate::layout::clip_line;
 use crate::login::is_printable_char;
-use crate::overlay::{compact_modal_rect, dim_canvas};
+use crate::overlay::{
+    Modal, ModalButton, ModalButtonKind, compact_modal_rect, dim_canvas, render_modal,
+};
 use crate::styles::Styles;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -35,6 +37,7 @@ pub struct FormSession {
     pub error: Option<String>,
     pub saving: bool,
     pub confirm_discard: bool,
+    pub confirm_save: bool,
     pub prompt_command: Option<&'static str>,
     pub prompt_schema: Option<&'static FormSchema>,
     pub lookup: Option<Box<LookupPicker>>,
@@ -78,6 +81,7 @@ impl FormSession {
             error: None,
             saving: false,
             confirm_discard: false,
+            confirm_save: false,
             prompt_command: None,
             prompt_schema: None,
             lookup: None,
@@ -107,6 +111,7 @@ impl FormSession {
             error: None,
             saving: false,
             confirm_discard: false,
+            confirm_save: false,
             prompt_command: None,
             prompt_schema: None,
             lookup: None,
@@ -151,6 +156,7 @@ impl FormSession {
             error: None,
             saving: false,
             confirm_discard: false,
+            confirm_save: false,
             prompt_command: Some(command),
             prompt_schema: Some(schema),
             lookup: None,
@@ -178,6 +184,7 @@ impl FormSession {
             error: None,
             saving: false,
             confirm_discard: false,
+            confirm_save: false,
             prompt_command: Some(command),
             prompt_schema: Some(schema),
             lookup: None,
@@ -739,6 +746,9 @@ pub fn render_form_sheet(
     if let Some(picker) = &session.lookup {
         render_lookup_picker(frame, area, picker, styles);
     }
+    if session.confirm_save {
+        render_save_preview(frame, area, session, schema, styles);
+    }
 }
 
 fn sheet_field_lines(
@@ -788,6 +798,9 @@ fn sheet_hint(
     if session.confirm_discard {
         return "discard changes?  y confirm   n keep editing".into();
     }
+    if session.confirm_save {
+        return "save these fields?  y confirm   n back".into();
+    }
     if session.saving {
         return "saving…".into();
     }
@@ -814,6 +827,50 @@ fn sheet_hint(
     } else {
         format!("tab field   {field_hint}   ctrl+s save   esc")
     }
+}
+
+const PREVIEW_MASK: &str = "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}";
+
+fn render_save_preview(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    session: &FormSession,
+    schema: &FormSchema,
+    styles: &Styles,
+) {
+    let changes =
+        mtui_core::preview_changes(schema, &session.original, &session.values, PREVIEW_MASK);
+    let body = if changes.is_empty() {
+        "No writable fields changed.".to_string()
+    } else {
+        changes
+            .into_iter()
+            .map(|(label, value)| format!("{label}: {value}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let buttons = [
+        ModalButton {
+            label: "Save",
+            keys: "y / enter / ctrl+s",
+            kind: ModalButtonKind::Primary,
+        },
+        ModalButton {
+            label: "Back",
+            keys: "n / esc",
+            kind: ModalButtonKind::Secondary,
+        },
+    ];
+    let kicker = if session.mode == FormMode::Create {
+        "Fields that will be created"
+    } else {
+        "Changed fields only"
+    };
+    let modal = Modal::new("Save preview", &body)
+        .kicker(kicker)
+        .hint("Secrets stay masked. Confirm to write these fields.")
+        .buttons(&buttons);
+    render_modal(frame, area, &modal, styles);
 }
 
 fn render_lookup_picker(frame: &mut Frame<'_>, area: Rect, picker: &LookupPicker, styles: &Styles) {

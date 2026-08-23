@@ -1,6 +1,6 @@
 //! Top-level application model.
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -9,8 +9,8 @@ use mtui_config::{
     PlatformCredentialStore, Profile, ProfileStore, shared_log_store,
 };
 use mtui_core::{
-    ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet, navigation_tree,
-    resource_by_id,
+    ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet, installed_package_names,
+    navigation_tree, resource_by_id, unavailable_menus,
 };
 
 use mtui_routeros::{
@@ -24,6 +24,7 @@ use mtui_ui::{
     ToggleHidden, TorchState, console_pane_height, format_rate,
 };
 
+use crate::demo::{DEMO_PROFILE_NAME, DEMO_URL, DemoStore, is_demo_target};
 use crate::event::{AppEvent, WorkerMsg};
 use crate::telemetry::{DashboardTelemetry, select_wan_interface};
 use crate::write::{ConfirmSession, MutationOp};
@@ -227,6 +228,7 @@ pub struct App {
     pane_before_console: Pane,
     pub(crate) profiles: ProfileStore,
     credentials: Box<dyn CredentialStore>,
+    pub(crate) demo: Option<DemoStore>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -323,6 +325,7 @@ impl App {
             pane_before_console: Pane::Content,
             profiles,
             credentials,
+            demo: None,
         };
 
         app.sync_table_viewport();
@@ -416,6 +419,17 @@ impl App {
                 uses_totp: profile.uses_totp,
             })
             .collect::<Vec<_>>();
+        let mut rows = rows;
+        rows.insert(
+            0,
+            SavedProfileRow {
+                name: DEMO_PROFILE_NAME.into(),
+                url: DEMO_URL.into(),
+                username: "demo".into(),
+                remember_password: false,
+                uses_totp: false,
+            },
+        );
         self.login.profiles = rows;
         if self.login.selected_profile >= self.login.profiles.len() {
             self.login.selected_profile = self.login.profiles.len().saturating_sub(1);
@@ -515,6 +529,15 @@ impl App {
     }
 
     pub(crate) fn begin_connect(&mut self) -> Vec<AppCommand> {
+        if is_demo_target(&self.login.url)
+            || self
+                .login
+                .name
+                .trim()
+                .eq_ignore_ascii_case(DEMO_PROFILE_NAME)
+        {
+            return self.enter_demo();
+        }
         if !is_router_target(&self.login.url) {
             self.login.error = Some("Enter a router host (host or host:8729)".into());
             self.status = "Enter a router host (host or host:8729)".into();
@@ -561,6 +584,15 @@ impl App {
     }
 
     fn persist_connected_session(&mut self) {
+        if self.demo.is_some()
+            || self
+                .login
+                .name
+                .trim()
+                .eq_ignore_ascii_case(DEMO_PROFILE_NAME)
+        {
+            return;
+        }
         if cfg!(test) && self.current_profile.is_empty() {
             return;
         }
@@ -639,11 +671,14 @@ impl App {
             self.saved_url = None;
         }
         self.reload_profile_rows();
-        if self.login.profiles.is_empty() {
-            self.login = LoginForm::default();
-            self.status = "Device forgotten · add a new router".into();
-        } else {
+        let saved = self
+            .login
+            .profiles
+            .iter()
+            .any(|row| !is_demo_target(&row.url));
+        if saved {
             if let Some(row) = self.login.selected_row().cloned()
+                && !is_demo_target(&row.url)
                 && let Some(profile) = self
                     .profiles
                     .load()
@@ -654,7 +689,11 @@ impl App {
             {
                 self.apply_profile(&profile, true);
             }
+            self.login.pane = LoginPane::List;
             self.status = format!("Forgot {name}");
+        } else {
+            self.login.pane = LoginPane::List;
+            self.status = "Device forgotten · Demo is still available".into();
         }
         self.restore_on_start = false;
     }
@@ -668,6 +707,8 @@ impl App {
     pub(crate) fn disconnect_to_profiles(&mut self) {
         self.bump_request_generation();
         self.client = None;
+        self.demo = None;
+        self.nav.set_unavailable(HashMap::new());
         self.router = Resource::default();
         self.overlay = Overlay::None;
         self.connect_intent = ConnectIntent::Login;
@@ -859,7 +900,9 @@ impl App {
                     .first_openable_id()
                     .unwrap_or_else(|| DASHBOARD_ID.to_string());
                 self.select_resource(&start);
-                self.poll_current()
+                let mut cmds = self.poll_current();
+                cmds.extend(self.fetch_packages_command());
+                cmds
             }
             WorkerMsg::AuthRequired { message } => {
                 if self.screen == Screen::Main {
@@ -881,6 +924,12 @@ impl App {
                 }
                 if generation != self.poll_generation {
                     return Vec::new();
+                }
+                if resource_id == "packages" {
+                    self.apply_installed_packages(&rows);
+                    if self.current_resource != "packages" {
+                        return Vec::new();
+                    }
                 }
                 if resource_id != self.current_resource {
                     return Vec::new();
@@ -1152,6 +1201,63 @@ impl App {
             }
             _ => Vec::new(),
         }
+    }
+
+    pub(crate) fn copy_filtered_table(&mut self) -> Vec<AppCommand> {
+        let rows = self.table.visible_rows();
+        if rows.is_empty() {
+            self.status = "Nothing to copy".into();
+            return Vec::new();
+        }
+        let text = rows
+            .into_iter()
+            .map(format_row_for_copy)
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        vec![AppCommand::CopyToClipboard { text }]
+    }
+
+    pub(crate) fn enter_demo(&mut self) -> Vec<AppCommand> {
+        let store = DemoStore::new();
+        self.apply_system_resource(store.system());
+        self.apply_installed_packages(&store.rows("packages"));
+        self.demo = Some(store);
+        self.client = None;
+        self.login.name = DEMO_PROFILE_NAME.into();
+        self.login.url = DEMO_URL.into();
+        self.login.username = "demo".into();
+        self.login.password.clear();
+        self.login.totp.clear();
+        self.login.uses_totp = false;
+        self.login.remember_password = false;
+        self.login.error = None;
+        self.current_profile = DEMO_PROFILE_NAME.into();
+        self.connect_intent = ConnectIntent::Login;
+        self.screen = Screen::Main;
+        self.status = "Demo profile · fixture data, no router".into();
+        let start = self
+            .nav
+            .first_openable_id()
+            .unwrap_or_else(|| DASHBOARD_ID.to_string());
+        self.select_resource(&start);
+        self.poll_current()
+    }
+
+    fn fetch_packages_command(&mut self) -> Vec<AppCommand> {
+        if self.current_resource == "packages" {
+            return Vec::new();
+        }
+        vec![AppCommand::FetchResource {
+            request_id: self.next_request(),
+            generation: self.poll_generation,
+            resource_id: "packages".into(),
+        }]
+    }
+
+    fn apply_installed_packages(&mut self, rows: &[Resource]) {
+        let names = installed_package_names(rows.iter().map(|row| row.fields.clone()));
+        self.nav.set_unavailable(unavailable_menus(&names));
+        self.rebuild_palette();
     }
 
     pub(crate) fn select_resource(&mut self, id: &str) {
@@ -1544,7 +1650,11 @@ impl App {
     }
 
     pub(crate) fn rebuild_palette(&mut self) {
-        self.palette.commands = palette_commands_filtered(&self.nav.hidden, self.nav.show_hidden);
+        self.palette.commands = palette_commands_filtered(
+            &self.nav.hidden,
+            &self.nav.unavailable,
+            self.nav.show_hidden,
+        );
     }
 
     fn persist_nav_hidden(&mut self) {
@@ -1653,10 +1763,14 @@ impl App {
 }
 
 pub(crate) fn palette_commands() -> Vec<Command> {
-    palette_commands_filtered(&HashSet::new(), true)
+    palette_commands_filtered(&HashSet::new(), &HashMap::new(), true)
 }
 
-fn palette_commands_filtered(hidden: &HashSet<String>, show_hidden: bool) -> Vec<Command> {
+fn palette_commands_filtered(
+    hidden: &HashSet<String>,
+    unavailable: &HashMap<String, String>,
+    show_hidden: bool,
+) -> Vec<Command> {
     let show_title = if show_hidden {
         "Done showing hidden menus"
     } else {
@@ -1690,15 +1804,20 @@ fn palette_commands_filtered(hidden: &HashSet<String>, show_hidden: bool) -> Vec
     }
     commands
         .into_iter()
-        .filter(|command| !palette_target_hidden(&command.id, hidden))
+        .filter(|command| !palette_target_hidden(&command.id, hidden, unavailable))
         .collect()
 }
 
-fn palette_target_hidden(id: &str, hidden: &HashSet<String>) -> bool {
-    if hidden.contains(id) {
+fn palette_target_hidden(
+    id: &str,
+    hidden: &HashSet<String>,
+    unavailable: &HashMap<String, String>,
+) -> bool {
+    if hidden.contains(id) || unavailable.contains_key(id) {
         return true;
     }
-    resource_by_id(id).is_some_and(|spec| hidden.contains(spec.group))
+    resource_by_id(id)
+        .is_some_and(|spec| hidden.contains(spec.group) || unavailable.contains_key(spec.group))
 }
 
 fn nonempty_field<'src>(resource: &'src Resource, key: &str) -> Option<&'src str> {
@@ -2536,5 +2655,64 @@ mod session_profile_tests {
         let names: Vec<_> = store.load().unwrap().into_iter().map(|p| p.name).collect();
         assert_eq!(names, vec!["edge".to_string()]);
         assert_eq!(app.login.pane, LoginPane::List);
+    }
+
+    #[test]
+    fn demo_profile_opens_without_a_client() {
+        let mut app = App::new(false).expect("app");
+        let cmds = app.enter_demo();
+        assert_eq!(app.screen, Screen::Main);
+        assert!(app.client.is_none());
+        assert!(app.demo.is_some());
+        assert!(app.nav.unavailable.contains_key("wifi"));
+        assert!(!cmds.is_empty());
+        assert!(
+            app.login
+                .profiles
+                .iter()
+                .any(|row| row.name == crate::demo::DEMO_PROFILE_NAME)
+        );
+    }
+
+    #[test]
+    fn y_key_copies_filtered_table() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("interfaces");
+        app.pane = Pane::Content;
+        let mut first = std::collections::HashMap::new();
+        first.insert("name".into(), "ether1".into());
+        let mut second = std::collections::HashMap::new();
+        second.insert("name".into(), "ether2".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "interfaces".into(),
+            rows: vec![
+                Resource {
+                    id: "*1".into(),
+                    fields: first,
+                },
+                Resource {
+                    id: "*2".into(),
+                    fields: second,
+                },
+            ],
+            error: None,
+        }));
+        let cmds = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Char('Y'),
+            KeyModifiers::SHIFT,
+        )));
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                AppCommand::CopyToClipboard { text }
+                    if text.contains("name: ether1") && text.contains("name: ether2")
+            )),
+            "expected table copy, got {cmds:?}"
+        );
     }
 }

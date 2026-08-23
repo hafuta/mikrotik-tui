@@ -1,6 +1,6 @@
 //! Navigation tree state and rendering.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use mtui_core::NavItem;
 use ratatui::style::Modifier;
@@ -17,6 +17,7 @@ pub enum ToggleHidden {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct FlatNavEntry {
     pub id: String,
     pub label: String,
@@ -24,11 +25,13 @@ pub struct FlatNavEntry {
     pub is_group: bool,
     pub expanded: bool,
     pub hidden: bool,
+    pub unavailable: bool,
+    pub badge: Option<String>,
 }
 
 #[must_use]
 pub fn flatten_nav(items: &[NavItem], expanded: Option<&str>) -> Vec<FlatNavEntry> {
-    flatten_nav_filtered(items, expanded, &HashSet::new(), false)
+    flatten_nav_filtered(items, expanded, &HashSet::new(), &HashMap::new(), false)
 }
 
 #[must_use]
@@ -36,19 +39,26 @@ pub fn flatten_nav_filtered(
     items: &[NavItem],
     expanded: Option<&str>,
     hidden: &HashSet<String>,
+    unavailable: &HashMap<String, String>,
     show_hidden: bool,
 ) -> Vec<FlatNavEntry> {
     let mut out = Vec::new();
     for item in items {
         let group_hidden = hidden.contains(&item.id);
-        if group_hidden && !show_hidden {
+        let group_unavailable = unavailable.contains_key(&item.id);
+        if concealed(group_hidden || group_unavailable, show_hidden) {
             continue;
         }
         let is_group = !item.children.is_empty();
         let visible_children = item
             .children
             .iter()
-            .filter(|child| show_hidden || !hidden.contains(&child.id))
+            .filter(|child| {
+                !concealed(
+                    hidden.contains(&child.id) || unavailable.contains_key(&child.id),
+                    show_hidden,
+                )
+            })
             .count();
         if is_group && visible_children == 0 && !show_hidden {
             continue;
@@ -61,13 +71,16 @@ pub fn flatten_nav_filtered(
             is_group,
             expanded: is_expanded,
             hidden: group_hidden,
+            unavailable: group_unavailable,
+            badge: unavailable.get(&item.id).cloned(),
         });
         if !is_expanded {
             continue;
         }
         for child in &item.children {
             let child_hidden = hidden.contains(&child.id) || group_hidden;
-            if child_hidden && !show_hidden {
+            let child_unavailable = unavailable.contains_key(&child.id) || group_unavailable;
+            if concealed(child_hidden || child_unavailable, show_hidden) {
                 continue;
             }
             out.push(FlatNavEntry {
@@ -77,10 +90,19 @@ pub fn flatten_nav_filtered(
                 is_group: false,
                 expanded: false,
                 hidden: child_hidden,
+                unavailable: child_unavailable,
+                badge: unavailable
+                    .get(&child.id)
+                    .cloned()
+                    .or_else(|| unavailable.get(&item.id).cloned()),
             });
         }
     }
     out
+}
+
+fn concealed(tucked: bool, show_hidden: bool) -> bool {
+    tucked && !show_hidden
 }
 
 fn collapse_empty_groups(items: &[NavItem], hidden: &mut HashSet<String>) {
@@ -134,6 +156,7 @@ pub struct NavState {
     pub selected: usize,
     pub expanded: Option<String>,
     pub hidden: HashSet<String>,
+    pub unavailable: HashMap<String, String>,
     pub show_hidden: bool,
 }
 
@@ -146,6 +169,7 @@ impl NavState {
             selected: 0,
             expanded: None,
             hidden: HashSet::new(),
+            unavailable: HashMap::new(),
             show_hidden: false,
         };
         state.rebuild();
@@ -157,6 +181,7 @@ impl NavState {
             &self.tree,
             self.expanded.as_deref(),
             &self.hidden,
+            &self.unavailable,
             self.show_hidden,
         );
         if self.entries.is_empty() {
@@ -197,6 +222,12 @@ impl NavState {
     /// Replace the hidden-id set and rebuild visible rows.
     pub fn set_hidden_ids(&mut self, ids: impl IntoIterator<Item = String>) {
         self.hidden = ids.into_iter().filter(|id| !id.is_empty()).collect();
+        self.rebuild();
+    }
+
+    /// Mark menus missing from this device's package set (id → package label).
+    pub fn set_unavailable(&mut self, ids: HashMap<String, String>) {
+        self.unavailable = ids.into_iter().filter(|(id, _)| !id.is_empty()).collect();
         self.rebuild();
     }
 
@@ -339,7 +370,7 @@ impl NavState {
     }
 
     fn concealed(&self, id: &str) -> bool {
-        !self.show_hidden && self.hidden.contains(id)
+        !self.show_hidden && (self.hidden.contains(id) || self.unavailable.contains_key(id))
     }
 
     fn parent_of(&self, id: &str) -> Option<&str> {
@@ -386,7 +417,11 @@ impl NavState {
             let selected = item
                 .children
                 .iter()
-                .find(|child| self.show_hidden || !self.hidden.contains(&child.id))
+                .find(|child| {
+                    self.show_hidden
+                        || (!self.hidden.contains(&child.id)
+                            && !self.unavailable.contains_key(&child.id))
+                })
                 .or_else(|| item.children.first())
                 .map_or_else(|| item.id.clone(), |child| child.id.clone());
             return Some(RevealTarget {
@@ -453,7 +488,12 @@ fn nav_row_line(
     };
     let indent = "  ".repeat(entry.depth);
     let mark = if entry.hidden { "× " } else { "" };
-    let body = format!("{chevron}{indent}{mark}{}", entry.label);
+    let badge = entry
+        .badge
+        .as_deref()
+        .map(|package| format!(" !{package}"))
+        .unwrap_or_default();
+    let body = format!("{chevron}{indent}{mark}{}{badge}", entry.label);
     let body_style = if entry.hidden {
         let base = if is_viewed {
             styles.text
@@ -461,6 +501,8 @@ fn nav_row_line(
             styles.hidden
         };
         base.add_modifier(Modifier::CROSSED_OUT)
+    } else if entry.unavailable {
+        styles.hidden
     } else if is_viewed {
         styles.text
     } else if entry.depth > 0 {
@@ -881,5 +923,24 @@ mod render_tests {
         assert_eq!(state.toggle_hidden("dashboard"), ToggleHidden::LastVisible);
         assert_eq!(visible_ids(&state), ["dashboard"]);
         assert!(!state.hidden.contains("dashboard"));
+    }
+
+    #[test]
+    fn unavailable_menus_are_hidden_until_revealed_and_badged() {
+        let mut state = NavState::new(&tree());
+        let mut missing = HashMap::new();
+        missing.insert("arp".into(), "hotspot".into());
+        state.set_unavailable(missing);
+        assert!(!visible_ids(&state).contains(&"arp"));
+        state.set_show_hidden(true);
+        assert!(state.select_id("arp"));
+        let styles = styles();
+        let lines = state.render_lines(false, None, &styles, 32);
+        let arp = lines
+            .iter()
+            .map(line_text)
+            .find(|line| line.contains("ARP"))
+            .expect("arp");
+        assert!(arp.contains("!hotspot"), "{arp}");
     }
 }

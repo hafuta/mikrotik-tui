@@ -1,0 +1,600 @@
+//! In-memory fixture profile so navigation can be learned without a router.
+
+use std::collections::{BTreeMap, HashMap};
+
+use mtui_routeros::Resource;
+
+use crate::app::AppCommand;
+use crate::event::WorkerMsg;
+use crate::write::MutationOp;
+
+/// Saved-device list label and profile name for the fixture session.
+pub const DEMO_PROFILE_NAME: &str = "Demo";
+
+/// Connection target that never opens a TCP session.
+pub const DEMO_URL: &str = "demo://router";
+
+/// True when the login target should open the fixture profile.
+#[must_use]
+pub fn is_demo_target(url: &str) -> bool {
+    let trimmed = url.trim();
+    trimmed.eq_ignore_ascii_case("demo")
+        || trimmed.to_ascii_lowercase().starts_with("demo:")
+        || trimmed.eq_ignore_ascii_case(DEMO_URL)
+}
+
+/// Live fixture rows keyed by resource id.
+#[derive(Debug, Clone)]
+pub struct DemoStore {
+    rows: HashMap<String, Vec<Resource>>,
+    next_id: u32,
+}
+
+impl DemoStore {
+    #[must_use]
+    pub fn new() -> Self {
+        let mut store = Self {
+            rows: HashMap::new(),
+            next_id: 40,
+        };
+        store.seed();
+        store
+    }
+
+    #[must_use]
+    pub fn system(&self) -> Resource {
+        self.rows
+            .get("system-resource")
+            .and_then(|rows| rows.first())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn rows(&self, resource_id: &str) -> Vec<Resource> {
+        match resource_id {
+            "system-resource" | "identity" | "routerboard" | "health" | "package-update" => self
+                .rows
+                .get(resource_id)
+                .cloned()
+                .or_else(|| self.rows.get("system-resource").cloned())
+                .unwrap_or_default(),
+            other => self.rows.get(other).cloned().unwrap_or_default(),
+        }
+    }
+
+    #[must_use]
+    pub fn lookup_values(&self, resource_id: &str, value_key: &str) -> Vec<String> {
+        let mut values: Vec<String> = self
+            .rows(resource_id)
+            .into_iter()
+            .filter_map(|row| row.field(value_key).map(str::to_string))
+            .filter(|value| !value.is_empty())
+            .collect();
+        values.sort();
+        values.dedup();
+        values
+    }
+
+    pub fn apply(&mut self, op: &MutationOp) -> Result<(), String> {
+        match op {
+            MutationOp::Batch { ops } => {
+                for inner in ops {
+                    self.apply(inner)?;
+                }
+                Ok(())
+            }
+            MutationOp::Patch {
+                endpoint,
+                id,
+                fields,
+                ..
+            } => {
+                let Some(id) = id else {
+                    self.patch_singleton(endpoint, fields);
+                    return Ok(());
+                };
+                self.patch_id(endpoint, id, fields);
+                Ok(())
+            }
+            MutationOp::Put { endpoint, fields } => {
+                let id = self.alloc_id();
+                let resource = resource_from_fields(&id, fields);
+                if let Some(bucket) = self.bucket_for_endpoint(endpoint) {
+                    bucket.push(resource);
+                }
+                Ok(())
+            }
+            MutationOp::Delete { endpoint, id } => {
+                if let Some(bucket) = self.bucket_for_endpoint(endpoint) {
+                    bucket.retain(|row| row.id != *id);
+                }
+                Ok(())
+            }
+            MutationOp::Command {
+                endpoint,
+                command,
+                fields,
+            } => {
+                let Some(id) = fields.get(".id") else {
+                    return Ok(());
+                };
+                match command.as_str() {
+                    "enable" => self.set_disabled(endpoint, id, false),
+                    "disable" => self.set_disabled(endpoint, id, true),
+                    "remove" => {
+                        if let Some(bucket) = self.bucket_for_endpoint(endpoint) {
+                            bucket.retain(|row| row.id != *id);
+                        }
+                    }
+                    "make-static" => self.set_field(endpoint, id, "dynamic", "false"),
+                    _ => {}
+                }
+                Ok(())
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn seed(&mut self) {
+        self.rows.insert(
+            "system-resource".into(),
+            vec![resource(
+                "",
+                &[
+                    ("identity", "demo-router"),
+                    ("board-name", "CCR2004-16G-2S+"),
+                    ("version", "7.16.2 (long-term)"),
+                    ("cpu", "ARM"),
+                    ("cpu-count", "4"),
+                    ("cpu-load", "8"),
+                    ("free-memory", "1879048192"),
+                    ("total-memory", "2147483648"),
+                    ("uptime", "1d2h"),
+                    ("platform", "MikroTik"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "packages".into(),
+            vec![resource(
+                "*pkg1",
+                &[
+                    ("name", "routeros"),
+                    ("version", "7.16.2"),
+                    ("build-time", "2025-01-15"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "interfaces".into(),
+            vec![
+                resource(
+                    "*1",
+                    &[
+                        ("name", "ether1"),
+                        ("type", "ether"),
+                        ("mtu", "1500"),
+                        ("mac-address", "74:4D:28:00:00:01"),
+                        ("running", "true"),
+                        ("disabled", "false"),
+                        ("comment", "WAN"),
+                    ],
+                ),
+                resource(
+                    "*2",
+                    &[
+                        ("name", "ether2"),
+                        ("type", "ether"),
+                        ("mtu", "1500"),
+                        ("mac-address", "74:4D:28:00:00:02"),
+                        ("running", "true"),
+                        ("disabled", "false"),
+                        ("comment", "LAN"),
+                    ],
+                ),
+                resource(
+                    "*3",
+                    &[
+                        ("name", "bridge"),
+                        ("type", "bridge"),
+                        ("mtu", "1500"),
+                        ("running", "true"),
+                        ("disabled", "false"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "addresses".into(),
+            vec![
+                resource(
+                    "*10",
+                    &[
+                        ("address", "192.0.2.1/24"),
+                        ("network", "192.0.2.0"),
+                        ("interface", "ether1"),
+                        ("disabled", "false"),
+                    ],
+                ),
+                resource(
+                    "*11",
+                    &[
+                        ("address", "10.0.0.1/24"),
+                        ("network", "10.0.0.0"),
+                        ("interface", "bridge"),
+                        ("disabled", "false"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "dhcp-servers".into(),
+            vec![resource(
+                "*20",
+                &[
+                    ("name", "dhcp1"),
+                    ("interface", "bridge"),
+                    ("lease-time", "30m"),
+                    ("address-pool", "lan-pool"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "dhcp-networks".into(),
+            vec![resource(
+                "*21",
+                &[
+                    ("address", "10.0.0.0/24"),
+                    ("gateway", "10.0.0.1"),
+                    ("dns-server", "10.0.0.1"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "dhcp-leases".into(),
+            vec![
+                resource(
+                    "*22",
+                    &[
+                        ("address", "10.0.0.20"),
+                        ("mac-address", "AA:BB:CC:00:00:20"),
+                        ("server", "dhcp1"),
+                        ("status", "bound"),
+                        ("host-name", "laptop"),
+                        ("dynamic", "true"),
+                    ],
+                ),
+                resource(
+                    "*23",
+                    &[
+                        ("address", "10.0.0.21"),
+                        ("mac-address", "AA:BB:CC:00:00:21"),
+                        ("server", "dhcp1"),
+                        ("status", "bound"),
+                        ("host-name", "phone"),
+                        ("dynamic", "true"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "firewall-filter".into(),
+            vec![
+                resource(
+                    "*30",
+                    &[
+                        ("chain", "input"),
+                        ("action", "accept"),
+                        ("comment", "established"),
+                        ("connection-state", "established,related"),
+                        ("disabled", "false"),
+                    ],
+                ),
+                resource(
+                    "*31",
+                    &[
+                        ("chain", "forward"),
+                        ("action", "drop"),
+                        ("comment", "drop invalid"),
+                        ("connection-state", "invalid"),
+                        ("disabled", "false"),
+                    ],
+                ),
+                resource(
+                    "*32",
+                    &[
+                        ("chain", "input"),
+                        ("action", "drop"),
+                        ("comment", "drop wan input"),
+                        ("in-interface", "ether1"),
+                        ("disabled", "true"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "firewall-nat".into(),
+            vec![resource(
+                "*33",
+                &[
+                    ("chain", "srcnat"),
+                    ("action", "masquerade"),
+                    ("out-interface", "ether1"),
+                    ("comment", "WAN masquerade"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "queue-simple".into(),
+            vec![resource(
+                "*34",
+                &[
+                    ("name", "guest"),
+                    ("target", "10.0.0.0/24"),
+                    ("max-limit", "20M/20M"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "queue-tree".into(),
+            vec![resource(
+                "*35",
+                &[
+                    ("name", "wan-out"),
+                    ("parent", "global"),
+                    ("max-limit", "100M"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "routes".into(),
+            vec![resource(
+                "*36",
+                &[
+                    ("dst-address", "0.0.0.0/0"),
+                    ("gateway", "192.0.2.254"),
+                    ("distance", "1"),
+                    ("active", "true"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "logs".into(),
+            vec![
+                resource(
+                    "*l1",
+                    &[
+                        ("time", "12:01:00"),
+                        ("topics", "system,info"),
+                        ("message", "demo profile ready"),
+                    ],
+                ),
+                resource(
+                    "*l2",
+                    &[
+                        ("time", "12:02:00"),
+                        ("topics", "dhcp,info"),
+                        ("message", "assigned 10.0.0.20 to laptop"),
+                    ],
+                ),
+            ],
+        );
+    }
+
+    fn alloc_id(&mut self) -> String {
+        let id = format!("*{}", self.next_id);
+        self.next_id = self.next_id.saturating_add(1);
+        id
+    }
+
+    fn bucket_for_endpoint(&mut self, endpoint: &str) -> Option<&mut Vec<Resource>> {
+        let id = resource_id_for_endpoint(endpoint)?;
+        self.rows.get_mut(id)
+    }
+
+    fn patch_id(&mut self, endpoint: &str, id: &str, fields: &BTreeMap<String, String>) {
+        if let Some(row) = self
+            .bucket_for_endpoint(endpoint)
+            .and_then(|bucket| bucket.iter_mut().find(|row| row.id == id))
+        {
+            for (key, value) in fields {
+                row.fields.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
+    fn patch_singleton(&mut self, endpoint: &str, fields: &BTreeMap<String, String>) {
+        if let Some(row) = self
+            .bucket_for_endpoint(endpoint)
+            .and_then(|bucket| bucket.first_mut())
+        {
+            for (key, value) in fields {
+                row.fields.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
+    fn set_disabled(&mut self, endpoint: &str, id: &str, disabled: bool) {
+        self.set_field(
+            endpoint,
+            id,
+            "disabled",
+            if disabled { "true" } else { "false" },
+        );
+    }
+
+    fn set_field(&mut self, endpoint: &str, id: &str, key: &str, value: &str) {
+        if let Some(row) = self
+            .bucket_for_endpoint(endpoint)
+            .and_then(|bucket| bucket.iter_mut().find(|row| row.id == id))
+        {
+            row.fields.insert(key.to_string(), value.to_string());
+        }
+    }
+}
+
+impl Default for DemoStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Serve a command from the fixture store. `None` means the runtime should
+/// handle the command itself (clipboard, quit, file I/O).
+pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>> {
+    match cmd {
+        AppCommand::FetchResource {
+            request_id,
+            generation,
+            resource_id,
+        } => Some(vec![WorkerMsg::ResourceResult {
+            request_id: *request_id,
+            generation: *generation,
+            resource_id: resource_id.clone(),
+            rows: store.rows(resource_id),
+            error: None,
+        }]),
+        AppCommand::FetchDashboard {
+            request_id,
+            generation,
+        } => Some(vec![WorkerMsg::DashboardResult {
+            request_id: *request_id,
+            generation: *generation,
+            cpu: Vec::new(),
+            cpu_error: None,
+            system: store.rows("system-resource").into_iter().next(),
+            system_error: None,
+            interfaces: store.rows("interfaces"),
+            interface_error: None,
+            firewall: store.rows("firewall-filter"),
+            firewall_error: None,
+        }]),
+        AppCommand::FetchHeader {
+            request_id,
+            generation,
+        } => Some(vec![WorkerMsg::HeaderResult {
+            request_id: *request_id,
+            generation: *generation,
+            system: store.rows("system-resource").into_iter().next(),
+            system_error: None,
+            interfaces: store.rows("interfaces"),
+            interface_error: None,
+        }]),
+        AppCommand::FetchLookup {
+            request_id,
+            generation,
+            resource_id,
+            value_key,
+        } => Some(vec![WorkerMsg::LookupResult {
+            request_id: *request_id,
+            generation: *generation,
+            options: store.lookup_values(resource_id, value_key),
+            error: None,
+        }]),
+        AppCommand::Mutate {
+            request_id,
+            generation,
+            op,
+        } => {
+            let error = store.apply(op).err();
+            Some(vec![WorkerMsg::MutateResult {
+                request_id: *request_id,
+                generation: *generation,
+                error,
+            }])
+        }
+        AppCommand::FetchTorch { generation, .. } => Some(vec![WorkerMsg::TorchResult {
+            generation: *generation,
+            rows: Vec::new(),
+            error: Some("Demo profile has no live probes".into()),
+            done: true,
+        }]),
+        AppCommand::FetchPing { generation, .. }
+        | AppCommand::FetchTraceroute { generation, .. }
+        | AppCommand::FetchProbe { generation, .. } => Some(vec![WorkerMsg::PingTraceResult {
+            generation: *generation,
+            rows: Vec::new(),
+            error: Some("Demo profile has no live probes".into()),
+            done: true,
+        }]),
+        _ => None,
+    }
+}
+
+fn resource(id: &str, fields: &[(&str, &str)]) -> Resource {
+    Resource {
+        id: id.to_string(),
+        fields: fields
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect(),
+    }
+}
+
+fn resource_from_fields(id: &str, fields: &BTreeMap<String, String>) -> Resource {
+    Resource {
+        id: id.to_string(),
+        fields: fields
+            .iter()
+            .filter(|(key, _)| key.as_str() != ".id")
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    }
+}
+
+fn resource_id_for_endpoint(endpoint: &str) -> Option<&'static str> {
+    let path = endpoint.trim_start_matches("/rest");
+    mtui_core::ALL_RESOURCES
+        .iter()
+        .find(|spec| spec.endpoint().trim_start_matches("/rest") == path)
+        .map(|spec| spec.id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn demo_target_accepts_scheme_and_bare_name() {
+        assert!(is_demo_target("demo"));
+        assert!(is_demo_target("demo://router"));
+        assert!(is_demo_target("DEMO://x"));
+        assert!(!is_demo_target("192.168.88.1"));
+    }
+
+    #[test]
+    fn demo_store_has_operator_lists() {
+        let store = DemoStore::new();
+        assert_eq!(store.rows("interfaces").len(), 3);
+        assert_eq!(store.rows("firewall-filter").len(), 3);
+        assert_eq!(store.rows("dhcp-leases").len(), 2);
+        assert_eq!(store.rows("packages")[0].field("name"), Some("routeros"));
+    }
+
+    #[test]
+    fn demo_disable_updates_fixture_row() {
+        let mut store = DemoStore::new();
+        let mut fields = BTreeMap::new();
+        fields.insert(".id".into(), "*30".into());
+        store
+            .apply(&MutationOp::Command {
+                endpoint: "/rest/ip/firewall/filter".into(),
+                command: "disable".into(),
+                fields,
+            })
+            .expect("apply");
+        let row = store
+            .rows("firewall-filter")
+            .into_iter()
+            .find(|row| row.id == "*30")
+            .expect("rule");
+        assert_eq!(row.field("disabled"), Some("true"));
+    }
+}

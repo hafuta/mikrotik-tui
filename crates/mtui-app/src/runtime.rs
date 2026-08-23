@@ -20,12 +20,12 @@ use crate::render;
 use crate::telemetry::select_wan_interface;
 use crate::write::MutationOp;
 
-pub fn run(alt_screen: bool) -> anyhow::Result<()> {
+pub fn run(alt_screen: bool, demo: bool) -> anyhow::Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
     let mut terminal = setup_terminal(alt_screen)?;
-    let result = rt.block_on(run_ui(&rt, &mut terminal, alt_screen));
+    let result = rt.block_on(run_ui(&rt, &mut terminal, alt_screen, demo));
     restore_terminal(&mut terminal, alt_screen)?;
     result
 }
@@ -54,6 +54,7 @@ async fn run_ui(
     rt: &tokio::runtime::Runtime,
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     alt_screen: bool,
+    demo: bool,
 ) -> anyhow::Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel::<WorkerMsg>();
     let (view_tx, _) = watch::channel(0_u64);
@@ -67,7 +68,11 @@ async fn run_ui(
         width: size.width,
         height: size.height,
     });
-    let startup = app.startup_commands();
+    let startup = if demo {
+        app.enter_demo()
+    } else {
+        app.startup_commands()
+    };
     dispatch_commands(
         rt,
         &tx,
@@ -162,6 +167,14 @@ fn dispatch_commands(
     let _ = torch_tx.send_replace(app.torch_generation);
     let _ = probe_tx.send_replace(app.probe_generation);
     for cmd in cmds {
+        if let Some(store) = app.demo.as_mut()
+            && let Some(msgs) = crate::demo::handle(store, &cmd)
+        {
+            for msg in msgs {
+                let _ = tx.send(msg);
+            }
+            continue;
+        }
         match cmd {
             AppCommand::Quit => app.should_quit = true,
             AppCommand::Connect {
@@ -376,8 +389,8 @@ fn dispatch_commands(
             }
             AppCommand::CopyToClipboard { text } => match copy_to_clipboard(&text) {
                 Ok(()) => {
-                    tracing::info!("copied log to clipboard");
-                    app.status = "Copied log to clipboard".into();
+                    tracing::info!("copied to clipboard");
+                    app.status = "Copied".into();
                 }
                 Err(err) => {
                     tracing::warn!(error = %err, "clipboard copy failed");
@@ -871,6 +884,12 @@ async fn run_mutation(client: &Client, op: MutationOp) -> mtui_routeros::Result<
             .command(&endpoint, &command, &fields)
             .await
             .map(|_| ()),
+        MutationOp::Batch { ops } => {
+            for op in ops {
+                Box::pin(run_mutation(client, op)).await?;
+            }
+            Ok(())
+        }
     }
 }
 

@@ -199,6 +199,44 @@ fn crate_changed(
     out
 }
 
+/// Changed writable fields as `(label, display value)` for a save preview.
+///
+/// Secret fields never show the typed value — only `masked_token`.
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn preview_changes(
+    schema: &FormSchema,
+    original: &HashMap<String, String>,
+    current: &HashMap<String, String>,
+    masked_token: &str,
+) -> Vec<(String, String)> {
+    let body = patch_body(schema, original, current, masked_token);
+    body.into_iter()
+        .map(|(key, value)| {
+            let spec = schema.field(&key);
+            let label = spec.map_or_else(|| key.clone(), |field| field.label.to_string());
+            let secret = spec.is_some_and(|field| matches!(field.kind, FieldKind::Secret))
+                || looks_secret_key(&key);
+            let shown = if secret {
+                masked_token.to_string()
+            } else {
+                value
+            };
+            (label, shown)
+        })
+        .collect()
+}
+
+fn looks_secret_key(key: &str) -> bool {
+    let normalized = key.trim().to_ascii_lowercase().replace('_', "-");
+    normalized.contains("password")
+        || normalized.contains("passphrase")
+        || normalized.contains("private-key")
+        || normalized.contains("pre-shared")
+        || normalized.ends_with("-secret")
+        || normalized == "secret"
+}
+
 pub const ARP_VALUES: &[&str] = &[
     "enabled",
     "disabled",
@@ -258,6 +296,17 @@ mod tests {
         assert_eq!(body.get("comment").map(String::as_str), Some("office"));
         assert!(!body.contains_key("running"));
         assert!(!body.contains_key("name"));
+    }
+
+    #[test]
+    fn preview_changes_lists_only_dirty_writable_fields() {
+        let mut original = HashMap::new();
+        original.insert("name".into(), "vlan10".into());
+        let mut current = original.clone();
+        current.insert("comment".into(), "office".into());
+        current.insert("running".into(), "false".into());
+        let lines = preview_changes(&SAMPLE, &original, &current, "********");
+        assert_eq!(lines, vec![("Comment".into(), "office".into())]);
     }
 
     #[test]
