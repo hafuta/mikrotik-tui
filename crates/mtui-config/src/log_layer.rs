@@ -101,17 +101,17 @@ mod tests {
         let subscriber = tracing_subscriber::registry().with(MemoryLogLayer::new(store.clone()));
         tracing::subscriber::with_default(subscriber, || {
             tracing::info!(
-                endpoint = "/rest/interface",
-                method = "GET",
-                "outbound GET /rest/interface"
+                command = "/interface/print",
+                operation = "list",
+                "outbound /interface/print"
             );
         });
         let records = store.records_after(0);
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].message, "outbound GET /rest/interface");
+        assert_eq!(records[0].message, "outbound /interface/print");
         assert_eq!(
-            records[0].fields.get("endpoint").map(String::as_str),
-            Some("/rest/interface")
+            records[0].fields.get("command").map(String::as_str),
+            Some("/interface/print")
         );
         assert_eq!(records[0].level, LogLevel::Info);
     }

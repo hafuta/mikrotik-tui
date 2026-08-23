@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::{Mutex, mpsc};
@@ -110,9 +110,19 @@ impl Session {
             format!("=name={}", self.inner.username),
             format!("=password={}", self.inner.password),
         ];
-        tracing::info!(command = "/login", "outbound /login");
         let replies = self.request_words("login", words).await?;
         if let Some(trap) = replies.iter().find(|sentence| sentence.is_trap()) {
+            let message = trap
+                .attr("message")
+                .or_else(|| trap.attr("detail"))
+                .unwrap_or("login failed");
+            log_response_err(
+                "login",
+                "/login",
+                trap.tag().unwrap_or(""),
+                Instant::now(),
+                message,
+            );
             return Err(trap.trap_error("login"));
         }
         if replies.iter().any(Sentence::is_fatal) {
@@ -152,13 +162,16 @@ impl Session {
         operation: &'static str,
         mut words: Vec<String>,
     ) -> Result<Vec<Sentence>> {
+        let command = command_of(&words).to_string();
         let tag = self.next_tag();
         words.push(format!(".tag={tag}"));
         log_outbound(operation, &words);
+        let started = Instant::now();
         let (tx, mut rx) = mpsc::unbounded_channel();
         self.inner.pending.lock().await.insert(tag.clone(), tx);
         if let Err(err) = self.write_sentence(&words).await {
             self.inner.pending.lock().await.remove(&tag);
+            log_request_failed(operation, &command, &tag, &err);
             return Err(err);
         }
         let collected = timeout(self.inner.timeout, async {
@@ -175,25 +188,39 @@ impl Session {
         .await;
         self.inner.pending.lock().await.remove(&tag);
         match collected {
-            Ok(replies) if replies.is_empty() => Err(Error::new(
-                ErrorKind::Transport,
-                operation,
-                "connection closed",
-            )),
+            Ok(replies) if replies.is_empty() => {
+                log_response_err(operation, &command, &tag, started, "connection closed");
+                Err(Error::new(
+                    ErrorKind::Transport,
+                    operation,
+                    "connection closed",
+                ))
+            }
             Ok(replies) => {
                 if let Some(fatal) = replies.iter().find(|sentence| sentence.is_fatal()) {
-                    return Err(Error::new(
-                        ErrorKind::Server,
-                        operation,
-                        fatal.attr("message").unwrap_or("fatal API error"),
-                    ));
+                    let message = fatal.attr("message").unwrap_or("fatal API error");
+                    log_response_err(operation, &command, &tag, started, message);
+                    return Err(Error::new(ErrorKind::Server, operation, message));
                 }
                 if let Some(trap) = replies.iter().find(|sentence| sentence.is_trap()) {
+                    let message = trap
+                        .attr("message")
+                        .or_else(|| trap.attr("detail"))
+                        .unwrap_or("request failed");
+                    log_response_err(operation, &command, &tag, started, message);
                     return Err(trap.trap_error(operation));
                 }
+                log_response_ok(
+                    operation,
+                    &command,
+                    &tag,
+                    started,
+                    Some(count_replies(&replies)),
+                );
                 Ok(replies)
             }
             Err(_) => {
+                log_response_err(operation, &command, &tag, started, "request timed out");
                 let _ = self.write_cancel(tag.as_str()).await;
                 Err(Error::new(
                     ErrorKind::Timeout,
@@ -252,14 +279,79 @@ impl Session {
     }
 }
 
+fn command_of(words: &[String]) -> &str {
+    words.first().map_or("?", String::as_str)
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+fn count_replies(replies: &[Sentence]) -> u64 {
+    u64::try_from(replies.iter().filter(|sentence| sentence.is_re()).count()).unwrap_or(u64::MAX)
+}
+
 fn log_outbound(operation: &str, words: &[String]) {
-    let command = words.first().map_or("?", String::as_str);
+    let command = command_of(words);
     let sentence = Sentence::new(words.to_vec());
-    tracing::info!(operation, command, "outbound {command}");
+    let tag = sentence.tag().unwrap_or("");
+    tracing::info!(operation, command, tag, "outbound {command}");
     tracing::debug!(
         operation,
         sentence = sentence.log_line().as_str(),
         "api sentence"
+    );
+}
+
+pub(crate) fn log_response_ok(
+    operation: &str,
+    command: &str,
+    tag: &str,
+    started: Instant,
+    replies: Option<u64>,
+) {
+    let elapsed_ms = elapsed_ms(started);
+    match replies {
+        Some(replies) => {
+            tracing::info!(
+                operation,
+                command,
+                tag,
+                elapsed_ms,
+                replies,
+                "response {command}"
+            );
+        }
+        None => {
+            tracing::info!(operation, command, tag, elapsed_ms, "response {command}");
+        }
+    }
+}
+
+pub(crate) fn log_response_err(
+    operation: &str,
+    command: &str,
+    tag: &str,
+    started: Instant,
+    error: &str,
+) {
+    tracing::error!(
+        operation,
+        command,
+        tag,
+        elapsed_ms = elapsed_ms(started),
+        error,
+        "response {command}"
+    );
+}
+
+fn log_request_failed(operation: &str, command: &str, tag: &str, err: &Error) {
+    tracing::error!(
+        operation,
+        command,
+        tag,
+        error = err.message(),
+        "request {command} failed"
     );
 }
 
@@ -300,7 +392,20 @@ async fn read_loop(mut reader: ReadHalf<PinBox>, inner: Arc<SessionInner>) {
                 Ok(Some(words)) => {
                     let sentence = Sentence::new(words);
                     if sentence.is_trap() || sentence.is_fatal() {
-                        tracing::error!(sentence = sentence.log_line().as_str(), "api error reply");
+                        // Tagged replies are logged with command context by
+                        // `request` / `ApiStream`. Untagged `!fatal` still
+                        // needs a console line here.
+                        if sentence.tag().is_none() {
+                            tracing::error!(
+                                sentence = sentence.log_line().as_str(),
+                                "api error reply"
+                            );
+                        } else {
+                            tracing::debug!(
+                                sentence = sentence.log_line().as_str(),
+                                "api error reply"
+                            );
+                        }
                     } else if sentence.is_done() {
                         tracing::debug!(
                             tag = sentence.tag().unwrap_or(""),
@@ -333,8 +438,11 @@ async fn read_loop(mut reader: ReadHalf<PinBox>, inner: Arc<SessionInner>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codec::encode_sentence;
-    use tokio::io::AsyncWriteExt;
+    use crate::codec::{SentenceDecoder, encode_sentence};
+    use std::pin::Pin;
+    use std::task::{Context, Poll, Waker};
+    use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
+    use tracing_subscriber::layer::SubscriberExt;
 
     #[tokio::test]
     async fn tagged_print_collects_re_then_done() {
@@ -389,5 +497,289 @@ mod tests {
         .err()
         .expect("trap");
         assert_eq!(err.kind(), ErrorKind::Auth);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn successful_print_logs_response_at_info() {
+        let logs = capture_logs();
+        let session = Session::from_stream(
+            ScriptIo::login_then_print(),
+            "admin".into(),
+            String::new(),
+            Duration::from_secs(2),
+        )
+        .await
+        .expect("login");
+        session
+            .request("list", vec!["/interface/print".into()])
+            .await
+            .expect("print");
+
+        let text = logs.text();
+        assert!(
+            text.contains("outbound /login"),
+            "missing login outbound: {text}"
+        );
+        assert!(
+            text.contains("response /login"),
+            "missing login response: {text}"
+        );
+        assert!(
+            text.contains("outbound /interface/print"),
+            "missing print outbound: {text}"
+        );
+        assert!(
+            text.contains("response /interface/print"),
+            "missing print response: {text}"
+        );
+        assert!(text.contains("replies"), "missing reply count: {text}");
+        assert!(text.contains("elapsed_ms"), "missing elapsed_ms: {text}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn login_trap_logs_response_at_error() {
+        let logs = capture_logs();
+        let err = Session::from_stream(
+            ScriptIo::login_trap(),
+            "admin".into(),
+            String::new(),
+            Duration::from_secs(2),
+        )
+        .await
+        .err()
+        .expect("trap");
+        assert_eq!(err.kind(), ErrorKind::Auth);
+
+        let text = logs.text();
+        assert!(
+            text.contains("outbound /login"),
+            "missing login outbound: {text}"
+        );
+        assert!(
+            text.contains("response /login"),
+            "missing login response: {text}"
+        );
+        assert!(
+            text.contains("cannot log in"),
+            "missing trap message: {text}"
+        );
+        assert!(
+            text.contains("ERROR"),
+            "trap should be an error log: {text}"
+        );
+    }
+
+    #[derive(Clone, Copy)]
+    enum ScriptKind {
+        LoginThenPrint,
+        LoginTrap,
+    }
+
+    struct ScriptIo {
+        inner: std::sync::Arc<std::sync::Mutex<ScriptState>>,
+    }
+
+    struct ScriptState {
+        kind: ScriptKind,
+        inbound: SentenceDecoder,
+        outbound: Vec<u8>,
+        read_at: usize,
+        read_waker: Option<Waker>,
+    }
+
+    impl ScriptIo {
+        fn login_then_print() -> Self {
+            Self::new(ScriptKind::LoginThenPrint)
+        }
+
+        fn login_trap() -> Self {
+            Self::new(ScriptKind::LoginTrap)
+        }
+
+        fn new(kind: ScriptKind) -> Self {
+            Self {
+                inner: std::sync::Arc::new(std::sync::Mutex::new(ScriptState {
+                    kind,
+                    inbound: SentenceDecoder::new(),
+                    outbound: Vec::new(),
+                    read_at: 0,
+                    read_waker: None,
+                })),
+            }
+        }
+    }
+
+    fn sentence_tag(words: &[String]) -> String {
+        words
+            .iter()
+            .find_map(|word| word.strip_prefix(".tag="))
+            .unwrap_or("1")
+            .to_string()
+    }
+
+    fn queue_replies(state: &mut ScriptState, words: &[String]) {
+        let tag = sentence_tag(words);
+        let command = words.first().map_or("", String::as_str);
+        match state.kind {
+            ScriptKind::LoginTrap if command == "/login" => {
+                state.outbound.extend(encode_sentence(&[
+                    "!trap",
+                    "=message=cannot log in",
+                    &format!(".tag={tag}"),
+                ]));
+            }
+            ScriptKind::LoginThenPrint if command == "/login" => {
+                state
+                    .outbound
+                    .extend(encode_sentence(&["!done", &format!(".tag={tag}")]));
+            }
+            ScriptKind::LoginThenPrint if command == "/interface/print" => {
+                state.outbound.extend(encode_sentence(&[
+                    "!re",
+                    "=.id=*1",
+                    "=name=ether1",
+                    &format!(".tag={tag}"),
+                ]));
+                state
+                    .outbound
+                    .extend(encode_sentence(&["!done", &format!(".tag={tag}")]));
+            }
+            _ => {}
+        }
+        if let Some(waker) = state.read_waker.take() {
+            waker.wake();
+        }
+    }
+
+    impl AsyncRead for ScriptIo {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            let mut state = self
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if state.read_at >= state.outbound.len() {
+                state.read_waker = Some(cx.waker().clone());
+                return Poll::Pending;
+            }
+            let avail = &state.outbound[state.read_at..];
+            let n = avail.len().min(buf.remaining());
+            buf.put_slice(&avail[..n]);
+            state.read_at += n;
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for ScriptIo {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let mut state = self
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.inbound.push(buf);
+            while let Ok(Some(words)) = state.inbound.take_sentence() {
+                queue_replies(&mut state, &words);
+            }
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    fn capture_logs() -> CapturedLogs {
+        let layer = CaptureLayer::default();
+        let subscriber = tracing_subscriber::registry().with(layer.clone());
+        CapturedLogs {
+            layer,
+            _guard: tracing::subscriber::set_default(subscriber),
+        }
+    }
+
+    struct CapturedLogs {
+        layer: CaptureLayer,
+        _guard: tracing::subscriber::DefaultGuard,
+    }
+
+    impl CapturedLogs {
+        fn text(&self) -> String {
+            self.layer.text()
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct CaptureLayer(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+    impl CaptureLayer {
+        fn text(&self) -> String {
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .join("\n")
+        }
+    }
+
+    impl<S> tracing_subscriber::layer::Layer<S> for CaptureLayer
+    where
+        S: tracing::Subscriber,
+    {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut visitor = FieldVisitor::default();
+            event.record(&mut visitor);
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(format!(
+                    "{} {}{}",
+                    event.metadata().level(),
+                    visitor.message,
+                    visitor.fields
+                ));
+        }
+    }
+
+    #[derive(Default)]
+    struct FieldVisitor {
+        message: String,
+        fields: String,
+    }
+
+    impl tracing::field::Visit for FieldVisitor {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.record_pair(field.name(), format!("{value:?}"));
+        }
+
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            self.record_pair(field.name(), value.to_string());
+        }
+    }
+
+    impl FieldVisitor {
+        fn record_pair(&mut self, name: &str, value: String) {
+            if name == "message" {
+                self.message = value;
+            } else {
+                self.fields.push(' ');
+                self.fields.push_str(name);
+                self.fields.push('=');
+                self.fields.push_str(&value);
+            }
+        }
     }
 }

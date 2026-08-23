@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rustls::pki_types::ServerName;
 use serde_json::{Map, Value};
@@ -277,9 +277,14 @@ impl Client {
     }
 
     async fn open_stream(&self, operation: &'static str, words: Vec<String>) -> Result<ApiStream> {
+        let command = words.first().cloned().unwrap_or_else(|| "?".to_string());
+        let started = Instant::now();
         let (tag, rx) = self.inner.stream.stream(operation, words).await?;
         Ok(ApiStream {
             tag,
+            command,
+            operation,
+            started,
             rx,
             session: self.inner.stream.clone(),
         })
@@ -289,6 +294,9 @@ impl Client {
 /// Streaming `!re` replies until cancel or `!done`.
 pub struct ApiStream {
     tag: String,
+    command: String,
+    operation: &'static str,
+    started: Instant,
     rx: tokio::sync::mpsc::UnboundedReceiver<Sentence>,
     session: Session,
 }
@@ -300,16 +308,42 @@ impl ApiStream {
                 return Ok(None);
             };
             if sentence.is_fatal() {
+                let message = sentence.attr("message").unwrap_or("fatal API error");
+                crate::session::log_response_err(
+                    self.operation,
+                    &self.command,
+                    &self.tag,
+                    self.started,
+                    message,
+                );
                 return Err(Error::new(
                     crate::error::ErrorKind::Server,
                     "stream",
-                    sentence.attr("message").unwrap_or("fatal API error"),
+                    message,
                 ));
             }
             if sentence.is_trap() {
+                let message = sentence
+                    .attr("message")
+                    .or_else(|| sentence.attr("detail"))
+                    .unwrap_or("request failed");
+                crate::session::log_response_err(
+                    self.operation,
+                    &self.command,
+                    &self.tag,
+                    self.started,
+                    message,
+                );
                 return Err(sentence.trap_error("stream"));
             }
             if sentence.is_done() {
+                crate::session::log_response_ok(
+                    self.operation,
+                    &self.command,
+                    &self.tag,
+                    self.started,
+                    None,
+                );
                 return Ok(None);
             }
             if sentence.is_re() {
