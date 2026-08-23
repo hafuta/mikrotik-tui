@@ -112,6 +112,17 @@ impl Session {
         ];
         let replies = self.request_words("login", words).await?;
         if let Some(trap) = replies.iter().find(|sentence| sentence.is_trap()) {
+            let message = trap
+                .attr("message")
+                .or_else(|| trap.attr("detail"))
+                .unwrap_or("login failed");
+            log_response_err(
+                "login",
+                "/login",
+                trap.tag().unwrap_or(""),
+                Instant::now(),
+                message,
+            );
             return Err(trap.trap_error("login"));
         }
         if replies.iter().any(Sentence::is_fatal) {
@@ -427,8 +438,10 @@ async fn read_loop(mut reader: ReadHalf<PinBox>, inner: Arc<SessionInner>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codec::encode_sentence;
-    use tokio::io::AsyncWriteExt;
+    use crate::codec::{SentenceDecoder, encode_sentence};
+    use std::pin::Pin;
+    use std::task::{Context, Poll, Waker};
+    use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
     use tracing_subscriber::layer::SubscriberExt;
 
     #[tokio::test]
@@ -489,23 +502,8 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn successful_print_logs_response_at_info() {
         let logs = capture_logs();
-        let (client, mut server) = tokio::io::duplex(64 * 1024);
-        let server_task = tokio::spawn(async move {
-            let mut buf = vec![0_u8; 4096];
-            let _ = server.read(&mut buf).await;
-            let login_ok = encode_sentence(&["!done", ".tag=1"]);
-            server.write_all(&login_ok).await.unwrap();
-            let _ = server.read(&mut buf).await;
-            let body = [
-                encode_sentence(&["!re", "=.id=*1", "=name=ether1", ".tag=2"]),
-                encode_sentence(&["!done", ".tag=2"]),
-            ]
-            .concat();
-            server.write_all(&body).await.unwrap();
-        });
-
         let session = Session::from_stream(
-            client,
+            ScriptIo::login_then_print(),
             "admin".into(),
             String::new(),
             Duration::from_secs(2),
@@ -516,7 +514,6 @@ mod tests {
             .request("list", vec!["/interface/print".into()])
             .await
             .expect("print");
-        server_task.await.unwrap();
 
         let text = logs.text();
         assert!(
@@ -542,17 +539,8 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn login_trap_logs_response_at_error() {
         let logs = capture_logs();
-        let (client, mut server) = tokio::io::duplex(64 * 1024);
-        tokio::spawn(async move {
-            let mut buf = vec![0_u8; 4096];
-            let _ = server.read(&mut buf).await;
-            let trap = encode_sentence(&["!trap", "=message=cannot log in", ".tag=1"]);
-            let _ = server.write_all(&trap).await;
-            // Keep the socket open so EOF cannot beat the `!trap` sentence.
-            std::future::pending::<()>().await;
-        });
         let err = Session::from_stream(
-            client,
+            ScriptIo::login_trap(),
             "admin".into(),
             String::new(),
             Duration::from_secs(2),
@@ -579,6 +567,136 @@ mod tests {
             text.contains("ERROR"),
             "trap should be an error log: {text}"
         );
+    }
+
+    #[derive(Clone, Copy)]
+    enum ScriptKind {
+        LoginThenPrint,
+        LoginTrap,
+    }
+
+    struct ScriptIo {
+        inner: std::sync::Arc<std::sync::Mutex<ScriptState>>,
+    }
+
+    struct ScriptState {
+        kind: ScriptKind,
+        inbound: SentenceDecoder,
+        outbound: Vec<u8>,
+        read_at: usize,
+        read_waker: Option<Waker>,
+    }
+
+    impl ScriptIo {
+        fn login_then_print() -> Self {
+            Self::new(ScriptKind::LoginThenPrint)
+        }
+
+        fn login_trap() -> Self {
+            Self::new(ScriptKind::LoginTrap)
+        }
+
+        fn new(kind: ScriptKind) -> Self {
+            Self {
+                inner: std::sync::Arc::new(std::sync::Mutex::new(ScriptState {
+                    kind,
+                    inbound: SentenceDecoder::new(),
+                    outbound: Vec::new(),
+                    read_at: 0,
+                    read_waker: None,
+                })),
+            }
+        }
+    }
+
+    fn sentence_tag(words: &[String]) -> String {
+        words
+            .iter()
+            .find_map(|word| word.strip_prefix(".tag="))
+            .unwrap_or("1")
+            .to_string()
+    }
+
+    fn queue_replies(state: &mut ScriptState, words: &[String]) {
+        let tag = sentence_tag(words);
+        let command = words.first().map_or("", String::as_str);
+        match state.kind {
+            ScriptKind::LoginTrap if command == "/login" => {
+                state.outbound.extend(encode_sentence(&[
+                    "!trap",
+                    "=message=cannot log in",
+                    &format!(".tag={tag}"),
+                ]));
+            }
+            ScriptKind::LoginThenPrint if command == "/login" => {
+                state
+                    .outbound
+                    .extend(encode_sentence(&["!done", &format!(".tag={tag}")]));
+            }
+            ScriptKind::LoginThenPrint if command == "/interface/print" => {
+                state.outbound.extend(encode_sentence(&[
+                    "!re",
+                    "=.id=*1",
+                    "=name=ether1",
+                    &format!(".tag={tag}"),
+                ]));
+                state
+                    .outbound
+                    .extend(encode_sentence(&["!done", &format!(".tag={tag}")]));
+            }
+            _ => {}
+        }
+        if let Some(waker) = state.read_waker.take() {
+            waker.wake();
+        }
+    }
+
+    impl AsyncRead for ScriptIo {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            let mut state = self
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if state.read_at >= state.outbound.len() {
+                state.read_waker = Some(cx.waker().clone());
+                return Poll::Pending;
+            }
+            let avail = &state.outbound[state.read_at..];
+            let n = avail.len().min(buf.remaining());
+            buf.put_slice(&avail[..n]);
+            state.read_at += n;
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for ScriptIo {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let mut state = self
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.inbound.push(buf);
+            while let Ok(Some(words)) = state.inbound.take_sentence() {
+                queue_replies(&mut state, &words);
+            }
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
     }
 
     fn capture_logs() -> CapturedLogs {
