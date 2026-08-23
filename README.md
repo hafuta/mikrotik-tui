@@ -60,6 +60,10 @@ On first launch, add a device: host (`192.168.88.1` or `host:8729`), username,
 and password. For a self-signed certificate, compare the SHA-256 fingerprint
 before trusting it.
 
+Apple Terminal.app before macOS 26 Tahoe does not support 24-bit color; the
+app falls back to 256 colors there. iTerm2 and Terminal on Tahoe use truecolor.
+Set `MIKROTIK_TUI_COLOR=truecolor` or `256` to override.
+
 ## Keyboard
 
 Press `?` any time for the full map. The bindings below are the ones you use

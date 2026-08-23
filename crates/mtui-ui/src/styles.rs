@@ -6,9 +6,16 @@
 use mtui_core::{ColorRgb, Palette};
 use ratatui::style::{Color, Modifier, Style};
 
+use crate::color::{ColorDepth, rgb_color_for};
+
+/// Map a palette color to a ratatui `Color` for this terminal.
+///
+/// Crossterm always emits truecolor sequences for `Color::Rgb`; it does not
+/// downconvert. We quantize at this one call site when the terminal lacks
+/// 24-bit color (see [`ColorDepth`]).
 #[must_use]
 pub fn rgb_color(c: ColorRgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
+    rgb_color_for(c, ColorDepth::detect())
 }
 
 /// Semantic styles derived from a theme palette.
@@ -37,6 +44,12 @@ pub struct Styles {
 impl Styles {
     #[must_use]
     pub fn from_palette(p: &Palette) -> Self {
+        Self::from_palette_with(p, ColorDepth::detect())
+    }
+
+    #[must_use]
+    pub fn from_palette_with(p: &Palette, depth: ColorDepth) -> Self {
+        let rgb_color = |c| rgb_color_for(c, depth);
         Self {
             base: Style::default().fg(rgb_color(p.text)),
             panel: Style::default().fg(rgb_color(p.text)),
@@ -82,5 +95,14 @@ mod tests {
         assert_ne!(styles.hidden.fg, styles.quiet.fg);
         assert_eq!(styles.band, rgb_color(theme.palette().band));
         assert_eq!(styles.selection, rgb_color(theme.palette().selection));
+    }
+
+    #[test]
+    fn from_palette_with_256_uses_indexed_colors() {
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette_with(theme.palette(), ColorDepth::Ansi256);
+        assert!(matches!(styles.text.fg, Some(Color::Indexed(_))));
+        assert!(matches!(styles.void, Color::Indexed(_)));
+        assert!(matches!(styles.selection, Color::Indexed(_)));
     }
 }
