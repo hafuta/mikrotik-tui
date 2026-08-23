@@ -356,7 +356,7 @@ mod tests {
         let session = Session::from_stream(
             client,
             "admin".into(),
-            "secret".into(),
+            String::new(),
             Duration::from_secs(2),
         )
         .await
@@ -379,11 +379,15 @@ mod tests {
             let trap = encode_sentence(&["!trap", "=message=cannot log in", ".tag=1"]);
             let _ = server.write_all(&trap).await;
         });
-        let err =
-            Session::from_stream(client, "admin".into(), "bad".into(), Duration::from_secs(2))
-                .await
-                .err()
-                .expect("trap");
+        let err = Session::from_stream(
+            client,
+            "admin".into(),
+            String::new(),
+            Duration::from_secs(2),
+        )
+        .await
+        .err()
+        .expect("trap");
         assert_eq!(err.kind(), ErrorKind::Auth);
     }
 }
