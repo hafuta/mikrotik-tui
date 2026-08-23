@@ -1927,12 +1927,12 @@ mod secret_mask_tests {
     #[test]
     fn y_key_copies_current_row_to_clipboard() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        
+
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;
         app.select_resource("interfaces");
         app.pane = Pane::Content;
-        
+
         let mut fields = std::collections::HashMap::new();
         fields.insert("name".into(), "ether1".into());
         fields.insert("type".into(), "ether".into());
@@ -1941,7 +1941,7 @@ mod secret_mask_tests {
             id: "*1".into(),
             fields,
         };
-        
+
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
             request_id: app.request_id,
             generation: app.poll_generation,
@@ -1949,12 +1949,12 @@ mod secret_mask_tests {
             rows: vec![row],
             error: None,
         }));
-        
+
         let cmds = app.update(AppEvent::Input(KeyEvent::new(
             KeyCode::Char('y'),
             KeyModifiers::NONE,
         )));
-        
+
         assert!(
             cmds.iter().any(|cmd| matches!(
                 cmd,
