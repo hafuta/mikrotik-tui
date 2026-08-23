@@ -14,6 +14,9 @@ It still handles credentials that can be valuable on a local network.
 - RouterOS entity secrets (PPP passwords, VPN pre-shared keys, RADIUS secrets,
   SNMP communities, user passwords) are masked in tables, inspectors, and
   logs. Saving a properties sheet does not send a still-masked value back.
+- The Linux install script downloads GitHub Release archives over HTTPS and
+  checks `checksums.txt` before replacing a binary. Review
+  `scripts/install-linux.sh` before piping it to a shell.
 - Do not attach application logs, profiles, or router exports to public issues
   without reviewing them for network details.
 

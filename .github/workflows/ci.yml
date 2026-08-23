@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Installer syntax
+        run: sh -n scripts/install-linux.sh
       - name: Install toolchain from rust-toolchain.toml
         run: rustup show
       - uses: taiki-e/install-action@just
