@@ -10,9 +10,24 @@ const rows = [
 
 <figure class="deck">
   <figcaption class="visually-hidden">
-    Simulated MikroTik TUI session showing live interface traffic on a CCR2004.
+    Simulated MikroTik TUI session with several device tabs, showing live
+    interface traffic on a CCR2004.
   </figcaption>
   <div class="window">
+    <div class="tabs" aria-hidden="true">
+      <span class="tab tab--on">
+        <b>1</b> CCR2004
+        <i class="live"></i>
+      </span>
+      <span class="tab">
+        <b>2</b> office-hex
+        <i class="live"></i>
+      </span>
+      <span class="tab tab--idle">
+        <b>3</b> Login
+      </span>
+      <span class="tab-add">+</span>
+    </div>
     <header class="chrome">
       <span class="title">mikrotik-tui</span>
       <span class="host">CCR2004 · 192.0.2.1</span>
@@ -107,6 +122,64 @@ const rows = [
     text-align: left;
   }
 
+  .tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.45rem 0.65rem 0.3rem;
+    overflow: hidden;
+    background: color-mix(in srgb, black 28%, transparent);
+  }
+
+  .tab,
+  .tab-add {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 1.65rem;
+    padding: 0.22rem 0.62rem;
+    border-radius: 0.42rem;
+    color: var(--text);
+  }
+
+  .tab {
+    background: color-mix(in srgb, white 6.5%, transparent);
+  }
+
+  .tab b {
+    color: var(--quiet);
+    font-weight: 500;
+  }
+
+  .tab--on {
+    background: color-mix(in srgb, var(--focus) 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--focus) 28%, transparent);
+  }
+
+  .tab--on b {
+    color: var(--focus);
+  }
+
+  .tab--idle {
+    color: var(--quiet);
+  }
+
+  .live {
+    width: 0.42rem;
+    height: 0.42rem;
+    border-radius: 50%;
+    background: var(--signal);
+    box-shadow: 0 0 0.45rem color-mix(in srgb, var(--signal) 55%, transparent);
+  }
+
+  .tab-add {
+    margin-left: 0.1rem;
+    color: var(--focus);
+    font-weight: 500;
+  }
+
   .chrome,
   .hints {
     display: flex;
@@ -162,7 +235,8 @@ const rows = [
 
     .inspect,
     .navpane,
-    .metrics {
+    .metrics,
+    .tab--idle {
       display: none;
     }
   }

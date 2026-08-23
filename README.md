@@ -5,7 +5,8 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/hafuta/mikrotik-tui/ci.yml?branch=main&label=CI)](https://github.com/hafuta/mikrotik-tui/actions/workflows/ci.yml)
 
 > [!CAUTION]
-> Tested against current RouterOS long-term. Use with caution.
+> This project is new. Expect bugs and unstable behavior. Tested against
+> current RouterOS long-term.
 
 <p align="center">
   <img src="assets/banner.png" alt="MikroTik TUI" width="520">
