@@ -107,7 +107,7 @@ brew install mikrotik-tui
 Linux (amd64 and arm64):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh
 ```
 
 The Linux script verifies `checksums.txt`, writes `mikrotik-tui` to

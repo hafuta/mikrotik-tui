@@ -1,9 +1,9 @@
 #!/bin/sh
 # Install or upgrade mikrotik-tui from the latest GitHub Release.
-# Linux amd64 / arm64 only. Copied to the Pages site at build time.
+# Linux amd64 / arm64 only. Do not run this on macOS or Windows.
 #
-#   curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install.sh | sh -s -- --yes
+#   curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh -s -- --yes
 set -eu
 
 REPO="${MIKROTIK_TUI_INSTALL_REPO:-hafuta/mikrotik-tui}"
@@ -18,7 +18,7 @@ usage() {
   cat <<EOF
 Install the latest ${BIN} Linux binary from GitHub Releases.
 
-Usage: install.sh [--yes] [--force] [--prefix DIR]
+Usage: install-linux.sh [--yes] [--force] [--prefix DIR]
 
   --yes       Replace an existing install without prompting
   --force     Replace even when the installed version matches latest
@@ -113,7 +113,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 os=$(uname -s)
-[ "$os" = Linux ] || die "this installer is for Linux only (got ${os}). Download a release from ${RELEASES}"
+[ "$os" = Linux ] || die "install-linux.sh is for Linux only (got ${os}). Download a release from ${RELEASES}"
 
 arch=$(uname -m)
 case $arch in

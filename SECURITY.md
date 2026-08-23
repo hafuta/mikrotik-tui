@@ -16,7 +16,7 @@ It still handles credentials that can be valuable on a local network.
   logs. Saving a properties sheet does not send a still-masked value back.
 - The Linux install script downloads GitHub Release archives over HTTPS and
   checks `checksums.txt` before replacing a binary. Prefer the documented
-  GitHub URLs; review `scripts/install.sh` before piping it to a shell.
+  GitHub URLs; review `scripts/install-linux.sh` before piping it to a shell.
 - Do not attach application logs, profiles, or router exports to public issues
   without reviewing them for network details.
 
