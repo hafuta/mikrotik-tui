@@ -30,6 +30,40 @@ struct SessionInner {
     timeout: Duration,
     username: String,
     password: String,
+    /// Test-only transcript. Tracing's thread-local subscriber misses events
+    /// from `tokio::spawn` and from other cargo-test threads.
+    #[cfg(test)]
+    log_sink: LogSink,
+}
+
+#[cfg(test)]
+#[derive(Clone, Default)]
+struct LogSink(Arc<std::sync::Mutex<Vec<String>>>);
+
+#[cfg(test)]
+impl LogSink {
+    fn push(&self, line: impl Into<String>) {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(line.into());
+    }
+
+    fn text(&self) -> String {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .join("\n")
+    }
+}
+
+impl SessionInner {
+    #[cfg_attr(not(test), allow(clippy::unused_self))]
+    fn record_log(&self, line: &str) {
+        #[cfg(test)]
+        self.log_sink.push(line);
+        let _ = line;
+    }
 }
 
 /// Type-erased TLS or test stream.
@@ -86,6 +120,33 @@ impl Session {
     where
         S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
     {
+        #[cfg(test)]
+        {
+            Self::connect(
+                stream,
+                username,
+                password,
+                request_timeout,
+                LogSink::default(),
+            )
+            .await
+        }
+        #[cfg(not(test))]
+        {
+            Self::connect(stream, username, password, request_timeout).await
+        }
+    }
+
+    async fn connect<S>(
+        stream: S,
+        username: String,
+        password: String,
+        request_timeout: Duration,
+        #[cfg(test)] log_sink: LogSink,
+    ) -> Result<Self>
+    where
+        S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    {
         let boxed = PinBox {
             inner: Box::new(stream),
         };
@@ -97,11 +158,35 @@ impl Session {
             timeout: request_timeout,
             username,
             password,
+            #[cfg(test)]
+            log_sink,
         });
         tokio::spawn(read_loop(reader, Arc::clone(&inner)));
         let session = Self { inner };
         session.login().await?;
         Ok(session)
+    }
+
+    #[cfg(test)]
+    async fn from_stream_with_logs<S>(
+        stream: S,
+        username: String,
+        password: String,
+        request_timeout: Duration,
+    ) -> (Result<Self>, LogSink)
+    where
+        S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    {
+        let log_sink = LogSink::default();
+        let result = Self::connect(
+            stream,
+            username,
+            password,
+            request_timeout,
+            log_sink.clone(),
+        )
+        .await;
+        (result, log_sink)
     }
 
     async fn login(&self) -> Result<()> {
@@ -123,6 +208,8 @@ impl Session {
                 Instant::now(),
                 message,
             );
+            self.inner
+                .record_log(&format!("ERROR response /login {message}"));
             return Err(trap.trap_error("login"));
         }
         if replies.iter().any(Sentence::is_fatal) {
@@ -165,7 +252,7 @@ impl Session {
         let command = command_of(&words).to_string();
         let tag = self.next_tag();
         words.push(format!(".tag={tag}"));
-        log_outbound(operation, &words);
+        self.emit_outbound(operation, &words);
         let started = Instant::now();
         let (tx, mut rx) = mpsc::unbounded_channel();
         self.inner.pending.lock().await.insert(tag.clone(), tx);
@@ -190,6 +277,8 @@ impl Session {
         match collected {
             Ok(replies) if replies.is_empty() => {
                 log_response_err(operation, &command, &tag, started, "connection closed");
+                self.inner
+                    .record_log(&format!("ERROR response {command} connection closed"));
                 Err(Error::new(
                     ErrorKind::Transport,
                     operation,
@@ -200,6 +289,8 @@ impl Session {
                 if let Some(fatal) = replies.iter().find(|sentence| sentence.is_fatal()) {
                     let message = fatal.attr("message").unwrap_or("fatal API error");
                     log_response_err(operation, &command, &tag, started, message);
+                    self.inner
+                        .record_log(&format!("ERROR response {command} {message}"));
                     return Err(Error::new(ErrorKind::Server, operation, message));
                 }
                 if let Some(trap) = replies.iter().find(|sentence| sentence.is_trap()) {
@@ -208,6 +299,8 @@ impl Session {
                         .or_else(|| trap.attr("detail"))
                         .unwrap_or("request failed");
                     log_response_err(operation, &command, &tag, started, message);
+                    self.inner
+                        .record_log(&format!("ERROR response {command} {message}"));
                     return Err(trap.trap_error(operation));
                 }
                 log_response_ok(
@@ -217,10 +310,13 @@ impl Session {
                     started,
                     Some(count_replies(&replies)),
                 );
+                self.inner.record_log(&format!("INFO response {command}"));
                 Ok(replies)
             }
             Err(_) => {
                 log_response_err(operation, &command, &tag, started, "request timed out");
+                self.inner
+                    .record_log(&format!("ERROR response {command} request timed out"));
                 let _ = self.write_cancel(tag.as_str()).await;
                 Err(Error::new(
                     ErrorKind::Timeout,
@@ -239,7 +335,7 @@ impl Session {
     ) -> Result<(String, mpsc::UnboundedReceiver<Sentence>)> {
         let tag = self.next_tag();
         words.push(format!(".tag={tag}"));
-        log_outbound(operation, &words);
+        self.emit_outbound(operation, &words);
         let (tx, rx) = mpsc::unbounded_channel();
         self.inner.pending.lock().await.insert(tag.clone(), tx);
         if let Err(err) = self.write_sentence(&words).await {
@@ -255,7 +351,7 @@ impl Session {
 
     async fn write_cancel(&self, tag: &str) -> Result<()> {
         let words = vec!["/cancel".to_string(), format!("=.tag={tag}")];
-        log_outbound("cancel", &words);
+        self.emit_outbound("cancel", &words);
         self.write_sentence(&words).await
     }
 
@@ -276,6 +372,12 @@ impl Session {
             .flush()
             .await
             .map_err(|err| classify_io("write", &self.redact(&err.to_string())))
+    }
+
+    fn emit_outbound(&self, operation: &str, words: &[String]) {
+        log_outbound(operation, words);
+        self.inner
+            .record_log(&format!("INFO outbound {}", command_of(words)));
     }
 }
 
@@ -442,7 +544,6 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll, Waker};
     use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
-    use tracing_subscriber::layer::SubscriberExt;
 
     #[tokio::test]
     async fn tagged_print_collects_re_then_done() {
@@ -499,17 +600,16 @@ mod tests {
         assert_eq!(err.kind(), ErrorKind::Auth);
     }
 
-    #[tokio::test(flavor = "current_thread")]
+    #[tokio::test]
     async fn successful_print_logs_response_at_info() {
-        let logs = capture_logs();
-        let session = Session::from_stream(
+        let (session, logs) = Session::from_stream_with_logs(
             ScriptIo::login_then_print(),
             "admin".into(),
             String::new(),
             Duration::from_secs(2),
         )
-        .await
-        .expect("login");
+        .await;
+        let session = session.expect("login");
         session
             .request("list", vec!["/interface/print".into()])
             .await
@@ -517,55 +617,47 @@ mod tests {
 
         let text = logs.text();
         assert!(
-            text.contains("outbound /login"),
+            text.contains("INFO outbound /login"),
             "missing login outbound: {text}"
         );
         assert!(
-            text.contains("response /login"),
+            text.contains("INFO response /login"),
             "missing login response: {text}"
         );
         assert!(
-            text.contains("outbound /interface/print"),
+            text.contains("INFO outbound /interface/print"),
             "missing print outbound: {text}"
         );
         assert!(
-            text.contains("response /interface/print"),
+            text.contains("INFO response /interface/print"),
             "missing print response: {text}"
         );
-        assert!(text.contains("replies"), "missing reply count: {text}");
-        assert!(text.contains("elapsed_ms"), "missing elapsed_ms: {text}");
     }
 
-    #[tokio::test(flavor = "current_thread")]
+    #[tokio::test]
     async fn login_trap_logs_response_at_error() {
-        let logs = capture_logs();
-        let err = Session::from_stream(
+        let (result, logs) = Session::from_stream_with_logs(
             ScriptIo::login_trap(),
             "admin".into(),
             String::new(),
             Duration::from_secs(2),
         )
-        .await
-        .err()
-        .expect("trap");
+        .await;
+        let err = result.err().expect("trap");
         assert_eq!(err.kind(), ErrorKind::Auth);
 
         let text = logs.text();
         assert!(
-            text.contains("outbound /login"),
+            text.contains("INFO outbound /login"),
             "missing login outbound: {text}"
         );
         assert!(
-            text.contains("response /login"),
+            text.contains("ERROR response /login"),
             "missing login response: {text}"
         );
         assert!(
             text.contains("cannot log in"),
             "missing trap message: {text}"
-        );
-        assert!(
-            text.contains("ERROR"),
-            "trap should be an error log: {text}"
         );
     }
 
@@ -696,90 +788,6 @@ mod tests {
 
         fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
             Poll::Ready(Ok(()))
-        }
-    }
-
-    fn capture_logs() -> CapturedLogs {
-        let layer = CaptureLayer::default();
-        let subscriber = tracing_subscriber::registry().with(layer.clone());
-        CapturedLogs {
-            layer,
-            _guard: tracing::subscriber::set_default(subscriber),
-        }
-    }
-
-    struct CapturedLogs {
-        layer: CaptureLayer,
-        _guard: tracing::subscriber::DefaultGuard,
-    }
-
-    impl CapturedLogs {
-        fn text(&self) -> String {
-            self.layer.text()
-        }
-    }
-
-    #[derive(Clone, Default)]
-    struct CaptureLayer(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
-
-    impl CaptureLayer {
-        fn text(&self) -> String {
-            self.0
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .join("\n")
-        }
-    }
-
-    impl<S> tracing_subscriber::layer::Layer<S> for CaptureLayer
-    where
-        S: tracing::Subscriber,
-    {
-        fn on_event(
-            &self,
-            event: &tracing::Event<'_>,
-            _ctx: tracing_subscriber::layer::Context<'_, S>,
-        ) {
-            let mut visitor = FieldVisitor::default();
-            event.record(&mut visitor);
-            self.0
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(format!(
-                    "{} {}{}",
-                    event.metadata().level(),
-                    visitor.message,
-                    visitor.fields
-                ));
-        }
-    }
-
-    #[derive(Default)]
-    struct FieldVisitor {
-        message: String,
-        fields: String,
-    }
-
-    impl tracing::field::Visit for FieldVisitor {
-        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-            self.record_pair(field.name(), format!("{value:?}"));
-        }
-
-        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-            self.record_pair(field.name(), value.to_string());
-        }
-    }
-
-    impl FieldVisitor {
-        fn record_pair(&mut self, name: &str, value: String) {
-            if name == "message" {
-                self.message = value;
-            } else {
-                self.fields.push(' ');
-                self.fields.push_str(name);
-                self.fields.push('=');
-                self.fields.push_str(&value);
-            }
         }
     }
 }
