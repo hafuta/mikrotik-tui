@@ -95,6 +95,19 @@ falling back to an owner-only `credentials.json`. User Manager TOTP is typed at
 connect time, appended to the static password, and never saved. The last-used
 profile auto-reconnects unless it requires a fresh TOTP.
 
+## Install
+
+macOS via Homebrew (prebuilt binary, no Rust toolchain):
+
+```sh
+brew tap hafuta/mikrotik-tui
+brew install mikrotik-tui
+```
+
+The tap lives at [hafuta/homebrew-mikrotik-tui](https://github.com/hafuta/homebrew-mikrotik-tui). It does not require an Apple Developer account. `brew install --HEAD` compiles from `master` and needs Homebrew `rust`.
+
+Linux and Windows: download a GitHub Release archive, or build from this repo.
+
 ## Tooling
 
 Install [rustup](https://rustup.rs/). Entering the repo installs the compiler

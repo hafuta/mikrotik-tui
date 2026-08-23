@@ -122,11 +122,16 @@ const releases = `${repo}/releases`;
         <div class="install">
           <div>
             <p class="prose">
-              Linux, macOS, and Windows binaries ship unsigned from GitHub
-              Releases. First launch asks for host (<code>192.168.88.1</code> or
+              On macOS, Homebrew installs a prebuilt binary (no compiler). Linux
+              and Windows binaries ship unsigned from GitHub Releases. First
+              launch asks for host (<code>192.168.88.1</code> or
               <code>host:8729</code>), username, and password.
             </p>
-            <pre class="term"><code><span class="cmt"># unpack a release, then</span>
+            <pre class="term"><code><span class="cmt"># macOS</span>
+brew tap hafuta/mikrotik-tui
+brew install mikrotik-tui
+
+<span class="cmt"># or unpack a GitHub release, then</span>
 ./mikrotik-tui</code></pre>
           </div>
           <p class="note">

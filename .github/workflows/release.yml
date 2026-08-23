@@ -108,3 +108,13 @@ jobs:
             dist/mikrotik-tui-macos-amd64.tar.gz
             dist/mikrotik-tui-windows-amd64.zip
             dist/checksums.txt
+      - name: Notify Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN unset; tap will pick up the release on its hourly bump workflow"
+            exit 0
+          fi
+          gh api --method POST repos/hafuta/homebrew-mikrotik-tui/dispatches \
+            -f event_type=mikrotik-tui-release
