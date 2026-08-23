@@ -429,6 +429,7 @@ mod tests {
     use super::*;
     use crate::codec::encode_sentence;
     use tokio::io::AsyncWriteExt;
+    use tracing_subscriber::layer::SubscriberExt;
 
     #[tokio::test]
     async fn tagged_print_collects_re_then_done() {
@@ -485,7 +486,7 @@ mod tests {
         assert_eq!(err.kind(), ErrorKind::Auth);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn successful_print_logs_response_at_info() {
         let logs = capture_logs();
         let (client, mut server) = tokio::io::duplex(64 * 1024);
@@ -538,7 +539,7 @@ mod tests {
         assert!(text.contains("elapsed_ms"), "missing elapsed_ms: {text}");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn login_trap_logs_response_at_error() {
         let logs = capture_logs();
         let (client, mut server) = tokio::io::duplex(64 * 1024);
@@ -547,8 +548,10 @@ mod tests {
             let _ = server.read(&mut buf).await;
             let trap = encode_sentence(&["!trap", "=message=cannot log in", ".tag=1"]);
             let _ = server.write_all(&trap).await;
+            // Keep the socket open so EOF cannot beat the `!trap` sentence.
+            std::future::pending::<()>().await;
         });
-        let _ = Session::from_stream(
+        let err = Session::from_stream(
             client,
             "admin".into(),
             String::new(),
@@ -557,6 +560,7 @@ mod tests {
         .await
         .err()
         .expect("trap");
+        assert_eq!(err.kind(), ErrorKind::Auth);
 
         let text = logs.text();
         assert!(
@@ -572,59 +576,92 @@ mod tests {
             "missing trap message: {text}"
         );
         assert!(
-            text.to_ascii_lowercase().contains("error"),
+            text.contains("ERROR"),
             "trap should be an error log: {text}"
         );
     }
 
     fn capture_logs() -> CapturedLogs {
-        let buf = LogBuf::default();
-        let writer = buf.clone();
-        let subscriber = tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .with_writer(move || writer.clone())
-            .finish();
+        let layer = CaptureLayer::default();
+        let subscriber = tracing_subscriber::registry().with(layer.clone());
         CapturedLogs {
-            buf,
+            layer,
             _guard: tracing::subscriber::set_default(subscriber),
         }
     }
 
     struct CapturedLogs {
-        buf: LogBuf,
+        layer: CaptureLayer,
         _guard: tracing::subscriber::DefaultGuard,
     }
 
     impl CapturedLogs {
         fn text(&self) -> String {
-            self.buf.text()
+            self.layer.text()
         }
     }
 
     #[derive(Clone, Default)]
-    struct LogBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+    struct CaptureLayer(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
 
-    impl LogBuf {
+    impl CaptureLayer {
         fn text(&self) -> String {
-            let bytes = self
-                .0
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            String::from_utf8_lossy(&bytes).into_owned()
-        }
-    }
-
-    impl std::io::Write for LogBuf {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
             self.0
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .extend_from_slice(buf);
-            Ok(buf.len())
+                .join("\n")
+        }
+    }
+
+    impl<S> tracing_subscriber::layer::Layer<S> for CaptureLayer
+    where
+        S: tracing::Subscriber,
+    {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut visitor = FieldVisitor::default();
+            event.record(&mut visitor);
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(format!(
+                    "{} {}{}",
+                    event.metadata().level(),
+                    visitor.message,
+                    visitor.fields
+                ));
+        }
+    }
+
+    #[derive(Default)]
+    struct FieldVisitor {
+        message: String,
+        fields: String,
+    }
+
+    impl tracing::field::Visit for FieldVisitor {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.record_pair(field.name(), format!("{value:?}"));
         }
 
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            self.record_pair(field.name(), value.to_string());
+        }
+    }
+
+    impl FieldVisitor {
+        fn record_pair(&mut self, name: &str, value: String) {
+            if name == "message" {
+                self.message = value;
+            } else {
+                self.fields.push(' ');
+                self.fields.push_str(name);
+                self.fields.push('=');
+                self.fields.push_str(&value);
+            }
         }
     }
 }
