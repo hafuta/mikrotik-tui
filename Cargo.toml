@@ -10,6 +10,7 @@ members = [
 ]
 
 [workspace.package]
+# Placeholder for local builds. Release CI overwrites this from the v* tag.
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
