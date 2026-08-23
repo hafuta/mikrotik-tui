@@ -5,6 +5,8 @@ use std::sync::Arc;
 use crossterm::event::KeyEvent;
 use mtui_routeros::{Client, ErrorKind, Resource};
 
+use crate::session::SessionId;
+
 #[allow(clippy::large_enum_variant)]
 pub enum AppEvent {
     Input(KeyEvent),
@@ -15,19 +17,23 @@ pub enum AppEvent {
 
 pub enum WorkerMsg {
     ProbeResult {
+        session: SessionId,
         fingerprint: Option<String>,
         error: Option<String>,
     },
     Connected {
+        session: SessionId,
         client: Option<Arc<Client>>,
         router: Option<Resource>,
         error: Option<String>,
         error_kind: Option<ErrorKind>,
     },
     AuthRequired {
+        session: SessionId,
         message: String,
     },
     ResourceResult {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         resource_id: String,
@@ -35,6 +41,7 @@ pub enum WorkerMsg {
         error: Option<String>,
     },
     DashboardResult {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         cpu: Vec<Resource>,
@@ -47,6 +54,7 @@ pub enum WorkerMsg {
         firewall_error: Option<String>,
     },
     HeaderResult {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         system: Option<Resource>,
@@ -55,17 +63,20 @@ pub enum WorkerMsg {
         interface_error: Option<String>,
     },
     MutateResult {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         error: Option<String>,
     },
     TorchResult {
+        session: SessionId,
         generation: u64,
         rows: Vec<std::collections::HashMap<String, String>>,
         error: Option<String>,
         done: bool,
     },
     ReadLocalFileResult {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         remote_name: String,
@@ -73,11 +84,13 @@ pub enum WorkerMsg {
         error: Option<String>,
     },
     WriteLocalFileResult {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         error: Option<String>,
     },
     RecordResult {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         local_path: String,
@@ -85,25 +98,52 @@ pub enum WorkerMsg {
         error: Option<String>,
     },
     PingTraceResult {
+        session: SessionId,
         generation: u64,
         rows: Vec<std::collections::HashMap<String, String>>,
         error: Option<String>,
         done: bool,
     },
     LookupResult {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         options: Vec<String>,
         error: Option<String>,
     },
     ListenDelta {
+        session: SessionId,
         generation: u64,
         resource_id: String,
         row: Resource,
     },
     WanSample {
+        session: SessionId,
         generation: u64,
         interface: String,
         sample: Resource,
     },
+}
+
+impl WorkerMsg {
+    #[must_use]
+    pub fn session(&self) -> SessionId {
+        match self {
+            Self::ProbeResult { session, .. }
+            | Self::Connected { session, .. }
+            | Self::AuthRequired { session, .. }
+            | Self::ResourceResult { session, .. }
+            | Self::DashboardResult { session, .. }
+            | Self::HeaderResult { session, .. }
+            | Self::MutateResult { session, .. }
+            | Self::TorchResult { session, .. }
+            | Self::ReadLocalFileResult { session, .. }
+            | Self::WriteLocalFileResult { session, .. }
+            | Self::RecordResult { session, .. }
+            | Self::PingTraceResult { session, .. }
+            | Self::LookupResult { session, .. }
+            | Self::ListenDelta { session, .. }
+            | Self::WanSample { session, .. } => *session,
+        }
+    }
 }

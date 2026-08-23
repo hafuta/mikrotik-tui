@@ -3,9 +3,10 @@
 use mtui_core::{DASHBOARD_ID, WHEN_YOU_NEED_IT};
 use mtui_ui::{
     CpuCoreView, DashboardView, LayoutMetrics, LoginView, Modal, ModalButton, ModalButtonKind,
-    ModalPanel, ReauthView, constrain_lines, dashboard_content, fill_rect, footer_bar,
-    format_fingerprint, modal_max_scroll, render_action_menu, render_form_sheet, render_login,
-    render_modal, render_probe, render_reauth, render_torch, session_header,
+    ModalPanel, ReauthView, TabLabel, center_in_band, chrome_band_height, constrain_lines,
+    dashboard_content, fill_rect, footer_bar, format_fingerprint, modal_max_scroll,
+    render_action_menu, render_form_sheet, render_login, render_modal, render_probe, render_reauth,
+    render_tab_bar, render_torch, session_header, tab_strip_height,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -15,62 +16,86 @@ use crate::app::{App, Overlay, Pane, Screen};
 use crate::write::ConfirmSession;
 
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
-    let area = frame.area();
+    let full = frame.area();
     let styles = app.styles();
+    let tab_h = tab_strip_height(full.height);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(tab_h), Constraint::Min(1)])
+        .split(full);
+    draw_tab_bar(frame, chunks[0], app);
+    let area = chunks[1];
 
     match app.screen {
         Screen::Login => {
             draw_login(frame, area, app, false);
-            draw_login_overlay(frame, area, app);
+            draw_login_overlay(frame, full, app);
         }
         Screen::Connecting => {
             draw_login(frame, area, app, true);
-            draw_login_overlay(frame, area, app);
+            draw_login_overlay(frame, full, app);
         }
-        Screen::Trust => draw_trust(frame, area, app),
+        Screen::Trust => draw_trust(frame, area, full, app),
         Screen::Main => {
             draw_main(frame, area, app);
             match app.overlay {
                 Overlay::Help => {
-                    let modal = Modal::new("Keyboard help", HELP_TEXT).scroll(app.overlay_scroll);
-                    render_modal(frame, area, &modal, &styles);
+                    let help = crate::help::keyboard_help(app);
+                    let modal = Modal::new("Keyboard help", &help).scroll(app.overlay_scroll);
+                    render_modal(frame, full, &modal, &styles);
                 }
                 Overlay::About => {
                     if let Some(copy) = mtui_core::about_copy(&app.current_resource) {
                         let modal = about_modal(&copy).scroll(app.overlay_scroll);
-                        render_modal(frame, area, &modal, &styles);
+                        render_modal(frame, full, &modal, &styles);
                     }
                 }
                 Overlay::Palette => {
-                    app.palette.render(frame, area, &styles);
+                    app.palette.render(frame, full, &styles);
                 }
-                Overlay::Confirm(ref session) => draw_confirm(frame, area, session, &styles),
+                Overlay::Confirm(ref session) => draw_confirm(frame, full, session, &styles),
                 Overlay::HideMenu {
                     ref title,
                     ref body,
                     ..
-                } => draw_hide_menu(frame, area, title, body, &styles),
-                Overlay::ForgetProfile { ref name } => draw_forget(frame, area, name, &styles),
-                Overlay::Reauth => draw_reauth(frame, area, app),
+                } => draw_hide_menu(frame, full, title, body, &styles),
+                Overlay::ForgetProfile { ref name } => draw_forget(frame, full, name, &styles),
+                Overlay::Reauth => draw_reauth(frame, full, app),
                 Overlay::Form(ref session) => {
                     let schema = session.overlay_schema(
                         mtui_core::resource_by_id(&session.resource_id).and_then(|spec| spec.form),
                     );
-                    render_form_sheet(frame, area, session, schema, &styles);
+                    render_form_sheet(frame, full, session, schema, &styles);
                 }
                 Overlay::ActionMenu(ref menu) | Overlay::TypePicker(ref menu) => {
-                    render_action_menu(frame, area, menu, &styles);
+                    render_action_menu(frame, full, menu, &styles);
                 }
                 Overlay::Torch(ref torch) => {
-                    render_torch(frame, area, torch, &styles);
+                    render_torch(frame, full, torch, &styles);
                 }
                 Overlay::Probe(ref probe) => {
-                    render_probe(frame, area, probe, &styles);
+                    render_probe(frame, full, probe, &styles);
                 }
                 Overlay::None => {}
             }
         }
     }
+}
+
+fn draw_tab_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let styles = app.styles();
+    let tabs: Vec<TabLabel> = app
+        .sessions
+        .iter()
+        .map(|session| {
+            TabLabel::new(
+                session.id.get(),
+                session.tab_title(),
+                session.client.is_some() || session.demo.is_some(),
+            )
+        })
+        .collect();
+    render_tab_bar(frame, area, &tabs, app.active.get(), &styles);
 }
 
 fn login_clock() -> String {
@@ -99,7 +124,8 @@ fn draw_login_overlay(frame: &mut Frame<'_>, area: Rect, app: &App) {
     match &app.overlay {
         Overlay::ForgetProfile { name } => draw_forget(frame, area, name, &styles),
         Overlay::Help => {
-            let modal = Modal::new("Keyboard help", HELP_TEXT).scroll(app.overlay_scroll);
+            let help = crate::help::keyboard_help(app);
+            let modal = Modal::new("Keyboard help", &help).scroll(app.overlay_scroll);
             render_modal(frame, area, &modal, &styles);
         }
         _ => {}
@@ -192,7 +218,7 @@ fn draw_reauth(frame: &mut Frame<'_>, area: Rect, app: &App) {
     );
 }
 
-fn draw_trust(frame: &mut Frame<'_>, area: Rect, app: &App) {
+fn draw_trust(frame: &mut Frame<'_>, area: Rect, overlay: Rect, app: &App) {
     draw_login(frame, area, app, false);
     let styles = app.styles();
     let fingerprint = format_fingerprint(app.trust_fingerprint.as_deref().unwrap_or_default());
@@ -220,7 +246,7 @@ fn draw_trust(frame: &mut Frame<'_>, area: Rect, app: &App) {
     })
     .hint("Approval pins this certificate for the saved session.")
     .buttons(&buttons);
-    render_modal(frame, area, &modal, &styles);
+    render_modal(frame, overlay, &modal, &styles);
 }
 
 fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -229,7 +255,8 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
     let metrics = LayoutMetrics::new(area.width, area.height);
     let console_h = app.console_layout_height();
-    let mut vertical = vec![Constraint::Length(1)];
+    let band = chrome_band_height(app.terminal_height);
+    let mut vertical = vec![Constraint::Length(band)];
     if app.console.fullscreen && app.console.visible {
         vertical.push(Constraint::Min(3));
     } else {
@@ -238,7 +265,7 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
             vertical.push(Constraint::Length(console_h));
         }
     }
-    vertical.push(Constraint::Length(1));
+    vertical.push(Constraint::Length(band));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(vertical)
@@ -253,7 +280,14 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
         &styles,
         app.show_activity(),
     );
-    frame.render_widget(Paragraph::new(header), chunks[0]);
+    frame.render_widget(
+        Paragraph::new(center_in_band(
+            &header,
+            band,
+            usize::from(area.width.max(1)),
+        )),
+        chunks[0],
+    );
 
     let mut chunk_idx = 1;
     if !(app.console.fullscreen && app.console.visible) {
@@ -306,11 +340,10 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .collect();
     fill_rect(frame, chunks[chunk_idx], styles.inset);
     frame.render_widget(
-        Paragraph::new(footer_bar(
-            &status,
-            &hint_refs,
+        Paragraph::new(center_in_band(
+            &footer_bar(&status, &hint_refs, usize::from(area.width.max(1)), &styles),
+            band,
             usize::from(area.width.max(1)),
-            &styles,
         )),
         chunks[chunk_idx],
     );
@@ -439,56 +472,6 @@ fn draw_dashboard(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-const HELP_TEXT: &str = r"↑↓ / j k   move
-pgup/pgdn   page
-g / G       first / last
-h / l       columns · console: inspect JSON body
-← →         panes (after column scroll)
-tab         cycle panes
-`           toggle log console
-enter       open / expand category; edit row; expand log / JSON
-/           filter · console search (when focused)
-s           cycle sort
-r           refresh
-e           edit
-n           add
-d           enable / disable
-c           copy · console: copy focused log
-y           copy selected row / inspector
-Y           copy filtered table
-space       check row (firewall, DHCP, queues) · logs: pause
-*           check all filtered rows
-g           certificates: sign (Home still jumps to first row)
-p           certificates: import (file already on the router)
-w           certificates: export
-x           remove
-f           Files: fetch URL · logs: follow · console: fullscreen
-z           reset counters
-[ / ]       move rule up / down; properties: previous / next tab
-m           make DHCP lease static
-t           torch
-b           reboot (Resources) · save backup (Files)
-o           shutdown (Resources; power off)
-p           ping (Tools · Ping)
-enter       traceroute (Tools · Traceroute)
-a           action menu (Files: load backup)
-ctrl+s      preview changed fields, then save
-1-9         jump to a properties tab (when not typing)
-ctrl+k      command palette
-ctrl+l      log out (keeps saved devices)
-n / x       login list: new / forget device
-space       login: toggle remember password
--           hide menu (confirm) / restore (nav)
-.           show hidden menus / done
-?           help
-i / F1      about this screen
-q           quit
-
-Logs: space pause · f follow · e severity · c clear local
-Console: f fullscreen · pgup/pgdn · n/N next match · enter expand
-Destructive actions ask for confirmation.
-";
-
 fn about_modal(copy: &mtui_core::AboutCopy) -> Modal<'_> {
     Modal::new(&copy.title, &copy.body)
         .kicker(&copy.kicker)
@@ -500,7 +483,10 @@ pub(crate) fn overlay_scroll_max(app: &App) -> u16 {
     let area = Rect::new(0, 0, app.terminal_width, app.terminal_height);
     let styles = app.styles();
     match app.overlay {
-        Overlay::Help => modal_max_scroll(area, &Modal::new("Keyboard help", HELP_TEXT), &styles),
+        Overlay::Help => {
+            let help = crate::help::keyboard_help(app);
+            modal_max_scroll(area, &Modal::new("Keyboard help", &help), &styles)
+        }
         Overlay::About => {
             let Some(copy) = mtui_core::about_copy(&app.current_resource) else {
                 return 0;

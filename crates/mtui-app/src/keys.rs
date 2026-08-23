@@ -6,6 +6,7 @@ use mtui_core::{DASHBOARD_ID, about_copy, resource_by_id};
 use mtui_ui::{FormSession, LoginField, LoginPane};
 
 use crate::app::{App, AppCommand, Overlay, Pane, Screen};
+use crate::session::SessionId;
 
 impl App {
     pub(crate) fn on_key(&mut self, key: KeyEvent) -> Vec<AppCommand> {
@@ -15,6 +16,10 @@ impl App {
             }
             self.should_quit = true;
             return vec![AppCommand::Quit];
+        }
+
+        if let Some(cmds) = self.keys_session_chrome(key) {
+            return cmds;
         }
 
         match self.screen {
@@ -33,6 +38,35 @@ impl App {
             }
             Screen::Trust => self.keys_trust(key),
             Screen::Main => self.keys_main(key),
+        }
+    }
+
+    fn keys_session_chrome(&mut self, key: KeyEvent) -> Option<Vec<AppCommand>> {
+        if !key.modifiers.contains(KeyModifiers::CONTROL) {
+            return None;
+        }
+        match key.code {
+            KeyCode::Char('t') => {
+                let _ = self.new_session();
+                Some(Vec::new())
+            }
+            KeyCode::Char('w') => {
+                if self.sessions.len() <= 1 {
+                    return Some(Vec::new());
+                }
+                let id = self.active;
+                self.close_session(id);
+                Some(vec![AppCommand::CloseSession { session: id }])
+            }
+            KeyCode::Tab | KeyCode::PageDown if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.cycle_session(1);
+                Some(Vec::new())
+            }
+            KeyCode::BackTab | KeyCode::PageUp => {
+                self.cycle_session(-1);
+                Some(Vec::new())
+            }
+            _ => None,
         }
     }
 
@@ -441,7 +475,8 @@ impl App {
                     // ignore
                 } else {
                     self.table.filter.push(ch);
-                    self.table.set_filter(self.table.filter.clone());
+                    let filter = self.table.filter.clone();
+                    self.table.set_filter(filter);
                 }
             }
             KeyCode::Esc => {
@@ -455,7 +490,8 @@ impl App {
             }
             KeyCode::Backspace if !self.table.filter.is_empty() => {
                 self.table.filter.pop();
-                self.table.set_filter(self.table.filter.clone());
+                let filter = self.table.filter.clone();
+                self.table.set_filter(filter);
             }
             _ => {}
         }
@@ -528,40 +564,59 @@ impl App {
             KeyCode::Char('c') => {
                 if let Some(entry) = self.console.selected_entry(&self.console_entries) {
                     return vec![AppCommand::CopyToClipboard {
+                        session: SessionId::UNSTAMPED,
                         text: entry.copy_text(),
                     }];
                 }
             }
             KeyCode::Enter => {
-                self.console.activate(&self.console_entries, filtered_len);
+                self.with_active(|session| {
+                    session
+                        .console
+                        .activate(&session.console_entries, filtered_len);
+                });
                 self.sync_console_viewport();
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                self.console.enter_detail(&self.console_entries);
+                self.with_active(|session| {
+                    session.console.enter_detail(&session.console_entries);
+                });
                 self.sync_console_viewport();
             }
             KeyCode::Left | KeyCode::Char('h') => {
-                self.console.leave_detail(&self.console_entries);
+                self.with_active(|session| {
+                    session.console.leave_detail(&session.console_entries);
+                });
                 self.sync_console_viewport();
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                self.console
-                    .move_cursor(-1, &self.console_entries, filtered_len);
+                self.with_active(|session| {
+                    session
+                        .console
+                        .move_cursor(-1, &session.console_entries, filtered_len);
+                });
                 self.sync_console_viewport();
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.console
-                    .move_cursor(1, &self.console_entries, filtered_len);
+                self.with_active(|session| {
+                    session
+                        .console
+                        .move_cursor(1, &session.console_entries, filtered_len);
+                });
                 self.sync_console_viewport();
             }
             KeyCode::PageUp => {
-                self.console
-                    .page_by(-1, self.console_body_height(), filtered_len);
+                let height = self.console_body_height();
+                self.with_active(|session| {
+                    session.console.page_by(-1, height, filtered_len);
+                });
                 self.sync_console_viewport();
             }
             KeyCode::PageDown => {
-                self.console
-                    .page_by(1, self.console_body_height(), filtered_len);
+                let height = self.console_body_height();
+                self.with_active(|session| {
+                    session.console.page_by(1, height, filtered_len);
+                });
                 self.sync_console_viewport();
             }
             KeyCode::Home | KeyCode::Char('g') => {
@@ -574,9 +629,13 @@ impl App {
             }
             KeyCode::Esc => {
                 if self.console.escape_search() {
-                    self.console.clamp_selection(
-                        self.console.filtered_indices(&self.console_entries).len(),
-                    );
+                    self.with_active(|session| {
+                        let len = session
+                            .console
+                            .filtered_indices(&session.console_entries)
+                            .len();
+                        session.console.clamp_selection(len);
+                    });
                     self.sync_console_viewport();
                     self.status = "Console search cleared".into();
                 } else {
@@ -842,6 +901,7 @@ impl App {
             picker.request_id = request_id;
         }
         vec![AppCommand::FetchLookup {
+            session: SessionId::UNSTAMPED,
             request_id,
             generation,
             resource_id,
@@ -930,11 +990,15 @@ impl App {
                 Vec::new()
             }
             KeyCode::Char(' ') => {
-                if let Overlay::Torch(torch) = &mut self.overlay {
+                if matches!(&self.overlay, Overlay::Torch(_)) {
+                    self.torch_generation = self.torch_generation.wrapping_add(1);
+                    let generation = self.torch_generation;
+                    let Overlay::Torch(torch) = &mut self.overlay else {
+                        return Vec::new();
+                    };
                     torch.running = !torch.running;
                     torch.error = None;
-                    self.torch_generation = self.torch_generation.wrapping_add(1);
-                    torch.generation = self.torch_generation;
+                    torch.generation = generation;
                     if torch.running {
                         return self.torch_sample_command();
                     }
@@ -1131,11 +1195,10 @@ impl App {
             self.table.page_by(direction);
             self.after_table_cursor();
         } else if self.pane == Pane::Inspector {
-            let page = isize::try_from(self.inspector_visible_rows()).unwrap_or(1);
-            self.inspector.move_selection(
-                direction.saturating_mul(page),
-                self.inspector_visible_rows(),
-            );
+            let visible = self.inspector_visible_rows();
+            let page = isize::try_from(visible).unwrap_or(1);
+            self.inspector
+                .move_selection(direction.saturating_mul(page), visible);
         }
     }
 
@@ -1157,7 +1220,8 @@ impl App {
             self.table.select_last();
             self.after_table_cursor();
         } else if self.pane == Pane::Inspector {
-            self.inspector.select_last(self.inspector_visible_rows());
+            let visible = self.inspector_visible_rows();
+            self.inspector.select_last(visible);
         }
     }
 
@@ -1186,12 +1250,18 @@ impl App {
                 }
                 self.after_table_cursor();
             }
-            Pane::Inspector => self
-                .inspector
-                .move_selection(delta, self.inspector_visible_rows()),
+            Pane::Inspector => {
+                let visible = self.inspector_visible_rows();
+                self.inspector.move_selection(delta, visible);
+            }
             Pane::Console => {
-                let len = self.console.filtered_indices(&self.console_entries).len();
-                self.console.move_selection(delta, len);
+                let id = self.active;
+                let session = self.session_mut(id).expect("active session must exist");
+                let len = session
+                    .console
+                    .filtered_indices(&session.console_entries)
+                    .len();
+                session.console.move_selection(delta, len);
                 self.sync_console_viewport();
             }
         }
@@ -2243,7 +2313,7 @@ mod console_tests {
         assert!(
             cmds.iter().any(|cmd| matches!(
                 cmd,
-                crate::app::AppCommand::CopyToClipboard { text }
+                crate::app::AppCommand::CopyToClipboard { text, .. }
                     if text.contains("outbound request") && text.contains("endpoint: /rest/interface")
             )),
             "expected copy command, got {cmds:?}"
@@ -2257,7 +2327,7 @@ mod console_tests {
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
         assert_eq!(app.console_layout_height(), 6);
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));
-        assert_eq!(app.console_layout_height(), 22);
+        assert_eq!(app.console_layout_height(), 15);
     }
 }
 
@@ -2331,6 +2401,7 @@ mod lookup_picker_tests {
         };
 
         let _ = app.update(AppEvent::Worker(WorkerMsg::LookupResult {
+            session: app.test_session(),
             request_id: request_id.wrapping_add(1),
             generation,
             options: vec!["stale".into()],
@@ -2343,6 +2414,7 @@ mod lookup_picker_tests {
         assert!(session.lookup.as_ref().unwrap().loading);
 
         let _ = app.update(AppEvent::Worker(WorkerMsg::LookupResult {
+            session: app.test_session(),
             request_id,
             generation,
             options: vec!["ether1".into(), "ether2".into()],
@@ -2358,6 +2430,7 @@ mod lookup_picker_tests {
         assert!(!session.lookup.as_ref().unwrap().loading);
 
         let _ = app.update(AppEvent::Worker(WorkerMsg::LookupResult {
+            session: app.test_session(),
             request_id,
             generation,
             options: Vec::new(),
@@ -2385,6 +2458,7 @@ mod lookup_picker_tests {
             panic!("expected fetch");
         };
         let _ = app.update(AppEvent::Worker(WorkerMsg::LookupResult {
+            session: app.test_session(),
             request_id,
             generation,
             options: vec!["ether1".into(), "bridge".into()],

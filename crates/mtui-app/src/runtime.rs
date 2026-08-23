@@ -1,5 +1,6 @@
 //! Event loop: terminal + tokio worker bridge.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -18,8 +19,36 @@ use tokio::sync::{mpsc, watch};
 use crate::app::{App, AppCommand};
 use crate::event::{AppEvent, WorkerMsg};
 use crate::render;
+use crate::session::SessionId;
 use crate::telemetry::select_wan_interface;
 use crate::write::MutationOp;
+
+struct SessionIo {
+    view_tx: watch::Sender<u64>,
+    torch_tx: watch::Sender<u64>,
+    probe_tx: watch::Sender<u64>,
+    listen_gate: StreamGate,
+    wan_gate: StreamGate,
+}
+
+impl SessionIo {
+    fn new() -> Self {
+        let (view_tx, _) = watch::channel(0_u64);
+        let (torch_tx, _) = watch::channel(0_u64);
+        let (probe_tx, _) = watch::channel(0_u64);
+        Self {
+            view_tx,
+            torch_tx,
+            probe_tx,
+            listen_gate: StreamGate::default(),
+            wan_gate: StreamGate::default(),
+        }
+    }
+}
+
+fn ensure_io(ios: &mut HashMap<SessionId, SessionIo>, id: SessionId) -> &SessionIo {
+    ios.entry(id).or_insert_with(SessionIo::new)
+}
 
 pub fn run(alt_screen: bool, demo: bool) -> anyhow::Result<()> {
     tracing::info!(color_depth = ?ColorDepth::detect(), "terminal color depth");
@@ -59,33 +88,22 @@ async fn run_ui(
     demo: bool,
 ) -> anyhow::Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel::<WorkerMsg>();
-    let (view_tx, _) = watch::channel(0_u64);
-    let (torch_tx, _) = watch::channel(0_u64);
-    let (probe_tx, _) = watch::channel(0_u64);
-    let listen_gate = StreamGate::default();
-    let wan_gate = StreamGate::default();
+    let mut ios: HashMap<SessionId, SessionIo> = HashMap::new();
     let mut app = App::new(alt_screen)?;
+    ensure_io(&mut ios, app.active);
     let size = terminal.size()?;
     let _ = app.update(AppEvent::Resize {
         width: size.width,
         height: size.height,
     });
     let startup = if demo {
-        app.enter_demo()
+        let cmds = app.enter_demo();
+        app.stamp(cmds)
     } else {
-        app.startup_commands()
+        let cmds = app.startup_commands();
+        app.stamp(cmds)
     };
-    dispatch_commands(
-        rt,
-        &tx,
-        &mut app,
-        startup,
-        &view_tx,
-        &torch_tx,
-        &probe_tx,
-        &listen_gate,
-        &wan_gate,
-    );
+    dispatch_commands(rt, &tx, &mut app, &mut ios, startup);
     let mut tick = tokio::time::interval(Duration::from_secs(2));
     loop {
         app.pull_console_logs();
@@ -96,32 +114,12 @@ async fn run_ui(
         tokio::select! {
             _ = tick.tick() => {
                 let cmds = app.update(AppEvent::Tick);
-                dispatch_commands(
-                    rt,
-                    &tx,
-                    &mut app,
-                    cmds,
-                    &view_tx,
-                    &torch_tx,
-                    &probe_tx,
-                    &listen_gate,
-                    &wan_gate,
-                );
+                dispatch_commands(rt, &tx, &mut app, &mut ios, cmds);
             }
             msg = rx.recv() => {
                 if let Some(msg) = msg {
                     let cmds = app.update(AppEvent::Worker(msg));
-                    dispatch_commands(
-                        rt,
-                        &tx,
-                        &mut app,
-                        cmds,
-                        &view_tx,
-                        &torch_tx,
-                        &probe_tx,
-                        &listen_gate,
-                        &wan_gate,
-                    );
+                    dispatch_commands(rt, &tx, &mut app, &mut ios, cmds);
                 }
             }
             () = tokio::time::sleep(Duration::from_millis(16)) => {
@@ -129,17 +127,7 @@ async fn run_ui(
                     match event::read()? {
                         Event::Key(key) if key.kind == KeyEventKind::Press => {
                             let cmds = app.update(AppEvent::Input(key));
-                            dispatch_commands(
-                                rt,
-                                &tx,
-                                &mut app,
-                                cmds,
-                                &view_tx,
-                                &torch_tx,
-                                &probe_tx,
-                                &listen_gate,
-                                &wan_gate,
-                            );
+                            dispatch_commands(rt, &tx, &mut app, &mut ios, cmds);
                         }
                         Event::Resize(width, height) => {
                             let _ = app.update(AppEvent::Resize { width, height });
@@ -153,33 +141,58 @@ async fn run_ui(
     Ok(())
 }
 
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 fn dispatch_commands(
     rt: &tokio::runtime::Runtime,
     tx: &mpsc::UnboundedSender<WorkerMsg>,
     app: &mut App,
+    ios: &mut HashMap<SessionId, SessionIo>,
     cmds: Vec<AppCommand>,
-    view_tx: &watch::Sender<u64>,
-    torch_tx: &watch::Sender<u64>,
-    probe_tx: &watch::Sender<u64>,
-    listen_gate: &StreamGate,
-    wan_gate: &StreamGate,
 ) {
-    let _ = view_tx.send_replace(app.poll_generation);
-    let _ = torch_tx.send_replace(app.torch_generation);
-    let _ = probe_tx.send_replace(app.probe_generation);
+    ios.retain(|id, _| app.session(*id).is_some());
     for cmd in cmds {
-        if let Some(store) = app.demo.as_mut()
-            && let Some(msgs) = crate::demo::handle(store, &cmd)
-        {
+        if let AppCommand::CloseSession { session } = cmd {
+            ios.remove(&session);
+            continue;
+        }
+        if let AppCommand::Quit = cmd {
+            app.should_quit = true;
+            continue;
+        }
+        let Some(session) = cmd.session() else {
+            continue;
+        };
+        if app.session(session).is_none() {
+            continue;
+        }
+        let io = ensure_io(ios, session);
+        if let Some(target) = app.session(session) {
+            let _ = io.view_tx.send_replace(target.poll_generation);
+            let _ = io.torch_tx.send_replace(target.torch_generation);
+            let _ = io.probe_tx.send_replace(target.probe_generation);
+        }
+        let demo_msgs = app.session_mut(session).and_then(|target| {
+            target
+                .demo
+                .as_mut()
+                .and_then(|store| crate::demo::handle(store, &cmd))
+        });
+        if let Some(msgs) = demo_msgs {
             for msg in msgs {
                 let _ = tx.send(msg);
             }
             continue;
         }
+        let client = app
+            .session(session)
+            .and_then(|target| target.client.clone());
+        let io = ios
+            .get(&session)
+            .expect("session I/O created before dispatch");
         match cmd {
-            AppCommand::Quit => app.should_quit = true,
+            AppCommand::Quit | AppCommand::CloseSession { .. } => {}
             AppCommand::Connect {
+                session,
                 url,
                 username,
                 password,
@@ -188,23 +201,25 @@ fn dispatch_commands(
             } => {
                 let tx = tx.clone();
                 rt.spawn(async move {
-                    let msg = connect_worker(url, username, password, pin, ca_pem).await;
+                    let msg = connect_worker(session, url, username, password, pin, ca_pem).await;
                     let _ = tx.send(msg);
                 });
             }
             AppCommand::FetchResource {
+                session,
                 request_id,
                 generation,
                 resource_id,
             } => {
-                let Some(client) = app.client.clone() else {
+                let Some(client) = client else {
                     continue;
                 };
                 let tx = tx.clone();
-                let mut view_rx = view_tx.subscribe();
-                let gate = listen_gate.clone();
+                let mut view_rx = io.view_tx.subscribe();
+                let gate = io.listen_gate.clone();
                 rt.spawn(async move {
                     fetch_resource(
+                        session,
                         client,
                         request_id,
                         generation,
@@ -217,40 +232,61 @@ fn dispatch_commands(
                 });
             }
             AppCommand::FetchDashboard {
+                session,
                 request_id,
                 generation,
             } => {
-                let Some(client) = app.client.clone() else {
+                let Some(client) = client else {
                     continue;
                 };
                 let tx = tx.clone();
-                let mut view_rx = view_tx.subscribe();
-                let gate = wan_gate.clone();
+                let mut view_rx = io.view_tx.subscribe();
+                let gate = io.wan_gate.clone();
                 rt.spawn(async move {
-                    fetch_dashboard(client, request_id, generation, tx, &mut view_rx, &gate).await;
+                    fetch_dashboard(
+                        session,
+                        client,
+                        request_id,
+                        generation,
+                        tx,
+                        &mut view_rx,
+                        &gate,
+                    )
+                    .await;
                 });
             }
             AppCommand::FetchHeader {
+                session,
                 request_id,
                 generation,
             } => {
-                let Some(client) = app.client.clone() else {
+                let Some(client) = client else {
                     continue;
                 };
                 let tx = tx.clone();
-                let mut view_rx = view_tx.subscribe();
-                let gate = wan_gate.clone();
+                let mut view_rx = io.view_tx.subscribe();
+                let gate = io.wan_gate.clone();
                 rt.spawn(async move {
-                    fetch_header(client, request_id, generation, tx, &mut view_rx, &gate).await;
+                    fetch_header(
+                        session,
+                        client,
+                        request_id,
+                        generation,
+                        tx,
+                        &mut view_rx,
+                        &gate,
+                    )
+                    .await;
                 });
             }
-            AppCommand::ForgetProfile { name } => app.forget_profile(&name),
+            AppCommand::ForgetProfile { name, .. } => app.forget_profile(&name),
             AppCommand::Mutate {
+                session,
                 request_id,
                 generation,
                 op,
             } => {
-                let Some(client) = app.client.clone() else {
+                let Some(client) = client else {
                     continue;
                 };
                 let tx = tx.clone();
@@ -258,11 +294,12 @@ fn dispatch_commands(
                     let error = match run_mutation(&client, op).await {
                         Ok(()) => None,
                         Err(err) => {
-                            send_if_auth(&tx, &err);
+                            send_if_auth(&tx, session, &err);
                             Some(err.to_string())
                         }
                     };
                     let _ = tx.send(WorkerMsg::MutateResult {
+                        session,
                         request_id,
                         generation,
                         error,
@@ -270,6 +307,7 @@ fn dispatch_commands(
                 });
             }
             AppCommand::FetchTorch {
+                session,
                 generation,
                 interface,
                 src,
@@ -278,13 +316,14 @@ fn dispatch_commands(
                 port,
                 ..
             } => {
-                let Some(client) = app.client.clone() else {
+                let Some(client) = client else {
                     continue;
                 };
                 let tx = tx.clone();
-                let mut torch_rx = torch_tx.subscribe();
+                let mut torch_rx = io.torch_tx.subscribe();
                 rt.spawn(async move {
                     stream_torch(
+                        session,
                         client,
                         generation,
                         interface,
@@ -299,17 +338,18 @@ fn dispatch_commands(
                 });
             }
             AppCommand::FetchPing {
+                session,
                 generation,
                 address,
                 count,
                 src,
                 ..
             } => {
-                let Some(client) = app.client.clone() else {
+                let Some(client) = client else {
                     continue;
                 };
                 let tx = tx.clone();
-                let mut probe_rx = probe_tx.subscribe();
+                let mut probe_rx = io.probe_tx.subscribe();
                 let mut fields = std::collections::BTreeMap::new();
                 fields.insert("address".into(), address);
                 fields.insert("count".into(), count);
@@ -318,6 +358,7 @@ fn dispatch_commands(
                 }
                 rt.spawn(async move {
                     stream_probe(
+                        session,
                         client,
                         generation,
                         "/rest/tool".into(),
@@ -330,6 +371,7 @@ fn dispatch_commands(
                 });
             }
             AppCommand::FetchTraceroute {
+                session,
                 generation,
                 address,
                 count,
@@ -337,11 +379,11 @@ fn dispatch_commands(
                 protocol,
                 ..
             } => {
-                let Some(client) = app.client.clone() else {
+                let Some(client) = client else {
                     continue;
                 };
                 let tx = tx.clone();
-                let mut probe_rx = probe_tx.subscribe();
+                let mut probe_rx = io.probe_tx.subscribe();
                 let mut fields = std::collections::BTreeMap::new();
                 fields.insert("address".into(), address);
                 fields.insert("count".into(), count);
@@ -353,6 +395,7 @@ fn dispatch_commands(
                 }
                 rt.spawn(async move {
                     stream_probe(
+                        session,
                         client,
                         generation,
                         "/rest/tool".into(),
@@ -365,19 +408,21 @@ fn dispatch_commands(
                 });
             }
             AppCommand::FetchProbe {
+                session,
                 generation,
                 endpoint,
                 command,
                 fields,
                 ..
             } => {
-                let Some(client) = app.client.clone() else {
+                let Some(client) = client else {
                     continue;
                 };
                 let tx = tx.clone();
-                let mut probe_rx = probe_tx.subscribe();
+                let mut probe_rx = io.probe_tx.subscribe();
                 rt.spawn(async move {
                     stream_probe(
+                        session,
                         client,
                         generation,
                         endpoint,
@@ -389,17 +434,23 @@ fn dispatch_commands(
                     .await;
                 });
             }
-            AppCommand::CopyToClipboard { text } => match copy_to_clipboard(&text) {
-                Ok(()) => {
-                    tracing::info!("copied to clipboard");
-                    app.status = "Copied".into();
+            AppCommand::CopyToClipboard { session, text } => {
+                let status = match copy_to_clipboard(&text) {
+                    Ok(()) => {
+                        tracing::info!("copied to clipboard");
+                        "Copied".into()
+                    }
+                    Err(err) => {
+                        tracing::warn!(error = %err, "clipboard copy failed");
+                        format!("Clipboard copy failed: {err}")
+                    }
+                };
+                if let Some(target) = app.session_mut(session) {
+                    target.status = status;
                 }
-                Err(err) => {
-                    tracing::warn!(error = %err, "clipboard copy failed");
-                    app.status = format!("Clipboard copy failed: {err}");
-                }
-            },
+            }
             AppCommand::ReadLocalFile {
+                session,
                 request_id,
                 generation,
                 path,
@@ -417,6 +468,7 @@ fn dispatch_commands(
                         Err(err) => (None, Some(err.to_string())),
                     };
                     let _ = tx.send(WorkerMsg::ReadLocalFileResult {
+                        session,
                         request_id,
                         generation,
                         remote_name,
@@ -426,6 +478,7 @@ fn dispatch_commands(
                 });
             }
             AppCommand::WriteLocalFile {
+                session,
                 request_id,
                 generation,
                 path,
@@ -443,6 +496,7 @@ fn dispatch_commands(
                         Err(err) => Some(err.to_string()),
                     };
                     let _ = tx.send(WorkerMsg::WriteLocalFileResult {
+                        session,
                         request_id,
                         generation,
                         error,
@@ -450,34 +504,43 @@ fn dispatch_commands(
                 });
             }
             AppCommand::FetchRecord {
+                session,
                 request_id,
                 generation,
                 endpoint,
                 id,
                 local_path,
             } => {
-                let Some(client) = app.client.clone() else {
+                let Some(client) = client else {
                     continue;
                 };
                 let tx = tx.clone();
                 rt.spawn(async move {
-                    let msg =
-                        fetch_file_record(client, request_id, generation, endpoint, id, local_path)
-                            .await;
+                    let msg = fetch_file_record(
+                        session, client, request_id, generation, endpoint, id, local_path,
+                    )
+                    .await;
                     let _ = tx.send(msg);
                 });
             }
             AppCommand::FetchLookup {
+                session,
                 request_id,
                 generation,
                 resource_id,
                 value_key,
             } => {
                 let tx = tx.clone();
-                let client = app.client.clone();
                 rt.spawn(async move {
-                    let msg =
-                        fetch_lookup(client, request_id, generation, resource_id, value_key).await;
+                    let msg = fetch_lookup(
+                        session,
+                        client,
+                        request_id,
+                        generation,
+                        resource_id,
+                        value_key,
+                    )
+                    .await;
                     let _ = tx.send(msg);
                 });
             }
@@ -492,6 +555,7 @@ fn copy_to_clipboard(text: &str) -> Result<(), String> {
 }
 
 async fn connect_worker(
+    session: SessionId,
     url: String,
     username: String,
     password: String,
@@ -509,14 +573,15 @@ async fn connect_worker(
     match Client::connect(options).await {
         Ok(client) => match client.system("/rest/system/resource").await {
             Ok(router) => WorkerMsg::Connected {
+                session,
                 client: Some(Arc::new(client)),
                 router: Some(router),
                 error: None,
                 error_kind: None,
             },
-            Err(err) => tls_or_connect_error(url, had_pin, err).await,
+            Err(err) => tls_or_connect_error(session, url, had_pin, err).await,
         },
-        Err(err) => tls_or_connect_error(url, had_pin, err).await,
+        Err(err) => tls_or_connect_error(session, url, had_pin, err).await,
     }
 }
 
@@ -547,7 +612,9 @@ async fn until_stale(rx: &mut watch::Receiver<u64>, generation: u64) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn fetch_resource(
+    session: SessionId,
     client: Arc<Client>,
     request_id: u64,
     generation: u64,
@@ -558,6 +625,7 @@ async fn fetch_resource(
 ) {
     let Some(spec) = mtui_core::resource_by_id(&resource_id) else {
         let _ = tx.send(WorkerMsg::ResourceResult {
+            session,
             request_id,
             generation,
             resource_id,
@@ -574,6 +642,7 @@ async fn fetch_resource(
     match result {
         Ok(rows) => {
             let _ = tx.send(WorkerMsg::ResourceResult {
+                session,
                 request_id,
                 generation,
                 resource_id: resource_id.clone(),
@@ -582,8 +651,9 @@ async fn fetch_resource(
             });
         }
         Err(err) => {
-            send_if_auth(&tx, &err);
+            send_if_auth(&tx, session, &err);
             let _ = tx.send(WorkerMsg::ResourceResult {
+                session,
                 request_id,
                 generation,
                 resource_id,
@@ -614,6 +684,7 @@ async fn fetch_resource(
                 match sample {
                     Ok(Some(row)) => {
                         let _ = tx.send(WorkerMsg::ListenDelta {
+                            session,
                             generation,
                             resource_id: resource_id.clone(),
                             row,
@@ -630,28 +701,41 @@ fn is_auth_failure(err: &mtui_routeros::Error) -> bool {
     err.kind() == ErrorKind::Auth || matches!(err.status(), Some(401 | 403))
 }
 
-fn send_if_auth(tx: &mpsc::UnboundedSender<WorkerMsg>, err: &mtui_routeros::Error) {
+fn send_if_auth(
+    tx: &mpsc::UnboundedSender<WorkerMsg>,
+    session: SessionId,
+    err: &mtui_routeros::Error,
+) {
     if is_auth_failure(err) {
         let _ = tx.send(WorkerMsg::AuthRequired {
+            session,
             message: crate::app::classify_connect_error(ErrorKind::Auth, err.message()),
         });
     }
 }
 
-async fn tls_or_connect_error(url: String, had_pin: bool, err: mtui_routeros::Error) -> WorkerMsg {
+async fn tls_or_connect_error(
+    session: SessionId,
+    url: String,
+    had_pin: bool,
+    err: mtui_routeros::Error,
+) -> WorkerMsg {
     if !had_pin && err.kind() == ErrorKind::Tls {
         return match probe_certificate(&url).await {
             Ok(fingerprint) => WorkerMsg::ProbeResult {
+                session,
                 fingerprint: Some(fingerprint),
                 error: None,
             },
             Err(probe_err) => WorkerMsg::ProbeResult {
+                session,
                 fingerprint: None,
                 error: Some(probe_err.to_string()),
             },
         };
     }
     WorkerMsg::Connected {
+        session,
         client: None,
         router: None,
         error: Some(err.to_string()),
@@ -660,6 +744,7 @@ async fn tls_or_connect_error(url: String, had_pin: bool, err: mtui_routeros::Er
 }
 
 async fn fetch_lookup(
+    session: SessionId,
     client: Option<Arc<Client>>,
     request_id: u64,
     generation: u64,
@@ -668,6 +753,7 @@ async fn fetch_lookup(
 ) -> WorkerMsg {
     let Some(spec) = mtui_core::resource_by_id(&resource_id) else {
         return WorkerMsg::LookupResult {
+            session,
             request_id,
             generation,
             options: Vec::new(),
@@ -676,6 +762,7 @@ async fn fetch_lookup(
     };
     let Some(client) = client else {
         return WorkerMsg::LookupResult {
+            session,
             request_id,
             generation,
             options: Vec::new(),
@@ -689,12 +776,14 @@ async fn fetch_lookup(
     };
     match result {
         Ok(rows) => WorkerMsg::LookupResult {
+            session,
             request_id,
             generation,
             options: lookup_option_values(&rows, &value_key),
             error: None,
         },
         Err(err) => WorkerMsg::LookupResult {
+            session,
             request_id,
             generation,
             options: Vec::new(),
@@ -722,6 +811,7 @@ fn lookup_option_values(rows: &[mtui_routeros::Resource], value_key: &str) -> Ve
 }
 
 async fn fetch_header(
+    session: SessionId,
     client: Arc<Client>,
     request_id: u64,
     generation: u64,
@@ -737,14 +827,14 @@ async fn fetch_header(
     let (system, system_error) = match sys {
         Ok(record) => (Some(record), None),
         Err(err) => {
-            send_if_auth(&tx, &err);
+            send_if_auth(&tx, session, &err);
             (None, Some(err.to_string()))
         }
     };
     let (interfaces, interface_error) = match interfaces {
         Ok(rows) => (rows, None),
         Err(err) => {
-            send_if_auth(&tx, &err);
+            send_if_auth(&tx, session, &err);
             (Vec::new(), Some(err.to_string()))
         }
     };
@@ -752,6 +842,7 @@ async fn fetch_header(
         .ok()
         .and_then(|iface| iface.field("name").map(ToOwned::to_owned));
     let _ = tx.send(WorkerMsg::HeaderResult {
+        session,
         request_id,
         generation,
         system,
@@ -760,11 +851,12 @@ async fn fetch_header(
         interface_error,
     });
     if let Some(name) = wan_name {
-        stream_wan(client, generation, name, tx, view_rx, gate).await;
+        stream_wan(session, client, generation, name, tx, view_rx, gate).await;
     }
 }
 
 async fn fetch_dashboard(
+    session: SessionId,
     client: Arc<Client>,
     request_id: u64,
     generation: u64,
@@ -782,28 +874,28 @@ async fn fetch_dashboard(
     let (cpu, cpu_error) = match cpu {
         Ok(rows) => (rows, None),
         Err(err) => {
-            send_if_auth(&tx, &err);
+            send_if_auth(&tx, session, &err);
             (Vec::new(), Some(err.to_string()))
         }
     };
     let (system, system_error) = match sys {
         Ok(record) => (Some(record), None),
         Err(err) => {
-            send_if_auth(&tx, &err);
+            send_if_auth(&tx, session, &err);
             (None, Some(err.to_string()))
         }
     };
     let (interfaces, interface_error) = match interfaces {
         Ok(rows) => (rows, None),
         Err(err) => {
-            send_if_auth(&tx, &err);
+            send_if_auth(&tx, session, &err);
             (Vec::new(), Some(err.to_string()))
         }
     };
     let (firewall, firewall_error) = match firewall {
         Ok(rows) => (rows, None),
         Err(err) => {
-            send_if_auth(&tx, &err);
+            send_if_auth(&tx, session, &err);
             (Vec::new(), Some(err.to_string()))
         }
     };
@@ -811,6 +903,7 @@ async fn fetch_dashboard(
         .ok()
         .and_then(|iface| iface.field("name").map(ToOwned::to_owned));
     let _ = tx.send(WorkerMsg::DashboardResult {
+        session,
         request_id,
         generation,
         cpu,
@@ -823,11 +916,12 @@ async fn fetch_dashboard(
         firewall_error,
     });
     if let Some(name) = wan_name {
-        stream_wan(client, generation, name, tx, view_rx, gate).await;
+        stream_wan(session, client, generation, name, tx, view_rx, gate).await;
     }
 }
 
 async fn stream_wan(
+    session: SessionId,
     client: Arc<Client>,
     generation: u64,
     interface: String,
@@ -851,6 +945,7 @@ async fn stream_wan(
                 match sample {
                     Ok(Some(sample)) => {
                         let _ = tx.send(WorkerMsg::WanSample {
+                            session,
                             generation,
                             interface: interface.clone(),
                             sample,
@@ -897,6 +992,7 @@ async fn run_mutation(client: &Client, op: MutationOp) -> mtui_routeros::Result<
 
 #[allow(clippy::too_many_arguments)]
 async fn stream_torch(
+    session: SessionId,
     client: Arc<Client>,
     generation: u64,
     interface: String,
@@ -925,6 +1021,7 @@ async fn stream_torch(
         Ok(stream) => stream,
         Err(err) => {
             let _ = tx.send(WorkerMsg::TorchResult {
+                session,
                 generation,
                 rows: Vec::new(),
                 error: Some(err.to_string()),
@@ -943,6 +1040,7 @@ async fn stream_torch(
                 match sample {
                     Ok(Some(row)) => {
                         let _ = tx.send(WorkerMsg::TorchResult {
+                            session,
                             generation,
                             rows: vec![row.display_row()],
                             error: None,
@@ -951,6 +1049,7 @@ async fn stream_torch(
                     }
                     Ok(None) => {
                         let _ = tx.send(WorkerMsg::TorchResult {
+                            session,
                             generation,
                             rows: Vec::new(),
                             error: None,
@@ -960,6 +1059,7 @@ async fn stream_torch(
                     }
                     Err(err) => {
                         let _ = tx.send(WorkerMsg::TorchResult {
+                            session,
                             generation,
                             rows: Vec::new(),
                             error: Some(err.to_string()),
@@ -974,6 +1074,7 @@ async fn stream_torch(
 }
 
 async fn fetch_file_record(
+    session: SessionId,
     client: std::sync::Arc<Client>,
     request_id: u64,
     generation: u64,
@@ -983,6 +1084,7 @@ async fn fetch_file_record(
 ) -> WorkerMsg {
     match client.get(&endpoint, &id).await {
         Ok(resource) => WorkerMsg::RecordResult {
+            session,
             request_id,
             generation,
             local_path,
@@ -990,6 +1092,7 @@ async fn fetch_file_record(
             error: None,
         },
         Err(err) => WorkerMsg::RecordResult {
+            session,
             request_id,
             generation,
             local_path,
@@ -1001,6 +1104,7 @@ async fn fetch_file_record(
 
 #[allow(clippy::too_many_arguments)]
 async fn stream_probe(
+    session: SessionId,
     client: Arc<Client>,
     generation: u64,
     endpoint: String,
@@ -1013,6 +1117,7 @@ async fn stream_probe(
         Ok(stream) => stream,
         Err(err) => {
             let _ = tx.send(WorkerMsg::PingTraceResult {
+                session,
                 generation,
                 rows: Vec::new(),
                 error: Some(err.to_string()),
@@ -1031,6 +1136,7 @@ async fn stream_probe(
                 match sample {
                     Ok(Some(row)) => {
                         let _ = tx.send(WorkerMsg::PingTraceResult {
+                            session,
                             generation,
                             rows: vec![row.display_row()],
                             error: None,
@@ -1039,6 +1145,7 @@ async fn stream_probe(
                     }
                     Ok(None) => {
                         let _ = tx.send(WorkerMsg::PingTraceResult {
+                            session,
                             generation,
                             rows: Vec::new(),
                             error: None,
@@ -1048,6 +1155,7 @@ async fn stream_probe(
                     }
                     Err(err) => {
                         let _ = tx.send(WorkerMsg::PingTraceResult {
+                            session,
                             generation,
                             rows: Vec::new(),
                             error: Some(err.to_string()),

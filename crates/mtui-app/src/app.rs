@@ -1,6 +1,7 @@
 //! Top-level application model.
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -10,23 +11,24 @@ use mtui_config::{
 };
 use mtui_core::{
     ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet, installed_package_names,
-    navigation_tree, resource_by_id, unavailable_menus,
+    resource_by_id, unavailable_menus,
 };
 
 use mtui_routeros::{
-    Client, ErrorKind, Resource, header_host, merge_listen_record, migrate_connection_target,
+    ErrorKind, Resource, header_host, merge_listen_record, migrate_connection_target,
     parse_connection_target,
 };
 use mtui_ui::{
-    ActionMenuState, Command, CommandPalette, ConsoleEntry, ConsoleLevel, ConsoleState,
-    DashboardGeometry, FirewallHitChart, FormSession, InspectorState, LayoutMetrics, LoginForm,
-    LoginPane, NavState, ProbeState, Row, SavedProfileRow, Signal, SignalLevel, TableState,
-    ToggleHidden, TorchState, console_pane_height, format_rate,
+    ActionMenuState, Command, ConsoleEntry, ConsoleLevel, DashboardGeometry, FirewallHitChart,
+    FormSession, InspectorState, LayoutMetrics, LoginPane, ProbeState, Row, SavedProfileRow,
+    Signal, SignalLevel, TableState, ToggleHidden, TorchState, chrome_band_height,
+    console_pane_height, format_rate, tab_strip_height,
 };
 
 use crate::demo::{DEMO_PROFILE_NAME, DEMO_URL, DemoStore, is_demo_target};
 use crate::event::{AppEvent, WorkerMsg};
-use crate::telemetry::{DashboardTelemetry, select_wan_interface};
+use crate::session::{MAX_SESSIONS, Session, SessionId};
+use crate::telemetry::select_wan_interface;
 use crate::write::{ConfirmSession, MutationOp};
 
 const LOG_BUFFER_CAP: usize = 500;
@@ -87,7 +89,11 @@ pub enum Overlay {
 #[derive(Debug, Clone)]
 pub enum AppCommand {
     Quit,
+    CloseSession {
+        session: SessionId,
+    },
     Connect {
+        session: SessionId,
         url: String,
         username: String,
         password: String,
@@ -95,27 +101,33 @@ pub enum AppCommand {
         ca_pem: Option<Vec<u8>>,
     },
     FetchResource {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         resource_id: String,
     },
     FetchDashboard {
+        session: SessionId,
         request_id: u64,
         generation: u64,
     },
     FetchHeader {
+        session: SessionId,
         request_id: u64,
         generation: u64,
     },
     ForgetProfile {
+        session: SessionId,
         name: String,
     },
     Mutate {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         op: MutationOp,
     },
     FetchTorch {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         interface: String,
@@ -125,6 +137,7 @@ pub enum AppCommand {
         port: String,
     },
     FetchPing {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         address: String,
@@ -132,6 +145,7 @@ pub enum AppCommand {
         src: String,
     },
     FetchTraceroute {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         address: String,
@@ -140,6 +154,7 @@ pub enum AppCommand {
         protocol: String,
     },
     FetchProbe {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         endpoint: String,
@@ -147,21 +162,25 @@ pub enum AppCommand {
         fields: BTreeMap<String, String>,
     },
     CopyToClipboard {
+        session: SessionId,
         text: String,
     },
     ReadLocalFile {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         path: String,
         remote_name: String,
     },
     WriteLocalFile {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         path: String,
         contents: String,
     },
     FetchRecord {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         endpoint: String,
@@ -169,6 +188,7 @@ pub enum AppCommand {
         local_path: String,
     },
     FetchLookup {
+        session: SessionId,
         request_id: u64,
         generation: u64,
         resource_id: String,
@@ -176,59 +196,82 @@ pub enum AppCommand {
     },
 }
 
-#[allow(clippy::struct_excessive_bools)]
+impl AppCommand {
+    #[must_use]
+    pub fn session(&self) -> Option<SessionId> {
+        match self {
+            Self::Quit => None,
+            Self::CloseSession { session }
+            | Self::Connect { session, .. }
+            | Self::FetchResource { session, .. }
+            | Self::FetchDashboard { session, .. }
+            | Self::FetchHeader { session, .. }
+            | Self::ForgetProfile { session, .. }
+            | Self::Mutate { session, .. }
+            | Self::FetchTorch { session, .. }
+            | Self::FetchPing { session, .. }
+            | Self::FetchTraceroute { session, .. }
+            | Self::FetchProbe { session, .. }
+            | Self::CopyToClipboard { session, .. }
+            | Self::ReadLocalFile { session, .. }
+            | Self::WriteLocalFile { session, .. }
+            | Self::FetchRecord { session, .. }
+            | Self::FetchLookup { session, .. } => Some(*session),
+        }
+    }
+
+    fn assign_session(&mut self, id: SessionId) {
+        match self {
+            Self::Quit => {}
+            Self::CloseSession { session }
+            | Self::Connect { session, .. }
+            | Self::FetchResource { session, .. }
+            | Self::FetchDashboard { session, .. }
+            | Self::FetchHeader { session, .. }
+            | Self::ForgetProfile { session, .. }
+            | Self::Mutate { session, .. }
+            | Self::FetchTorch { session, .. }
+            | Self::FetchPing { session, .. }
+            | Self::FetchTraceroute { session, .. }
+            | Self::FetchProbe { session, .. }
+            | Self::CopyToClipboard { session, .. }
+            | Self::ReadLocalFile { session, .. }
+            | Self::WriteLocalFile { session, .. }
+            | Self::FetchRecord { session, .. }
+            | Self::FetchLookup { session, .. } => *session = id,
+        }
+    }
+}
+
 pub struct App {
-    pub screen: Screen,
-    pub login: LoginForm,
+    pub sessions: Vec<Session>,
+    pub active: SessionId,
+    next_session_id: u64,
     pub themes: ThemeRegistry,
     pub theme: ThemeSet,
-    pub nav: NavState,
-    pub pane: Pane,
-    pub overlay: Overlay,
-    pub overlay_scroll: u16,
-    pub palette: CommandPalette,
-    pub table: TableState,
-    pub inspector: InspectorState,
-    pub status: String,
-    pub trust_fingerprint: Option<String>,
-    pub pending_password: Option<String>,
-    pub reauth: ReauthState,
-    connect_intent: ConnectIntent,
-    pub(crate) current_profile: String,
-    pub(crate) saved_url: Option<String>,
-    pub(crate) saved_fingerprint: Option<String>,
-    pub(crate) custom_ca: Option<Vec<u8>>,
-    restore_on_start: bool,
-    pub client: Option<Arc<Client>>,
-    pub current_resource: String,
-    pub loading: bool,
-    pub refreshing: bool,
-    activity_since: Option<Instant>,
-    pub request_id: u64,
-    pub poll_generation: u64,
-    pub torch_generation: u64,
-    pub probe_generation: u64,
     pub should_quit: bool,
     pub alt_screen: bool,
-    pub dash: DashboardTelemetry,
-    pub router: Resource,
     pub terminal_width: u16,
     pub terminal_height: u16,
-    // logs
-    pub log_buffer: VecDeque<Resource>,
-    pub log_seen: HashSet<String>,
-    pub log_paused: bool,
-    pub log_follow: bool,
-    pub log_severity: LogSeverity,
-    pub log_unread: usize,
-    pub console: ConsoleState,
-    pub console_entries: Vec<ConsoleEntry>,
-    console_log_seq: u64,
     pub(crate) log_store: Arc<LogStore>,
-    pane_before_console: Pane,
     pub(crate) profiles: ProfileStore,
     credentials: Box<dyn CredentialStore>,
-    pub(crate) demo: Option<DemoStore>,
+}
+
+impl Deref for App {
+    type Target = Session;
+
+    fn deref(&self) -> &Self::Target {
+        self.session(self.active)
+            .expect("active session must exist")
+    }
+}
+
+impl DerefMut for App {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let id = self.active;
+        self.session_mut(id).expect("active session must exist")
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -273,64 +316,128 @@ impl App {
     ) -> Self {
         let themes = ThemeRegistry::with_default();
         let theme = ThemeSet::from_theme(themes.active().as_ref());
-        let nav = NavState::new(&navigation_tree());
-
+        let first = SessionId::raw(1);
         let mut app = Self {
-            screen: Screen::Login,
-            login: LoginForm::default(),
+            sessions: vec![Session::new(first)],
+            active: first,
+            next_session_id: 2,
             themes,
             theme,
-            nav,
-            pane: Pane::Nav,
-            overlay: Overlay::None,
-            overlay_scroll: 0,
-            palette: CommandPalette::new(palette_commands()),
-            table: TableState::new(&[]),
-            inspector: InspectorState::default(),
-            status: String::from("Enter RouterOS host and credentials"),
-            trust_fingerprint: None,
-            pending_password: None,
-            reauth: ReauthState::default(),
-            connect_intent: ConnectIntent::Login,
-            current_profile: String::new(),
-            saved_url: None,
-            saved_fingerprint: None,
-            custom_ca: None,
-            restore_on_start: false,
-            client: None,
-            current_resource: DASHBOARD_ID.to_string(),
-            loading: false,
-            refreshing: false,
-            activity_since: None,
-            request_id: 0,
-            poll_generation: 0,
-            torch_generation: 0,
-            probe_generation: 0,
             should_quit: false,
             alt_screen,
-            dash: DashboardTelemetry::default(),
-            router: Resource::default(),
             terminal_width: 80,
             terminal_height: 24,
-            log_buffer: VecDeque::new(),
-            log_seen: HashSet::new(),
-            log_paused: false,
-            log_follow: true,
-            log_severity: LogSeverity::All,
-            log_unread: 0,
-            console: ConsoleState::default(),
-            console_entries: Vec::new(),
-            console_log_seq: 0,
             log_store: shared_log_store(),
-            pane_before_console: Pane::Content,
             profiles,
             credentials,
-            demo: None,
         };
 
         app.sync_table_viewport();
         app.load_saved_session();
         app
+    }
+
+    #[must_use]
+    pub fn session(&self, id: SessionId) -> Option<&Session> {
+        self.sessions.iter().find(|session| session.id == id)
+    }
+
+    pub fn session_mut(&mut self, id: SessionId) -> Option<&mut Session> {
+        self.sessions.iter_mut().find(|session| session.id == id)
+    }
+
+    pub(crate) fn with_active<R>(&mut self, f: impl FnOnce(&mut Session) -> R) -> R {
+        let id = self.active;
+        f(self.session_mut(id).expect("active session must exist"))
+    }
+
+    #[must_use]
+    pub fn test_session(&self) -> SessionId {
+        self.active
+    }
+
+    pub fn new_session(&mut self) -> Option<SessionId> {
+        if self.sessions.len() >= MAX_SESSIONS {
+            self.status = format!("Tab limit reached ({MAX_SESSIONS})");
+            return None;
+        }
+        let id = SessionId::raw(self.next_session_id);
+        self.next_session_id += 1;
+        self.sessions.push(Session::new(id));
+        self.active = id;
+        self.reload_profile_rows();
+        Some(id)
+    }
+
+    pub fn close_session(&mut self, id: SessionId) {
+        if self.sessions.len() <= 1 {
+            return;
+        }
+        if let Some(session) = self.session_mut(id) {
+            session.client = None;
+            session.pending_password = None;
+            session.login.password.clear();
+            session.poll_generation = session.poll_generation.wrapping_add(1);
+            session.torch_generation = session.torch_generation.wrapping_add(1);
+            session.probe_generation = session.probe_generation.wrapping_add(1);
+        }
+        let closing_active = self.active == id;
+        let idx = self.sessions.iter().position(|session| session.id == id);
+        self.sessions.retain(|session| session.id != id);
+        if closing_active {
+            let fallback = idx
+                .and_then(|i| i.checked_sub(1))
+                .unwrap_or(0)
+                .min(self.sessions.len().saturating_sub(1));
+            self.active = self.sessions[fallback].id;
+        }
+    }
+
+    pub fn cycle_session(&mut self, delta: isize) {
+        let Some(idx) = self
+            .sessions
+            .iter()
+            .position(|session| session.id == self.active)
+        else {
+            return;
+        };
+        let len = isize::try_from(self.sessions.len()).unwrap_or(1);
+        if len == 0 {
+            return;
+        }
+        let next = (isize::try_from(idx).unwrap_or(0) + delta).rem_euclid(len);
+        let next = usize::try_from(next).unwrap_or(0);
+        self.active = self.sessions[next].id;
+    }
+
+    fn apply_to(
+        &mut self,
+        id: SessionId,
+        f: impl FnOnce(&mut Self) -> Vec<AppCommand>,
+    ) -> Vec<AppCommand> {
+        if self.session(id).is_none() {
+            return Vec::new();
+        }
+        let previous = self.active;
+        self.active = id;
+        let cmds = f(self);
+        let cmds = self.stamp(cmds);
+        self.active = previous;
+        cmds
+    }
+
+    pub(crate) fn stamp(&self, mut cmds: Vec<AppCommand>) -> Vec<AppCommand> {
+        let id = self.active;
+        for cmd in &mut cmds {
+            match cmd {
+                AppCommand::Quit | AppCommand::CloseSession { .. } => {}
+                other if other.session().is_some_and(|session| session.get() == 0) => {
+                    other.assign_session(id);
+                }
+                _ => {}
+            }
+        }
+        cmds
     }
 
     fn load_saved_session(&mut self) {
@@ -524,6 +631,7 @@ impl App {
             "connecting"
         );
         AppCommand::Connect {
+            session: SessionId::UNSTAMPED,
             url: url.clone(),
             username: self.login.username.trim().to_string(),
             password: self.pending_password.clone().unwrap_or_default(),
@@ -826,8 +934,10 @@ impl App {
 
     pub(crate) fn begin_reauth_connect(&mut self) -> Vec<AppCommand> {
         self.connect_intent = ConnectIntent::Reauth;
-        self.login.password.clone_from(&self.reauth.password);
-        self.login.totp.clone_from(&self.reauth.totp);
+        let password = self.reauth.password.clone();
+        let totp = self.reauth.totp.clone();
+        self.login.password = password;
+        self.login.totp = totp;
         self.pending_password = Some(format!(
             "{}{}",
             self.reauth.password,
@@ -845,16 +955,28 @@ impl App {
     pub fn update(&mut self, event: AppEvent) -> Vec<AppCommand> {
         self.pull_console_logs();
         let cmds = match event {
-            AppEvent::Input(key) => self.on_key(key),
-            AppEvent::Worker(msg) => self.on_worker(msg),
+            AppEvent::Input(key) => {
+                let cmds = self.on_key(key);
+                self.stamp(cmds)
+            }
+            AppEvent::Worker(msg) => {
+                let id = msg.session();
+                self.apply_to(id, |app| app.on_worker(msg))
+            }
             AppEvent::Tick => self.on_tick(),
             AppEvent::Resize { width, height } => {
                 self.terminal_width = width.max(1);
                 self.terminal_height = height.max(1);
-                self.palette.width = width.saturating_sub(4).min(64);
-                self.sync_table_viewport();
-                self.sync_console_viewport();
-                self.clamp_overlay_scroll();
+                let ids: Vec<SessionId> = self.sessions.iter().map(|session| session.id).collect();
+                for id in ids {
+                    let _ = self.apply_to(id, |app| {
+                        app.palette.width = width.saturating_sub(4).min(64);
+                        app.sync_table_viewport();
+                        app.sync_console_viewport();
+                        app.clamp_overlay_scroll();
+                        Vec::new()
+                    });
+                }
                 Vec::new()
             }
         };
@@ -876,6 +998,15 @@ impl App {
     }
 
     fn on_tick(&mut self) -> Vec<AppCommand> {
+        let ids: Vec<SessionId> = self.sessions.iter().map(|session| session.id).collect();
+        let mut out = Vec::new();
+        for id in ids {
+            out.extend(self.apply_to(id, Self::poll_tick_if_due));
+        }
+        out
+    }
+
+    fn poll_tick_if_due(&mut self) -> Vec<AppCommand> {
         if self.screen != Screen::Main || self.client.is_none() {
             return Vec::new();
         }
@@ -893,11 +1024,13 @@ impl App {
         if self.current_resource == DASHBOARD_ID {
             self.refreshing = true;
             return vec![AppCommand::FetchDashboard {
+                session: SessionId::UNSTAMPED,
                 request_id: self.next_request(),
                 generation,
             }];
         }
         let mut cmds = vec![AppCommand::FetchHeader {
+            session: SessionId::UNSTAMPED,
             request_id: self.next_request(),
             generation,
         }];
@@ -906,6 +1039,7 @@ impl App {
             cmds.insert(
                 0,
                 AppCommand::FetchResource {
+                    session: SessionId::UNSTAMPED,
                     request_id: self.next_request(),
                     generation,
                     resource_id: self.current_resource.clone(),
@@ -918,7 +1052,9 @@ impl App {
     #[allow(clippy::too_many_lines)]
     fn on_worker(&mut self, msg: WorkerMsg) -> Vec<AppCommand> {
         match msg {
-            WorkerMsg::ProbeResult { fingerprint, error } => {
+            WorkerMsg::ProbeResult {
+                fingerprint, error, ..
+            } => {
                 if let Some(err) = error {
                     self.screen = Screen::Login;
                     self.login.error = Some(classify_connect_error(ErrorKind::Tls, &err));
@@ -935,6 +1071,7 @@ impl App {
                 router,
                 error,
                 error_kind,
+                ..
             } => {
                 if let Some(err) = error {
                     tracing::error!(error = %err, "connection failed");
@@ -978,7 +1115,7 @@ impl App {
                 cmds.extend(self.fetch_packages_command());
                 cmds
             }
-            WorkerMsg::AuthRequired { message } => {
+            WorkerMsg::AuthRequired { message, .. } => {
                 if self.screen == Screen::Main {
                     self.open_reauth(message);
                 }
@@ -990,6 +1127,7 @@ impl App {
                 resource_id,
                 rows,
                 error,
+                ..
             } => {
                 if generation != self.poll_generation
                     || request_id < self.request_id.saturating_sub(1)
@@ -1086,6 +1224,7 @@ impl App {
                 rows,
                 error,
                 done,
+                ..
             } => self.apply_torch_result(generation, rows, error, done),
             WorkerMsg::ReadLocalFileResult { .. } => self.apply_read_local_file(msg),
             WorkerMsg::WriteLocalFileResult { .. } => self.apply_write_local_file(msg),
@@ -1095,12 +1234,14 @@ impl App {
                 rows,
                 error,
                 done,
+                ..
             } => self.apply_probe_result(generation, rows, error, done),
             WorkerMsg::LookupResult {
                 request_id,
                 generation,
                 options,
                 error,
+                ..
             } => {
                 if let Overlay::Form(session) = &mut self.overlay {
                     session.apply_lookup_result(request_id, generation, options, error);
@@ -1111,6 +1252,7 @@ impl App {
                 generation,
                 resource_id,
                 row,
+                ..
             } => {
                 if generation != self.poll_generation || resource_id != self.current_resource {
                     return Vec::new();
@@ -1142,14 +1284,15 @@ impl App {
                 }
                 self.inspector.selected = inspector_selected;
                 self.inspector.offset = offset;
-                self.inspector
-                    .clamp_to_visible(self.inspector_visible_rows());
+                let visible = self.inspector_visible_rows();
+                self.inspector.clamp_to_visible(visible);
                 Vec::new()
             }
             WorkerMsg::WanSample {
                 generation,
                 interface,
                 sample,
+                ..
             } => {
                 if generation != self.poll_generation || self.screen != Screen::Main {
                     return Vec::new();
@@ -1236,17 +1379,20 @@ impl App {
         let generation = self.poll_generation;
         if self.current_resource == DASHBOARD_ID {
             vec![AppCommand::FetchDashboard {
+                session: SessionId::UNSTAMPED,
                 request_id: self.next_request(),
                 generation,
             }]
         } else {
             vec![
                 AppCommand::FetchResource {
+                    session: SessionId::UNSTAMPED,
                     request_id: self.next_request(),
                     generation,
                     resource_id: self.current_resource.clone(),
                 },
                 AppCommand::FetchHeader {
+                    session: SessionId::UNSTAMPED,
                     request_id: self.next_request(),
                     generation,
                 },
@@ -1264,14 +1410,20 @@ impl App {
             Pane::Content => {
                 if let Some(row) = self.table.selected_row() {
                     let text = format_row_for_copy(row);
-                    vec![AppCommand::CopyToClipboard { text }]
+                    vec![AppCommand::CopyToClipboard {
+                        session: SessionId::UNSTAMPED,
+                        text,
+                    }]
                 } else {
                     Vec::new()
                 }
             }
             Pane::Inspector => {
                 let text = format_inspector_for_copy(&self.inspector);
-                vec![AppCommand::CopyToClipboard { text }]
+                vec![AppCommand::CopyToClipboard {
+                    session: SessionId::UNSTAMPED,
+                    text,
+                }]
             }
             _ => Vec::new(),
         }
@@ -1288,7 +1440,10 @@ impl App {
             .map(format_row_for_copy)
             .collect::<Vec<_>>()
             .join("\n\n");
-        vec![AppCommand::CopyToClipboard { text }]
+        vec![AppCommand::CopyToClipboard {
+            session: SessionId::UNSTAMPED,
+            text,
+        }]
     }
 
     pub(crate) fn enter_demo(&mut self) -> Vec<AppCommand> {
@@ -1322,6 +1477,7 @@ impl App {
             return Vec::new();
         }
         vec![AppCommand::FetchResource {
+            session: SessionId::UNSTAMPED,
             request_id: self.next_request(),
             generation: self.poll_generation,
             resource_id: "packages".into(),
@@ -1388,9 +1544,13 @@ impl App {
             .saturating_sub(inspector)
             .saturating_sub(4)
             .max(1);
+        let band = chrome_band_height(self.terminal_height);
         let inner_h = self
             .terminal_height
-            .saturating_sub(4)
+            .saturating_sub(tab_strip_height(self.terminal_height))
+            .saturating_sub(band)
+            .saturating_sub(band)
+            .saturating_sub(2)
             .saturating_sub(self.console_layout_height())
             .max(1);
         (usize::from(inner_w), usize::from(inner_h))
@@ -1407,14 +1567,18 @@ impl App {
     pub(crate) fn sync_table_viewport(&mut self) {
         let (width, height) = self.table_inner_size();
         self.table.sync_viewport(width, height);
-        self.inspector
-            .clamp_to_visible(self.inspector_visible_rows());
+        let visible = self.inspector_visible_rows();
+        self.inspector.clamp_to_visible(visible);
         self.sync_console_viewport();
     }
 
     pub(crate) fn sync_console_viewport(&mut self) {
         let height = usize::from(self.console_layout_height().saturating_sub(2).max(1));
-        self.console.ensure_visible(&self.console_entries, height);
+        let id = self.active;
+        let session = self.session_mut(id).expect("active session must exist");
+        session
+            .console
+            .ensure_visible(&session.console_entries, height);
     }
 
     pub(crate) fn pull_console_logs(&mut self) {
@@ -1635,8 +1799,8 @@ impl App {
         if preserve_offset {
             self.inspector.selected = selected;
             self.inspector.offset = offset;
-            self.inspector
-                .clamp_to_visible(self.inspector_visible_rows());
+            let visible = self.inspector_visible_rows();
+            self.inspector.clamp_to_visible(visible);
         }
     }
 
@@ -2084,6 +2248,7 @@ mod dashboard_tests {
         interface_error: Option<String>,
     ) -> WorkerMsg {
         WorkerMsg::HeaderResult {
+            session: SessionId::raw(1),
             request_id: 1,
             generation,
             system,
@@ -2113,6 +2278,7 @@ mod dashboard_tests {
         let mut app = dashboard_app();
         let before = app.status.clone();
         let cmds = app.update(AppEvent::Worker(WorkerMsg::DashboardResult {
+            session: app.test_session(),
             request_id: 1,
             generation: 2,
             cpu: Vec::new(),
@@ -2227,6 +2393,7 @@ mod dashboard_tests {
         app.select_resource("interfaces");
         let generation = app.poll_generation;
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: 1,
             generation,
             resource_id: "interfaces".into(),
@@ -2236,6 +2403,7 @@ mod dashboard_tests {
         assert_eq!(app.table.row_count(), 1);
         app.select_resource("logs");
         let cmds = app.update(AppEvent::Worker(WorkerMsg::ListenDelta {
+            session: app.test_session(),
             generation,
             resource_id: "interfaces".into(),
             row: wan_interface("2"),
@@ -2251,6 +2419,7 @@ mod dashboard_tests {
         app.current_resource = "interfaces".into();
         app.status = "interfaces".into();
         let cmds = app.update(AppEvent::Worker(WorkerMsg::DashboardResult {
+            session: app.test_session(),
             request_id: 1,
             generation: app.poll_generation,
             cpu: Vec::new(),
@@ -2418,6 +2587,7 @@ mod secret_mask_tests {
         };
 
         let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "wireguard".into(),
@@ -2467,6 +2637,7 @@ mod secret_mask_tests {
         };
 
         let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "macsec".into(),
@@ -2508,6 +2679,7 @@ mod secret_mask_tests {
         };
 
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "interfaces".into(),
@@ -2523,7 +2695,7 @@ mod secret_mask_tests {
         assert!(
             cmds.iter().any(|cmd| matches!(
                 cmd,
-                AppCommand::CopyToClipboard { text }
+                AppCommand::CopyToClipboard { text, .. }
                     if text.contains("name: ether1") && text.contains("mtu: 1500")
             )),
             "expected copy command, got {cmds:?}"
@@ -2663,6 +2835,7 @@ mod session_profile_tests {
 
         app.screen = Screen::Connecting;
         let _ = app.update(AppEvent::Worker(WorkerMsg::Connected {
+            session: app.test_session(),
             client: None,
             router: None,
             error: Some("cannot log in".into()),
@@ -2796,6 +2969,7 @@ mod session_profile_tests {
         app.current_resource = "interfaces".into();
         app.login.username = "admin".into();
         let cmds = app.update(AppEvent::Worker(WorkerMsg::AuthRequired {
+            session: app.test_session(),
             message: "Wrong username, password, or TOTP.".into(),
         }));
         assert!(cmds.is_empty());
@@ -2847,6 +3021,7 @@ mod session_profile_tests {
         let mut second = std::collections::HashMap::new();
         second.insert("name".into(), "ether2".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "interfaces".into(),
@@ -2869,7 +3044,7 @@ mod session_profile_tests {
         assert!(
             cmds.iter().any(|cmd| matches!(
                 cmd,
-                AppCommand::CopyToClipboard { text }
+                AppCommand::CopyToClipboard { text, .. }
                     if text.contains("name: ether1") && text.contains("name: ether2")
             )),
             "expected table copy, got {cmds:?}"

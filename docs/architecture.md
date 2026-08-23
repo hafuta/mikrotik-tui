@@ -15,6 +15,10 @@ networking or persistence. `mtui-routeros` contains no terminal code.
 4. Stale responses are rejected by request generation.
 5. `render::draw` paints entirely from current state and semantic theme tokens.
 
+When more than one device is open, the shell keeps tab ids and shared stores
+while each session owns its client, UI, and I/O. Commands and worker messages
+carry `SessionId`. See [multi-device sessions](multi-device-sessions.md).
+
 ## Security boundaries
 
 - TLS verification is mandatory on `api-ssl` (default 8729). Self-signed

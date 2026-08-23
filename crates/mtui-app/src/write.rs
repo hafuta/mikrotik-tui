@@ -17,6 +17,7 @@ use mtui_ui::{
 
 use crate::app::{App, AppCommand, Overlay, Pane};
 use crate::event::WorkerMsg;
+use crate::session::SessionId;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum MutationOp {
@@ -187,6 +188,7 @@ impl App {
             hints.push(("*".into(), "all".into()));
         }
         hints.push(("r".into(), "refresh".into()));
+        hints.push(("ctrl+t".into(), "tab".into()));
         hints.push(("q".into(), "quit".into()));
         hints
     }
@@ -195,11 +197,11 @@ impl App {
         self.current_resource != "logs" && self.current_resource != DASHBOARD_ID
     }
 
-    fn pane_allows_row_actions(&self) -> bool {
+    pub(crate) fn pane_allows_row_actions(&self) -> bool {
         matches!(self.pane, Pane::Content | Pane::Inspector)
     }
 
-    fn action_offered_in_pane(&self, action: &ActionSpec) -> bool {
+    pub(crate) fn action_offered_in_pane(&self, action: &ActionSpec) -> bool {
         if !self.resource_actions_allowed() || self.pane == Pane::Console {
             return false;
         }
@@ -890,6 +892,7 @@ impl App {
         }
         self.status = "Reading local file…".into();
         vec![AppCommand::ReadLocalFile {
+            session: SessionId::UNSTAMPED,
             request_id: self.next_request(),
             generation: self.poll_generation,
             path,
@@ -927,6 +930,7 @@ impl App {
         if let Some(contents) = contents {
             self.status = "Writing local file…".into();
             return vec![AppCommand::WriteLocalFile {
+                session: SessionId::UNSTAMPED,
                 request_id: self.next_request(),
                 generation: self.poll_generation,
                 path,
@@ -948,6 +952,7 @@ impl App {
         }
         self.status = "Fetching file…".into();
         vec![AppCommand::FetchRecord {
+            session: SessionId::UNSTAMPED,
             request_id: self.next_request(),
             generation: self.poll_generation,
             endpoint,
@@ -1148,6 +1153,7 @@ impl App {
 
     pub(crate) fn mutate_command(&mut self, op: MutationOp) -> AppCommand {
         AppCommand::Mutate {
+            session: SessionId::UNSTAMPED,
             request_id: self.next_request(),
             generation: self.poll_generation,
             op,
@@ -1275,6 +1281,7 @@ impl App {
         };
         self.status = "Writing local file…".into();
         vec![AppCommand::WriteLocalFile {
+            session: SessionId::UNSTAMPED,
             request_id: self.next_request(),
             generation: self.poll_generation,
             path: local_path,
@@ -1335,53 +1342,22 @@ impl App {
     }
 
     pub(crate) fn start_probe(&mut self) -> Vec<AppCommand> {
-        let prepared = {
+        let rejected = {
             let Overlay::Probe(probe) = &mut self.overlay else {
                 return Vec::new();
             };
             let kind = probe.kind;
             if kind.requires_address() && probe.address.trim().is_empty() {
                 probe.error = Some("Address is required".into());
-                None
+                true
             } else if kind.requires_interface() && probe.src.trim().is_empty() {
                 probe.error = Some("Interface is required".into());
-                None
+                true
             } else {
-                self.probe_generation = self.probe_generation.wrapping_add(1);
-                probe.generation = self.probe_generation;
-                probe.running = true;
-                probe.error = None;
-                let count = {
-                    let trimmed = probe.count.trim();
-                    if trimmed.is_empty() {
-                        kind.default_count().to_string()
-                    } else {
-                        trimmed.to_string()
-                    }
-                };
-                let protocol = {
-                    let trimmed = probe.protocol.trim();
-                    if trimmed.is_empty() {
-                        match kind {
-                            ProbeKind::Traceroute => "icmp".into(),
-                            ProbeKind::BandwidthTest => "tcp".into(),
-                            _ => String::new(),
-                        }
-                    } else {
-                        trimmed.to_string()
-                    }
-                };
-                Some((
-                    kind,
-                    probe.generation,
-                    probe.address.trim().to_string(),
-                    count,
-                    probe.src.trim().to_string(),
-                    protocol,
-                ))
+                false
             }
         };
-        let Some((kind, generation, address, count, src, protocol)) = prepared else {
+        if rejected {
             self.status = match &self.overlay {
                 Overlay::Probe(probe) => probe
                     .error
@@ -1390,10 +1366,42 @@ impl App {
                 _ => "Address is required".into(),
             };
             return Vec::new();
+        }
+        self.probe_generation = self.probe_generation.wrapping_add(1);
+        let generation = self.probe_generation;
+        let Overlay::Probe(probe) = &mut self.overlay else {
+            return Vec::new();
         };
+        probe.generation = generation;
+        probe.running = true;
+        probe.error = None;
+        let kind = probe.kind;
+        let count = {
+            let trimmed = probe.count.trim();
+            if trimmed.is_empty() {
+                kind.default_count().to_string()
+            } else {
+                trimmed.to_string()
+            }
+        };
+        let protocol = {
+            let trimmed = probe.protocol.trim();
+            if trimmed.is_empty() {
+                match kind {
+                    ProbeKind::Traceroute => "icmp".into(),
+                    ProbeKind::BandwidthTest => "tcp".into(),
+                    _ => String::new(),
+                }
+            } else {
+                trimmed.to_string()
+            }
+        };
+        let address = probe.address.trim().to_string();
+        let src = probe.src.trim().to_string();
         let request_id = self.next_request();
         match kind {
             ProbeKind::Ping => vec![AppCommand::FetchPing {
+                session: SessionId::UNSTAMPED,
                 request_id,
                 generation,
                 address,
@@ -1401,6 +1409,7 @@ impl App {
                 src,
             }],
             ProbeKind::Traceroute => vec![AppCommand::FetchTraceroute {
+                session: SessionId::UNSTAMPED,
                 request_id,
                 generation,
                 address,
@@ -1409,6 +1418,7 @@ impl App {
                 protocol,
             }],
             other => vec![AppCommand::FetchProbe {
+                session: SessionId::UNSTAMPED,
                 request_id,
                 generation,
                 endpoint: other.endpoint().to_string(),
@@ -1435,6 +1445,7 @@ impl App {
             return Vec::new();
         };
         vec![AppCommand::FetchTorch {
+            session: SessionId::UNSTAMPED,
             request_id: self.next_request(),
             generation,
             interface,
@@ -1572,6 +1583,7 @@ mod tests {
         fields.insert("name".into(), "vlan10".into());
         fields.insert("vlan-id".into(), "10".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "vlan".into(),
@@ -1594,6 +1606,7 @@ mod tests {
         fields.insert("name".into(), "vlan10".into());
         fields.insert("vlan-id".into(), "10".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "vlan".into(),
@@ -1708,6 +1721,7 @@ mod tests {
         fields.insert("listen-port".into(), "13231".into());
         fields.insert("private-key".into(), "MARKER-SECRET".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "wireguard".into(),
@@ -1784,6 +1798,7 @@ mod tests {
         fields.insert("name".into(), "vlan10".into());
         fields.insert("vlan-id".into(), "10".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "vlan".into(),
@@ -1816,6 +1831,7 @@ mod tests {
         fields.insert("name".into(), "web".into());
         fields.insert("common-name".into(), "web.example".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "certificates".into(),
@@ -1936,6 +1952,7 @@ mod tests {
         fields.insert("name".into(), "vlan10".into());
         fields.insert("vlan-id".into(), "10".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "vlan".into(),
@@ -1974,6 +1991,7 @@ mod tests {
         let previous = app.poll_generation;
         app.poll_generation = previous.wrapping_add(1);
         let cmds = app.apply_mutate_result(WorkerMsg::MutateResult {
+            session: app.test_session(),
             request_id: 1,
             generation: previous,
             error: None,
@@ -2093,6 +2111,7 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert("name".into(), name.into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "files".into(),
@@ -2115,6 +2134,7 @@ mod tests {
             fields.insert("contents".into(), text.into());
         }
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "files".into(),
@@ -2192,6 +2212,7 @@ mod tests {
         fields.insert("name".into(), "vlan10".into());
         fields.insert("disabled".into(), "true".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "vlan".into(),
@@ -2229,6 +2250,7 @@ mod tests {
         app.screen = Screen::Main;
         app.select_resource(resource_id);
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: resource_id.into(),
@@ -2404,6 +2426,7 @@ mod tests {
     fn ping_local_fetch_is_empty_without_error() {
         let mut app = ping_screen();
         let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "ping".into(),
@@ -2468,6 +2491,7 @@ mod tests {
         };
         let stale = probe.generation.wrapping_sub(1);
         let cmds = app.update(AppEvent::Worker(WorkerMsg::PingTraceResult {
+            session: app.test_session(),
             generation: stale,
             rows: vec![HashMap::from([("host".into(), "stale".into())])],
             error: None,
@@ -2528,6 +2552,7 @@ mod tests {
             panic!("expected FetchPing");
         };
         let _ = app.update(AppEvent::Worker(WorkerMsg::PingTraceResult {
+            session: app.test_session(),
             generation,
             rows: vec![HashMap::from([("host".into(), "192.0.2.1".into())])],
             error: None,
@@ -2636,6 +2661,7 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert("name".into(), "example.com".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "dns-cache".into(),
@@ -2674,6 +2700,7 @@ mod tests {
         fields.insert("vlan-id".into(), "10".into());
         fields.insert("comment".into(), "old".into());
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
             request_id: app.request_id,
             generation: app.poll_generation,
             resource_id: "vlan".into(),

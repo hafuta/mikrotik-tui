@@ -191,6 +191,51 @@ impl BrailleSparkline<'_> {
     }
 }
 
+const BAR_EIGHTHS: [char; 8] = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+
+/// Horizontal bar whose filled width tracks `percent` (0–100), not sample count.
+#[must_use]
+pub fn percent_bar(percent: f64, width: usize, fill: Style, empty: Style) -> Line<'static> {
+    percent_bar_glyph(percent, width, fill, empty, '█')
+}
+
+/// Lower-half meter so stacked CPU rows keep a hairline gap.
+#[must_use]
+pub fn percent_meter(percent: f64, width: usize, fill: Style, empty: Style) -> Line<'static> {
+    percent_bar_glyph(percent, width, fill, empty, '▄')
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+fn percent_bar_glyph(
+    percent: f64,
+    width: usize,
+    fill: Style,
+    empty: Style,
+    solid_glyph: char,
+) -> Line<'static> {
+    let width = width.max(1);
+    let ratio = percent.clamp(0.0, 100.0) / 100.0;
+    let eighths = (ratio * width as f64 * 8.0).round().max(0.0) as usize;
+    let solid = (eighths / 8).min(width);
+    let rem = if solid < width { eighths % 8 } else { 0 };
+    let mut spans = Vec::new();
+    if solid > 0 {
+        spans.push(Span::styled(solid_glyph.to_string().repeat(solid), fill));
+    }
+    if rem > 0 {
+        spans.push(Span::styled(BAR_EIGHTHS[rem - 1].to_string(), fill));
+    }
+    let used = solid.saturating_add(usize::from(rem > 0));
+    if used < width {
+        spans.push(Span::styled("·".repeat(width.saturating_sub(used)), empty));
+    }
+    Line::from(spans)
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct TrafficCell {
     rx: u8,
@@ -533,5 +578,24 @@ mod tests {
             .chars()
             .position(|ch| ('\u{2800}'..='\u{28FF}').contains(&ch));
         assert!(first_braille.is_some_and(|idx| idx >= 12), "{plain}");
+    }
+
+    #[test]
+    fn percent_bar_width_follows_value_not_history() {
+        let styles = styles();
+        let zero = crate::layout::line_plain(&percent_bar(0.0, 20, styles.signal, styles.quiet));
+        let low = crate::layout::line_plain(&percent_bar(6.0, 20, styles.signal, styles.quiet));
+        let half = crate::layout::line_plain(&percent_bar(50.0, 20, styles.signal, styles.quiet));
+        let full = crate::layout::line_plain(&percent_bar(100.0, 20, styles.signal, styles.quiet));
+        assert_eq!(zero.chars().filter(|ch| *ch == '█').count(), 0);
+        assert!(
+            low.chars().any(|ch| ch == '█' || BAR_EIGHTHS.contains(&ch)),
+            "{low}"
+        );
+        assert_ne!(zero, low, "0% and 6% must not share the same bar");
+        assert!(half.chars().filter(|ch| *ch == '█').count() >= 8, "{half}");
+        assert_eq!(full.chars().filter(|ch| *ch == '█').count(), 20);
+        assert_eq!(unicode_width::UnicodeWidthStr::width(zero.as_str()), 20);
+        assert_eq!(unicode_width::UnicodeWidthStr::width(full.as_str()), 20);
     }
 }
