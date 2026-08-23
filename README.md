@@ -50,8 +50,11 @@ Linux (amd64 and arm64):
 curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh
 ```
 
-The script installs to `~/.local/bin` (or `/usr/local/bin` as root) and asks
-before replacing an existing copy.
+The script prefers a user-owned directory (`~/.local/bin`, then `~/bin`) so
+you do not need root. On a terminal it asks where to install; pass `--yes`
+to take the default, or `--prefix DIR` to pick a directory. System paths
+such as `/usr/local/bin` are offered last. It asks before replacing an
+existing copy.
 
 Windows: download an archive from
 [Releases](https://github.com/hafuta/mikrotik-tui/releases).
