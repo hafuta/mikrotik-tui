@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::{Mutex, mpsc};
@@ -110,7 +110,6 @@ impl Session {
             format!("=name={}", self.inner.username),
             format!("=password={}", self.inner.password),
         ];
-        tracing::info!(command = "/login", "outbound /login");
         let replies = self.request_words("login", words).await?;
         if let Some(trap) = replies.iter().find(|sentence| sentence.is_trap()) {
             return Err(trap.trap_error("login"));
@@ -152,13 +151,16 @@ impl Session {
         operation: &'static str,
         mut words: Vec<String>,
     ) -> Result<Vec<Sentence>> {
+        let command = command_of(&words).to_string();
         let tag = self.next_tag();
         words.push(format!(".tag={tag}"));
         log_outbound(operation, &words);
+        let started = Instant::now();
         let (tx, mut rx) = mpsc::unbounded_channel();
         self.inner.pending.lock().await.insert(tag.clone(), tx);
         if let Err(err) = self.write_sentence(&words).await {
             self.inner.pending.lock().await.remove(&tag);
+            log_request_failed(operation, &command, &tag, &err);
             return Err(err);
         }
         let collected = timeout(self.inner.timeout, async {
@@ -175,25 +177,39 @@ impl Session {
         .await;
         self.inner.pending.lock().await.remove(&tag);
         match collected {
-            Ok(replies) if replies.is_empty() => Err(Error::new(
-                ErrorKind::Transport,
-                operation,
-                "connection closed",
-            )),
+            Ok(replies) if replies.is_empty() => {
+                log_response_err(operation, &command, &tag, started, "connection closed");
+                Err(Error::new(
+                    ErrorKind::Transport,
+                    operation,
+                    "connection closed",
+                ))
+            }
             Ok(replies) => {
                 if let Some(fatal) = replies.iter().find(|sentence| sentence.is_fatal()) {
-                    return Err(Error::new(
-                        ErrorKind::Server,
-                        operation,
-                        fatal.attr("message").unwrap_or("fatal API error"),
-                    ));
+                    let message = fatal.attr("message").unwrap_or("fatal API error");
+                    log_response_err(operation, &command, &tag, started, message);
+                    return Err(Error::new(ErrorKind::Server, operation, message));
                 }
                 if let Some(trap) = replies.iter().find(|sentence| sentence.is_trap()) {
+                    let message = trap
+                        .attr("message")
+                        .or_else(|| trap.attr("detail"))
+                        .unwrap_or("request failed");
+                    log_response_err(operation, &command, &tag, started, message);
                     return Err(trap.trap_error(operation));
                 }
+                log_response_ok(
+                    operation,
+                    &command,
+                    &tag,
+                    started,
+                    Some(count_replies(&replies)),
+                );
                 Ok(replies)
             }
             Err(_) => {
+                log_response_err(operation, &command, &tag, started, "request timed out");
                 let _ = self.write_cancel(tag.as_str()).await;
                 Err(Error::new(
                     ErrorKind::Timeout,
@@ -252,14 +268,79 @@ impl Session {
     }
 }
 
+fn command_of(words: &[String]) -> &str {
+    words.first().map_or("?", String::as_str)
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+fn count_replies(replies: &[Sentence]) -> u64 {
+    u64::try_from(replies.iter().filter(|sentence| sentence.is_re()).count()).unwrap_or(u64::MAX)
+}
+
 fn log_outbound(operation: &str, words: &[String]) {
-    let command = words.first().map_or("?", String::as_str);
+    let command = command_of(words);
     let sentence = Sentence::new(words.to_vec());
-    tracing::info!(operation, command, "outbound {command}");
+    let tag = sentence.tag().unwrap_or("");
+    tracing::info!(operation, command, tag, "outbound {command}");
     tracing::debug!(
         operation,
         sentence = sentence.log_line().as_str(),
         "api sentence"
+    );
+}
+
+pub(crate) fn log_response_ok(
+    operation: &str,
+    command: &str,
+    tag: &str,
+    started: Instant,
+    replies: Option<u64>,
+) {
+    let elapsed_ms = elapsed_ms(started);
+    match replies {
+        Some(replies) => {
+            tracing::info!(
+                operation,
+                command,
+                tag,
+                elapsed_ms,
+                replies,
+                "response {command}"
+            );
+        }
+        None => {
+            tracing::info!(operation, command, tag, elapsed_ms, "response {command}");
+        }
+    }
+}
+
+pub(crate) fn log_response_err(
+    operation: &str,
+    command: &str,
+    tag: &str,
+    started: Instant,
+    error: &str,
+) {
+    tracing::error!(
+        operation,
+        command,
+        tag,
+        elapsed_ms = elapsed_ms(started),
+        error,
+        "response {command}"
+    );
+}
+
+fn log_request_failed(operation: &str, command: &str, tag: &str, err: &Error) {
+    tracing::error!(
+        operation,
+        command,
+        tag,
+        error = err.message(),
+        "request {command} failed"
     );
 }
 
@@ -300,7 +381,20 @@ async fn read_loop(mut reader: ReadHalf<PinBox>, inner: Arc<SessionInner>) {
                 Ok(Some(words)) => {
                     let sentence = Sentence::new(words);
                     if sentence.is_trap() || sentence.is_fatal() {
-                        tracing::error!(sentence = sentence.log_line().as_str(), "api error reply");
+                        // Tagged replies are logged with command context by
+                        // `request` / `ApiStream`. Untagged `!fatal` still
+                        // needs a console line here.
+                        if sentence.tag().is_none() {
+                            tracing::error!(
+                                sentence = sentence.log_line().as_str(),
+                                "api error reply"
+                            );
+                        } else {
+                            tracing::debug!(
+                                sentence = sentence.log_line().as_str(),
+                                "api error reply"
+                            );
+                        }
                     } else if sentence.is_done() {
                         tracing::debug!(
                             tag = sentence.tag().unwrap_or(""),
@@ -389,5 +483,148 @@ mod tests {
         .err()
         .expect("trap");
         assert_eq!(err.kind(), ErrorKind::Auth);
+    }
+
+    #[tokio::test]
+    async fn successful_print_logs_response_at_info() {
+        let logs = capture_logs();
+        let (client, mut server) = tokio::io::duplex(64 * 1024);
+        let server_task = tokio::spawn(async move {
+            let mut buf = vec![0_u8; 4096];
+            let _ = server.read(&mut buf).await;
+            let login_ok = encode_sentence(&["!done", ".tag=1"]);
+            server.write_all(&login_ok).await.unwrap();
+            let _ = server.read(&mut buf).await;
+            let body = [
+                encode_sentence(&["!re", "=.id=*1", "=name=ether1", ".tag=2"]),
+                encode_sentence(&["!done", ".tag=2"]),
+            ]
+            .concat();
+            server.write_all(&body).await.unwrap();
+        });
+
+        let session = Session::from_stream(
+            client,
+            "admin".into(),
+            String::new(),
+            Duration::from_secs(2),
+        )
+        .await
+        .expect("login");
+        session
+            .request("list", vec!["/interface/print".into()])
+            .await
+            .expect("print");
+        server_task.await.unwrap();
+
+        let text = logs.text();
+        assert!(
+            text.contains("outbound /login"),
+            "missing login outbound: {text}"
+        );
+        assert!(
+            text.contains("response /login"),
+            "missing login response: {text}"
+        );
+        assert!(
+            text.contains("outbound /interface/print"),
+            "missing print outbound: {text}"
+        );
+        assert!(
+            text.contains("response /interface/print"),
+            "missing print response: {text}"
+        );
+        assert!(text.contains("replies"), "missing reply count: {text}");
+        assert!(text.contains("elapsed_ms"), "missing elapsed_ms: {text}");
+    }
+
+    #[tokio::test]
+    async fn login_trap_logs_response_at_error() {
+        let logs = capture_logs();
+        let (client, mut server) = tokio::io::duplex(64 * 1024);
+        tokio::spawn(async move {
+            let mut buf = vec![0_u8; 4096];
+            let _ = server.read(&mut buf).await;
+            let trap = encode_sentence(&["!trap", "=message=cannot log in", ".tag=1"]);
+            let _ = server.write_all(&trap).await;
+        });
+        let _ = Session::from_stream(
+            client,
+            "admin".into(),
+            String::new(),
+            Duration::from_secs(2),
+        )
+        .await
+        .err()
+        .expect("trap");
+
+        let text = logs.text();
+        assert!(
+            text.contains("outbound /login"),
+            "missing login outbound: {text}"
+        );
+        assert!(
+            text.contains("response /login"),
+            "missing login response: {text}"
+        );
+        assert!(
+            text.contains("cannot log in"),
+            "missing trap message: {text}"
+        );
+        assert!(
+            text.to_ascii_lowercase().contains("error"),
+            "trap should be an error log: {text}"
+        );
+    }
+
+    fn capture_logs() -> CapturedLogs {
+        let buf = LogBuf::default();
+        let writer = buf.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(move || writer.clone())
+            .finish();
+        CapturedLogs {
+            buf,
+            _guard: tracing::subscriber::set_default(subscriber),
+        }
+    }
+
+    struct CapturedLogs {
+        buf: LogBuf,
+        _guard: tracing::subscriber::DefaultGuard,
+    }
+
+    impl CapturedLogs {
+        fn text(&self) -> String {
+            self.buf.text()
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct LogBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl LogBuf {
+        fn text(&self) -> String {
+            let bytes = self
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            String::from_utf8_lossy(&bytes).into_owned()
+        }
+    }
+
+    impl std::io::Write for LogBuf {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
 }
