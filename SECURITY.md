@@ -7,8 +7,10 @@ It still handles credentials that can be valuable on a local network.
   menus you inspect or edit, plus `api-ssl` access.
 - Keep TLS verification enabled. Approve a self-signed fingerprint only
   after comparing it through a trusted channel.
-- Treat the local credential file as sensitive. It is permission-restricted,
-  not encrypted. Prefer a mounted secret file in shared/container hosts.
+- Treat remembered passwords as sensitive. They are stored in the OS keychain
+  when it is available; the file fallback is permission-restricted, not
+  encrypted. Prefer a mounted secret file on shared or container hosts.
+  Do not enable **Remember password** on a kiosk. TOTP codes are never saved.
 - RouterOS entity secrets (PPP passwords, VPN pre-shared keys, RADIUS secrets,
   SNMP communities, user passwords) are masked in tables, inspectors, and
   logs. Saving a properties sheet does not send a still-masked value back.

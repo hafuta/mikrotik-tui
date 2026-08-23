@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use mtui_config::{
-    Credential, CredentialStore, EnvOverrides, FileCredentialStore, LogLevel, LogRecord, LogStore,
-    Profile, ProfileStore, shared_log_store,
+    Credential, CredentialStore, EnvOverrides, LogLevel, LogRecord, LogStore,
+    PlatformCredentialStore, Profile, ProfileStore, shared_log_store,
 };
 use mtui_core::{
     ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet, navigation_tree,
@@ -14,14 +14,14 @@ use mtui_core::{
 };
 
 use mtui_routeros::{
-    Client, Resource, header_host, merge_listen_record, migrate_connection_target,
+    Client, ErrorKind, Resource, header_host, merge_listen_record, migrate_connection_target,
     parse_connection_target,
 };
 use mtui_ui::{
     ActionMenuState, Command, CommandPalette, ConsoleEntry, ConsoleLevel, ConsoleState,
     DashboardGeometry, FirewallHitChart, FormSession, InspectorState, LayoutMetrics, LoginForm,
-    NavState, ProbeState, Row, Signal, SignalLevel, TableState, ToggleHidden, TorchState,
-    console_pane_height, format_rate,
+    LoginPane, NavState, ProbeState, Row, SavedProfileRow, Signal, SignalLevel, TableState,
+    ToggleHidden, TorchState, console_pane_height, format_rate,
 };
 
 use crate::event::{AppEvent, WorkerMsg};
@@ -29,7 +29,20 @@ use crate::telemetry::{DashboardTelemetry, select_wan_interface};
 use crate::write::{ConfirmSession, MutationOp};
 
 const LOG_BUFFER_CAP: usize = 500;
-const PROFILE_NAME: &str = "default";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectIntent {
+    Login,
+    Reauth,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ReauthState {
+    pub password: String,
+    pub totp: String,
+    pub totp_focus: bool,
+    pub error: Option<String>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -64,6 +77,10 @@ pub enum Overlay {
     TypePicker(ActionMenuState),
     Torch(TorchState),
     Probe(ProbeState),
+    ForgetProfile {
+        name: String,
+    },
+    Reauth,
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +106,9 @@ pub enum AppCommand {
         request_id: u64,
         generation: u64,
     },
-    ClearSession,
+    ForgetProfile {
+        name: String,
+    },
     Mutate {
         request_id: u64,
         generation: u64,
@@ -165,9 +184,12 @@ pub struct App {
     pub status: String,
     pub trust_fingerprint: Option<String>,
     pub pending_password: Option<String>,
-    saved_url: Option<String>,
-    saved_fingerprint: Option<String>,
-    custom_ca: Option<Vec<u8>>,
+    pub reauth: ReauthState,
+    connect_intent: ConnectIntent,
+    pub(crate) current_profile: String,
+    pub(crate) saved_url: Option<String>,
+    pub(crate) saved_fingerprint: Option<String>,
+    pub(crate) custom_ca: Option<Vec<u8>>,
     restore_on_start: bool,
     pub client: Option<Arc<Client>>,
     pub current_resource: String,
@@ -196,8 +218,8 @@ pub struct App {
     console_log_seq: u64,
     pub(crate) log_store: Arc<LogStore>,
     pane_before_console: Pane,
-    profiles: ProfileStore,
-    credentials: FileCredentialStore,
+    pub(crate) profiles: ProfileStore,
+    credentials: Box<dyn CredentialStore>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,11 +252,19 @@ impl LogSeverity {
 
 impl App {
     pub fn new(alt_screen: bool) -> anyhow::Result<Self> {
+        let profiles = ProfileStore::discover()?;
+        let credentials = Box::new(PlatformCredentialStore::discover()?);
+        Ok(Self::compose(alt_screen, profiles, credentials))
+    }
+
+    pub(crate) fn compose(
+        alt_screen: bool,
+        profiles: ProfileStore,
+        credentials: Box<dyn CredentialStore>,
+    ) -> Self {
         let themes = ThemeRegistry::with_default();
         let theme = ThemeSet::from_theme(themes.active().as_ref());
         let nav = NavState::new(&navigation_tree());
-        let profiles = ProfileStore::discover()?;
-        let credentials = FileCredentialStore::discover()?;
 
         let mut app = Self {
             screen: Screen::Login,
@@ -251,6 +281,9 @@ impl App {
             status: String::from("Enter RouterOS host and credentials"),
             trust_fingerprint: None,
             pending_password: None,
+            reauth: ReauthState::default(),
+            connect_intent: ConnectIntent::Login,
+            current_profile: String::new(),
             saved_url: None,
             saved_fingerprint: None,
             custom_ca: None,
@@ -287,43 +320,51 @@ impl App {
 
         app.sync_table_viewport();
         app.load_saved_session();
-        Ok(app)
+        app
     }
 
     fn load_saved_session(&mut self) {
         let overrides = EnvOverrides::from_env();
-        let mut profile = self
-            .profiles
-            .load()
-            .ok()
-            .and_then(|list| list.into_iter().next())
-            .unwrap_or_else(|| Profile {
-                name: PROFILE_NAME.into(),
-                ..Profile::default()
-            });
+        self.reload_profile_rows();
+        let last_used = self.profiles.last_used().ok().flatten();
+        let mut profile = if let Some(name) = last_used.as_deref() {
+            self.profiles
+                .load()
+                .ok()
+                .and_then(|list| list.into_iter().find(|item| item.name == name))
+        } else {
+            self.profiles
+                .load()
+                .ok()
+                .and_then(|list| list.into_iter().next())
+        }
+        .unwrap_or_default();
+
         if let Err(err) = overrides.apply_to_profile(&mut profile) {
             self.status = format!("Saved session overrides failed: {err}");
         }
-        if !profile.url.is_empty() {
-            self.login.url = migrate_connection_target(&profile.url);
+
+        if profile.name.is_empty() {
+            if !profile.url.is_empty() {
+                self.login.url = migrate_connection_target(&profile.url);
+            }
+            if !profile.username.is_empty() {
+                self.login.username.clone_from(&profile.username);
+            }
+            self.login.pane = LoginPane::Form;
+            self.login.focus = mtui_ui::LoginField::Url;
+        } else {
+            self.apply_profile(&profile, true);
         }
-        if !profile.username.is_empty() {
-            self.login.username.clone_from(&profile.username);
-        }
-        if let Some(theme_id) = profile.theme_id() {
-            let _ = self.themes.set_active(theme_id);
-            self.theme = ThemeSet::from_theme(self.themes.active().as_ref());
-        }
-        self.nav.set_hidden_ids(profile.hidden_nav_ids());
-        self.rebuild_palette();
-        if !profile.certificate_fingerprint.is_empty() {
-            self.saved_fingerprint = Some(profile.certificate_fingerprint.clone());
-            self.saved_url = Some(normalize_router_url(&profile.url));
-        }
-        if !profile.custom_ca.is_empty() {
-            self.custom_ca = Some(profile.custom_ca.into_bytes());
-        }
-        match overrides.resolve_password(&profile.name, Some(&self.credentials)) {
+
+        match overrides.resolve_password(
+            if self.current_profile.is_empty() {
+                profile.name.as_str()
+            } else {
+                self.current_profile.as_str()
+            },
+            Some(&*self.credentials),
+        ) {
             Ok(Some(password)) => self.login.password = password,
             Ok(None) => {}
             Err(err) => {
@@ -331,15 +372,106 @@ impl App {
                 return;
             }
         }
+
         let has_router =
             is_router_target(&self.login.url) && !self.login.username.trim().is_empty();
-        if has_router {
+        if has_router && !self.login.uses_totp {
             self.restore_on_start = true;
-            self.status = if self.login.password.is_empty() {
-                format!("Loaded profile '{}'; press Enter to connect", profile.name)
+            self.status = if self.login.password.is_empty() && !self.login.remember_password {
+                format!(
+                    "Loaded {} · enter password to connect",
+                    self.profile_label()
+                )
             } else {
-                "Restoring saved session…".into()
+                format!("Restoring {}…", self.profile_label())
             };
+        } else if has_router && self.login.uses_totp {
+            self.login.pane = LoginPane::Form;
+            self.login.focus = mtui_ui::LoginField::Totp;
+            self.status = format!("Enter TOTP for {}", self.profile_label());
+        } else if !self.login.profiles.is_empty() {
+            self.login.pane = LoginPane::List;
+            self.status = "Select a router · n new · enter connect".into();
+        }
+    }
+
+    fn reload_profile_rows(&mut self) {
+        let rows = self
+            .profiles
+            .load()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|profile| SavedProfileRow {
+                name: profile.name,
+                url: migrate_connection_target(&profile.url),
+                username: profile.username,
+                remember_password: profile.remember_password,
+                uses_totp: profile.uses_totp,
+            })
+            .collect::<Vec<_>>();
+        self.login.profiles = rows;
+        if self.login.selected_profile >= self.login.profiles.len() {
+            self.login.selected_profile = self.login.profiles.len().saturating_sub(1);
+        }
+    }
+
+    pub(crate) fn apply_profile(&mut self, profile: &Profile, load_secret: bool) {
+        self.current_profile.clone_from(&profile.name);
+        self.login.name.clone_from(&profile.name);
+        self.login.url = migrate_connection_target(&profile.url);
+        self.login.username.clone_from(&profile.username);
+        self.login.remember_password = profile.remember_password;
+        self.login.uses_totp = profile.uses_totp;
+        self.login.totp.clear();
+        if let Some(idx) = self
+            .login
+            .profiles
+            .iter()
+            .position(|row| row.name == profile.name)
+        {
+            self.login.selected_profile = idx;
+        }
+        if let Some(theme_id) = profile.theme_id() {
+            let _ = self.themes.set_active(theme_id);
+            self.theme = ThemeSet::from_theme(self.themes.active().as_ref());
+        }
+        self.nav.set_hidden_ids(profile.hidden_nav_ids());
+        self.rebuild_palette();
+        if profile.certificate_fingerprint.is_empty() {
+            self.saved_fingerprint = None;
+            self.saved_url = None;
+        } else {
+            self.saved_fingerprint = Some(profile.certificate_fingerprint.clone());
+            self.saved_url = Some(normalize_router_url(&profile.url));
+        }
+        if profile.custom_ca.is_empty() {
+            self.custom_ca = None;
+        } else {
+            self.custom_ca = Some(profile.custom_ca.clone().into_bytes());
+        }
+        if load_secret && profile.remember_password {
+            match EnvOverrides::from_env().resolve_password(&profile.name, Some(&*self.credentials))
+            {
+                Ok(Some(password)) => self.login.password = password,
+                Ok(None) => self.login.password.clear(),
+                Err(err) => {
+                    self.status = format!("Saved credentials unavailable: {err}");
+                    self.login.password.clear();
+                }
+            }
+        } else if load_secret {
+            self.login.password.clear();
+        }
+        if !self.login.profiles.is_empty() {
+            self.login.pane = LoginPane::List;
+        }
+    }
+
+    pub(crate) fn profile_label(&self) -> String {
+        if self.login.name.trim().is_empty() {
+            "device".into()
+        } else {
+            self.login.name.trim().to_string()
         }
     }
 
@@ -349,13 +481,13 @@ impl App {
             return Vec::new();
         }
         self.restore_on_start = false;
+        if self.login.uses_totp {
+            return Vec::new();
+        }
         if !is_router_target(&self.login.url) || self.login.username.trim().is_empty() {
             return Vec::new();
         }
-        self.pending_password = Some(self.login.password.clone());
-        self.screen = Screen::Connecting;
-        self.status = "Restoring saved session…".into();
-        vec![self.connect_command()]
+        self.begin_connect()
     }
 
     pub(crate) fn connect_command(&self) -> AppCommand {
@@ -363,6 +495,7 @@ impl App {
         tracing::info!(
             url = url.as_str(),
             username = self.login.username.trim(),
+            profile = self.current_profile.as_str(),
             "connecting"
         );
         AppCommand::Connect {
@@ -372,6 +505,38 @@ impl App {
             pin: self.pin_for_url(&url),
             ca_pem: self.custom_ca.clone(),
         }
+    }
+
+    pub(crate) fn begin_connect(&mut self) -> Vec<AppCommand> {
+        if !is_router_target(&self.login.url) {
+            self.login.error = Some("Enter a router host (host or host:8729)".into());
+            self.status = "Enter a router host (host or host:8729)".into();
+            return Vec::new();
+        }
+        if self.login.username.trim().is_empty() {
+            self.login.error = Some("Username is required".into());
+            self.status = "Username is required".into();
+            return Vec::new();
+        }
+        if self.login.name.trim().is_empty() {
+            self.login.name = suggested_profile_name(
+                &self.login.url,
+                self.login.username.trim(),
+                &self
+                    .login
+                    .profiles
+                    .iter()
+                    .map(|row| row.name.clone())
+                    .collect::<Vec<_>>(),
+            );
+        }
+        self.current_profile = self.login.name.trim().to_string();
+        self.login.error = None;
+        self.connect_intent = ConnectIntent::Login;
+        self.pending_password = Some(self.login.connect_secret());
+        self.screen = Screen::Connecting;
+        self.status = format!("Connecting to {}…", self.profile_label());
+        vec![self.connect_command()]
     }
 
     fn pin_for_url(&self, url: &str) -> Option<String> {
@@ -389,31 +554,67 @@ impl App {
     }
 
     fn persist_connected_session(&mut self) {
+        if cfg!(test) && self.current_profile.is_empty() {
+            return;
+        }
         let url = normalize_router_url(&self.login.url);
         let fingerprint = self.pin_for_url(&url).unwrap_or_default();
+        let name = if self.current_profile.trim().is_empty() {
+            suggested_profile_name(
+                &url,
+                self.login.username.trim(),
+                &self
+                    .login
+                    .profiles
+                    .iter()
+                    .map(|row| row.name.clone())
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            self.current_profile.trim().to_string()
+        };
+        self.current_profile.clone_from(&name);
+        self.login.name.clone_from(&name);
         let mut profile = self.named_profile().unwrap_or_else(|| Profile {
-            name: PROFILE_NAME.into(),
+            name: name.clone(),
             ..Profile::default()
         });
-        profile.name = PROFILE_NAME.into();
+        profile.name.clone_from(&name);
         profile.url.clone_from(&url);
         profile.username = self.login.username.trim().to_string();
         profile.certificate_fingerprint.clone_from(&fingerprint);
         if let Some(pem) = &self.custom_ca {
             profile.custom_ca = String::from_utf8_lossy(pem).into_owned();
         }
+        profile.remember_password = self.login.remember_password;
+        profile.uses_totp = self.login.uses_totp || !self.login.totp.trim().is_empty();
+        self.login.uses_totp = profile.uses_totp;
         profile.set_theme_id(self.theme.id.as_str());
         profile.set_hidden_nav_ids(self.nav.hidden.iter().cloned());
-        let password = self.pending_password.clone().unwrap_or_default();
-        if self
-            .profiles
-            .save(std::slice::from_ref(&profile))
-            .and_then(|()| self.credentials.put(&profile.name, Credential { password }))
-            .is_err()
-        {
+        let static_password = self.login.password.clone();
+        if self.profiles.upsert(profile).is_err() {
             self.status = "Connected · profile could not be saved".into();
             return;
         }
+        let _ = self.profiles.set_last_used(&name);
+        if self.login.remember_password {
+            if self
+                .credentials
+                .put(
+                    &name,
+                    Credential {
+                        password: static_password,
+                    },
+                )
+                .is_err()
+            {
+                self.status = "Connected · password could not be stored".into();
+            }
+        } else {
+            let _ = self.credentials.delete(&name);
+        }
+        self.login.totp.clear();
+        self.reload_profile_rows();
         self.saved_url = Some(url);
         self.saved_fingerprint = if fingerprint.is_empty() {
             None
@@ -422,14 +623,99 @@ impl App {
         };
     }
 
-    pub(crate) fn clear_saved_session(&mut self) {
-        let _ = self.profiles.save(&[]);
-        let _ = self.credentials.delete(PROFILE_NAME);
-        self.saved_fingerprint = None;
-        self.saved_url = None;
+    pub(crate) fn forget_profile(&mut self, name: &str) {
+        let _ = self.profiles.delete(name);
+        let _ = self.credentials.delete(name);
+        if self.current_profile == name {
+            self.current_profile.clear();
+            self.saved_fingerprint = None;
+            self.saved_url = None;
+        }
+        self.reload_profile_rows();
+        if self.login.profiles.is_empty() {
+            self.login = LoginForm::default();
+            self.status = "Device forgotten · add a new router".into();
+        } else {
+            if let Some(row) = self.login.selected_row().cloned()
+                && let Some(profile) = self
+                    .profiles
+                    .load()
+                    .ok()
+                    .into_iter()
+                    .flatten()
+                    .find(|item| item.name == row.name)
+            {
+                self.apply_profile(&profile, true);
+            }
+            self.status = format!("Forgot {name}");
+        }
         self.restore_on_start = false;
     }
 
+    pub(crate) fn bump_request_generation(&mut self) {
+        self.poll_generation = self.poll_generation.wrapping_add(1);
+        self.torch_generation = self.torch_generation.wrapping_add(1);
+        self.probe_generation = self.probe_generation.wrapping_add(1);
+    }
+
+    pub(crate) fn disconnect_to_profiles(&mut self) {
+        self.bump_request_generation();
+        self.client = None;
+        self.router = Resource::default();
+        self.overlay = Overlay::None;
+        self.connect_intent = ConnectIntent::Login;
+        self.pending_password = None;
+        self.trust_fingerprint = None;
+        self.login.totp.clear();
+        self.login.password.clear();
+        self.reload_profile_rows();
+        if let Some(name) = self.profiles.last_used().ok().flatten()
+            && let Some(profile) = self
+                .profiles
+                .load()
+                .ok()
+                .into_iter()
+                .flatten()
+                .find(|item| item.name == name)
+        {
+            self.apply_profile(&profile, true);
+        } else if self.login.profiles.is_empty() {
+            self.login.pane = LoginPane::Form;
+        } else {
+            self.login.pane = LoginPane::List;
+        }
+        self.screen = Screen::Login;
+        self.status = "Disconnected · profiles kept".into();
+    }
+
+    pub(crate) fn open_reauth(&mut self, message: String) {
+        if matches!(self.overlay, Overlay::Reauth) {
+            return;
+        }
+        self.reauth = ReauthState {
+            password: self.login.password.clone(),
+            totp: String::new(),
+            totp_focus: self.login.uses_totp,
+            error: Some(message),
+        };
+        self.overlay = Overlay::Reauth;
+        self.status = "Session expired · sign in again".into();
+    }
+
+    pub(crate) fn begin_reauth_connect(&mut self) -> Vec<AppCommand> {
+        self.connect_intent = ConnectIntent::Reauth;
+        self.login.password.clone_from(&self.reauth.password);
+        self.login.totp.clone_from(&self.reauth.totp);
+        self.pending_password = Some(format!(
+            "{}{}",
+            self.reauth.password,
+            self.reauth.totp.trim()
+        ));
+        self.status = "Reconnecting…".into();
+        vec![self.connect_command()]
+    }
+
+    #[must_use]
     pub fn styles(&self) -> mtui_ui::Styles {
         mtui_ui::Styles::from_palette(&self.theme.palette)
     }
@@ -513,7 +799,7 @@ impl App {
             WorkerMsg::ProbeResult { fingerprint, error } => {
                 if let Some(err) = error {
                     self.screen = Screen::Login;
-                    self.login.error = Some(err);
+                    self.login.error = Some(classify_connect_error(ErrorKind::Tls, &err));
                     self.status = "Certificate probe failed".into();
                     return Vec::new();
                 }
@@ -526,12 +812,20 @@ impl App {
                 client,
                 router,
                 error,
+                error_kind,
             } => {
                 if let Some(err) = error {
                     tracing::error!(error = %err, "connection failed");
+                    let kind = error_kind.unwrap_or(ErrorKind::Transport);
+                    let copy = classify_connect_error(kind, &err);
+                    if self.connect_intent == ConnectIntent::Reauth {
+                        self.reauth.error = Some(copy.clone());
+                        self.status = copy;
+                        return Vec::new();
+                    }
                     self.screen = Screen::Login;
-                    self.login.error = Some(err);
-                    self.status = "Connection failed".into();
+                    self.login.error = Some(copy.clone());
+                    self.status = copy;
                     return Vec::new();
                 }
                 tracing::info!("connected");
@@ -541,15 +835,30 @@ impl App {
                 } else {
                     self.router = Resource::default();
                 }
+                self.login.error = None;
+                self.persist_connected_session();
+                if self.connect_intent == ConnectIntent::Reauth {
+                    self.connect_intent = ConnectIntent::Login;
+                    self.overlay = Overlay::None;
+                    self.reauth = ReauthState::default();
+                    self.screen = Screen::Main;
+                    self.status = "Reconnected".into();
+                    return self.poll_current();
+                }
                 self.screen = Screen::Main;
-                self.status = "Connected".into();
+                self.status = format!("Connected · {}", self.profile_label());
                 let start = self
                     .nav
                     .first_openable_id()
                     .unwrap_or_else(|| DASHBOARD_ID.to_string());
                 self.select_resource(&start);
-                self.persist_connected_session();
                 self.poll_current()
+            }
+            WorkerMsg::AuthRequired { message } => {
+                if self.screen == Screen::Main {
+                    self.open_reauth(message);
+                }
+                Vec::new()
             }
             WorkerMsg::ResourceResult {
                 request_id,
@@ -1217,10 +1526,14 @@ impl App {
     }
 
     fn named_profile(&self) -> Option<Profile> {
-        self.profiles.load().ok().and_then(|list| {
-            list.into_iter()
-                .find(|profile| profile.name == PROFILE_NAME)
-        })
+        let name = self.current_profile.as_str();
+        if name.is_empty() {
+            return None;
+        }
+        self.profiles
+            .load()
+            .ok()
+            .and_then(|list| list.into_iter().find(|profile| profile.name == name))
     }
 
     pub(crate) fn rebuild_palette(&mut self) {
@@ -1344,7 +1657,11 @@ fn palette_commands_filtered(hidden: &HashSet<String>, show_hidden: bool) -> Vec
     };
     let mut commands = vec![
         Command::new("refresh", "Refresh").with_description("reload the current resource"),
-        Command::new("logout", "Log out").with_description("forget this router session"),
+        Command::new("logout", "Log out").with_description("disconnect and keep saved devices"),
+        Command::new("switch-device", "Switch device")
+            .with_description("return to the router list without deleting profiles"),
+        Command::new("forget-device", "Forget this device")
+            .with_description("delete this profile and its remembered password"),
         Command::new("help", "Keyboard help").with_description("show all shortcuts"),
         Command::new("about", "About this screen")
             .with_description("RouterOS summary for the open menu"),
@@ -1390,6 +1707,54 @@ fn normalize_router_url(url: &str) -> String {
 
 pub(crate) fn is_router_target(url: &str) -> bool {
     parse_connection_target(url, "login").is_ok()
+}
+
+pub(crate) fn classify_connect_error(kind: ErrorKind, message: &str) -> String {
+    match kind {
+        ErrorKind::Auth => {
+            "Wrong username, password, or TOTP. The router rejected this login.".into()
+        }
+        ErrorKind::Tls => {
+            "TLS or certificate pin mismatch. Confirm the fingerprint or custom CA.".into()
+        }
+        ErrorKind::Transport | ErrorKind::Timeout => {
+            "Cannot reach api-ssl. Check the host, port 8729, and that api-ssl is enabled.".into()
+        }
+        ErrorKind::Canceled => "Connection canceled.".into(),
+        _ => {
+            if message.to_ascii_lowercase().contains("cannot log in")
+                || message.to_ascii_lowercase().contains("invalid user")
+            {
+                "Wrong username, password, or TOTP. The router rejected this login.".into()
+            } else {
+                message.to_string()
+            }
+        }
+    }
+}
+
+fn suggested_profile_name(url: &str, username: &str, taken: &[String]) -> String {
+    let host = header_host(url);
+    let host = if host.is_empty() {
+        "router".to_string()
+    } else {
+        host
+    };
+    let base = if username.is_empty() {
+        host
+    } else {
+        format!("{host} · {username}")
+    };
+    if !taken.iter().any(|name| name == &base) {
+        return base;
+    }
+    for index in 2..100 {
+        let candidate = format!("{base} {index}");
+        if !taken.iter().any(|name| name == &candidate) {
+            return candidate;
+        }
+    }
+    format!("{base} {}", taken.len().saturating_add(1))
 }
 
 fn loaded_entity_id(rows: &[Resource]) -> Option<&str> {
@@ -1983,4 +2348,186 @@ fn format_inspector_for_copy(inspector: &mtui_ui::InspectorState) -> String {
         .map(|(k, v)| format!("{k}: {v}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod session_profile_tests {
+    use super::*;
+    use mtui_config::{Credential, CredentialStore, FileCredentialStore, ProfileStore};
+    use mtui_ui::LoginPane;
+    use std::path::PathBuf;
+
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(label: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "mtui-app-session-{label}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn isolated_app(label: &str) -> (App, TempDir) {
+        let dir = TempDir::new(label);
+        let app = App::compose(
+            false,
+            ProfileStore::new(&dir.0),
+            Box::new(FileCredentialStore::new(&dir.0)),
+        );
+        (app, dir)
+    }
+
+    fn sample_profile(name: &str, user: &str) -> Profile {
+        Profile {
+            name: name.into(),
+            url: "192.168.88.1:8729".into(),
+            username: user.into(),
+            remember_password: true,
+            ..Profile::default()
+        }
+    }
+
+    #[test]
+    fn persist_upserts_without_wiping_siblings() {
+        let (mut app, dir) = isolated_app("upsert");
+        let store = ProfileStore::new(&dir.0);
+        store.upsert(sample_profile("edge", "admin")).unwrap();
+        app.login.url = "10.0.0.1:8729".into();
+        app.login.username = "reader".into();
+        app.login.password = "pw".into();
+        app.login.name = "core".into();
+        app.login.remember_password = true;
+        app.current_profile = "core".into();
+        app.pending_password = Some("pw".into());
+        app.persist_connected_session();
+        let names: Vec<_> = store.load().unwrap().into_iter().map(|p| p.name).collect();
+        assert!(names.contains(&"edge".to_string()));
+        assert!(names.contains(&"core".to_string()));
+        assert_eq!(store.last_used().unwrap().as_deref(), Some("core"));
+        let creds = FileCredentialStore::new(&dir.0);
+        assert_eq!(creds.get("core").unwrap().password, "pw");
+    }
+
+    #[test]
+    fn remember_off_deletes_the_stored_secret() {
+        let (mut app, dir) = isolated_app("remember-off");
+        let creds = FileCredentialStore::new(&dir.0);
+        creds
+            .put(
+                "core",
+                Credential {
+                    password: "old".into(),
+                },
+            )
+            .unwrap();
+        app.login.url = "10.0.0.1:8729".into();
+        app.login.username = "admin".into();
+        app.login.password = "typed".into();
+        app.login.name = "core".into();
+        app.login.remember_password = false;
+        app.current_profile = "core".into();
+        app.persist_connected_session();
+        assert!(matches!(
+            creds.get("core"),
+            Err(mtui_config::ConfigError::CredentialsNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn logout_keeps_profiles_and_auth_failure_does_not_wipe_them() {
+        let (mut app, dir) = isolated_app("logout-keep");
+        app.login.url = "10.0.0.1:8729".into();
+        app.login.username = "admin".into();
+        app.login.password = "pw".into();
+        app.login.name = "core".into();
+        app.current_profile = "core".into();
+        app.persist_connected_session();
+        app.screen = Screen::Main;
+        app.disconnect_to_profiles();
+        assert_eq!(app.screen, Screen::Login);
+        let store = ProfileStore::new(&dir.0);
+        assert_eq!(store.load().unwrap().len(), 1);
+
+        app.screen = Screen::Connecting;
+        let _ = app.update(AppEvent::Worker(WorkerMsg::Connected {
+            client: None,
+            router: None,
+            error: Some("cannot log in".into()),
+            error_kind: Some(ErrorKind::Auth),
+        }));
+        assert_eq!(app.screen, Screen::Login);
+        assert!(
+            app.login
+                .error
+                .as_ref()
+                .is_some_and(|msg| msg.contains("Wrong username"))
+        );
+        assert_eq!(store.load().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn totp_profile_does_not_auto_reconnect() {
+        let (_app, dir) = isolated_app("totp");
+        let mut profile = sample_profile("core", "admin");
+        profile.uses_totp = true;
+        ProfileStore::new(&dir.0).upsert(profile).unwrap();
+        FileCredentialStore::new(&dir.0)
+            .put(
+                "core",
+                Credential {
+                    password: "pw".into(),
+                },
+            )
+            .unwrap();
+        let mut app = App::compose(
+            false,
+            ProfileStore::new(&dir.0),
+            Box::new(FileCredentialStore::new(&dir.0)),
+        );
+        assert!(!app.restore_on_start);
+        assert_eq!(app.login.focus, mtui_ui::LoginField::Totp);
+        assert!(app.startup_commands().is_empty());
+        drop(app);
+    }
+
+    #[test]
+    fn auth_required_keeps_the_open_screen() {
+        let (mut app, _dir) = isolated_app("reauth");
+        app.screen = Screen::Main;
+        app.current_resource = "interfaces".into();
+        app.login.username = "admin".into();
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::AuthRequired {
+            message: "Wrong username, password, or TOTP.".into(),
+        }));
+        assert!(cmds.is_empty());
+        assert_eq!(app.screen, Screen::Main);
+        assert_eq!(app.current_resource, "interfaces");
+        assert!(matches!(app.overlay, Overlay::Reauth));
+    }
+
+    #[test]
+    fn forget_removes_one_profile_only() {
+        let (mut app, dir) = isolated_app("forget");
+        let store = ProfileStore::new(&dir.0);
+        store.upsert(sample_profile("core", "admin")).unwrap();
+        store.upsert(sample_profile("edge", "admin")).unwrap();
+        app.reload_profile_rows();
+        app.forget_profile("core");
+        let names: Vec<_> = store.load().unwrap().into_iter().map(|p| p.name).collect();
+        assert_eq!(names, vec!["edge".to_string()]);
+        assert_eq!(app.login.pane, LoginPane::List);
+    }
 }

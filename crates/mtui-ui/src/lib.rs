@@ -42,7 +42,10 @@ pub use layout::{
     Breakpoint, LayoutMetrics, clip_line, constrain_lines, fit_cell, fit_line, line_plain,
     line_width, lines_plain,
 };
-pub use login::{LoginField, LoginForm, is_printable_char};
+pub use login::{
+    LoginField, LoginForm, LoginPane, LoginView, ReauthView, SavedProfileRow, is_printable_char,
+    render_login, render_reauth,
+};
 pub use navigation::{FlatNavEntry, NavState, ToggleHidden, flatten_nav};
 pub use overlay::{
     Modal, ModalButton, ModalButtonKind, ModalKind, ModalPanel, compact_modal_rect, dim_canvas,

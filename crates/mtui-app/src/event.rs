@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crossterm::event::KeyEvent;
-use mtui_routeros::{Client, Resource};
+use mtui_routeros::{Client, ErrorKind, Resource};
 
 #[allow(clippy::large_enum_variant)]
 pub enum AppEvent {
@@ -22,6 +22,10 @@ pub enum WorkerMsg {
         client: Option<Arc<Client>>,
         router: Option<Resource>,
         error: Option<String>,
+        error_kind: Option<ErrorKind>,
+    },
+    AuthRequired {
+        message: String,
     },
     ResourceResult {
         request_id: u64,

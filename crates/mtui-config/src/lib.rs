@@ -2,10 +2,10 @@
 //!
 //! This crate persists everything the TUI needs to remember between runs
 //! except transient UI state: named router [`Profile`]s (never containing
-//! secrets), a permission-hardened [`credentials::FileCredentialStore`] for
-//! passwords, [`env::EnvOverrides`] for headless/CI use, and a tracing
-//! subscriber ([`logging::init_file_logging`]) that redacts password-like
-//! values before they hit disk or the in-app console.
+//! secrets), a replaceable [`credentials::CredentialStore`] that prefers the
+//! OS keychain and falls back to a permission-hardened JSON file, [`env::EnvOverrides`]
+//! for headless/CI use, and a tracing subscriber ([`logging::init_file_logging`])
+//! that redacts password-like values before they hit disk or the in-app console.
 //!
 //! Behavior is a Rust-idiomatic port of `internal/config/config.go` and
 //! `internal/credentials/credentials.go`, not a line-for-line translation:
@@ -23,7 +23,10 @@ mod paths;
 mod profile;
 mod redact;
 
-pub use credentials::{CREDENTIALS_FILE_NAME, Credential, CredentialStore, FileCredentialStore};
+pub use credentials::{
+    CREDENTIALS_FILE_NAME, Credential, CredentialStore, FileCredentialStore,
+    PlatformCredentialStore,
+};
 pub use env::{ENV_PREFIX, EnvOverrides};
 pub use error::{ConfigError, Result};
 pub use log_store::{DEFAULT_LOG_CAPACITY, LogLevel, LogRecord, LogStore};

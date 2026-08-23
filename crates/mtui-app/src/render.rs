@@ -2,26 +2,30 @@
 
 use mtui_core::{DASHBOARD_ID, WHEN_YOU_NEED_IT};
 use mtui_ui::{
-    CpuCoreView, DashboardView, LayoutMetrics, Modal, ModalButton, ModalButtonKind, ModalPanel,
-    constrain_lines, dashboard_content, fill_rect, footer_bar, format_fingerprint, header_line,
-    modal_max_scroll, render_action_menu, render_form_sheet, render_modal, render_probe,
-    render_torch, session_header,
+    CpuCoreView, DashboardView, LayoutMetrics, LoginView, Modal, ModalButton, ModalButtonKind,
+    ModalPanel, ReauthView, constrain_lines, dashboard_content, fill_rect, footer_bar,
+    format_fingerprint, modal_max_scroll, render_action_menu, render_form_sheet, render_login,
+    render_modal, render_probe, render_reauth, render_torch, session_header,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
 
 use crate::app::{App, Overlay, Pane, Screen};
+use crate::write::ConfirmSession;
 
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
     let styles = app.styles();
 
     match app.screen {
-        Screen::Login => draw_login(frame, area, app),
+        Screen::Login => {
+            draw_login(frame, area, app, false);
+            draw_login_overlay(frame, area, app);
+        }
         Screen::Connecting => {
-            let msg = Paragraph::new(format!(" {} ", app.status)).style(styles.signal);
-            frame.render_widget(msg, area);
+            draw_login(frame, area, app, true);
+            draw_login_overlay(frame, area, app);
         }
         Screen::Trust => draw_trust(frame, area, app),
         Screen::Main => {
@@ -40,44 +44,14 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                 Overlay::Palette => {
                     app.palette.render(frame, area, &styles);
                 }
-                Overlay::Confirm(ref session) => {
-                    let buttons = [
-                        ModalButton {
-                            label: "Confirm",
-                            keys: "y / enter",
-                            kind: ModalButtonKind::Primary,
-                        },
-                        ModalButton {
-                            label: "Cancel",
-                            keys: "n / esc",
-                            kind: ModalButtonKind::Secondary,
-                        },
-                    ];
-                    let modal = Modal::new(&session.title, &session.body)
-                        .alert()
-                        .buttons(&buttons);
-                    render_modal(frame, area, &modal, &styles);
-                }
+                Overlay::Confirm(ref session) => draw_confirm(frame, area, session, &styles),
                 Overlay::HideMenu {
                     ref title,
                     ref body,
                     ..
-                } => {
-                    let buttons = [
-                        ModalButton {
-                            label: "Hide",
-                            keys: "y / enter",
-                            kind: ModalButtonKind::Primary,
-                        },
-                        ModalButton {
-                            label: "Cancel",
-                            keys: "n / esc",
-                            kind: ModalButtonKind::Secondary,
-                        },
-                    ];
-                    let modal = Modal::new(title, body).alert().buttons(&buttons);
-                    render_modal(frame, area, &modal, &styles);
-                }
+                } => draw_hide_menu(frame, area, title, body, &styles),
+                Overlay::ForgetProfile { ref name } => draw_forget(frame, area, name, &styles),
+                Overlay::Reauth => draw_reauth(frame, area, app),
                 Overlay::Form(ref session) => {
                     let schema = session.overlay_schema(
                         mtui_core::resource_by_id(&session.resource_id).and_then(|spec| spec.form),
@@ -99,77 +73,120 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
     }
 }
 
-fn draw_login(frame: &mut Frame<'_>, area: Rect, app: &App) {
+fn draw_login(frame: &mut Frame<'_>, area: Rect, app: &App, connecting: bool) {
     let styles = app.styles();
-    fill_rect(frame, area, styles.void);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    fill_rect(frame, chunks[0], styles.band);
-    frame.render_widget(
-        Paragraph::new(header_line("mikrotik-tui", "connect", &styles)),
-        chunks[0],
+    render_login(
+        frame,
+        area,
+        &LoginView {
+            form: &app.login,
+            status: &app.status,
+            connecting,
+        },
+        &styles,
     );
+}
 
-    let fields = [
-        (
-            "Host",
-            app.login.url.as_str(),
-            app.login.focus == mtui_ui::LoginField::Url,
-        ),
-        (
-            "Username",
-            app.login.username.as_str(),
-            app.login.focus == mtui_ui::LoginField::Username,
-        ),
-        (
-            "Password",
-            &"*".repeat(app.login.password.len()),
-            app.login.focus == mtui_ui::LoginField::Password,
-        ),
-    ];
-    for (i, (label, value, focused)) in fields.iter().enumerate() {
-        let style = if *focused { styles.focus } else { styles.text };
-        let block = Block::default()
-            .title(*label)
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(if *focused {
-                styles.focus
-            } else {
-                styles.border
-            });
-        frame.render_widget(
-            Paragraph::new(value.to_string()).style(style).block(block),
-            chunks[i + 1],
-        );
+fn draw_login_overlay(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let styles = app.styles();
+    match &app.overlay {
+        Overlay::ForgetProfile { name } => draw_forget(frame, area, name, &styles),
+        Overlay::Help => {
+            let modal = Modal::new("Keyboard help", HELP_TEXT).scroll(app.overlay_scroll);
+            render_modal(frame, area, &modal, &styles);
+        }
+        _ => {}
     }
-    let err = app.login.error.clone().unwrap_or_default();
-    frame.render_widget(Paragraph::new(err).style(styles.error), chunks[4]);
-    fill_rect(frame, chunks[6], styles.inset);
-    frame.render_widget(
-        Paragraph::new(footer_bar(
-            &app.status,
-            &[("enter", "connect"), ("tab", "field"), ("q", "quit")],
-            usize::from(area.width.max(1)),
-            &styles,
-        )),
-        chunks[6],
+}
+
+fn draw_confirm(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    session: &ConfirmSession,
+    styles: &mtui_ui::Styles,
+) {
+    let buttons = [
+        ModalButton {
+            label: "Confirm",
+            keys: "y / enter",
+            kind: ModalButtonKind::Primary,
+        },
+        ModalButton {
+            label: "Cancel",
+            keys: "n / esc",
+            kind: ModalButtonKind::Secondary,
+        },
+    ];
+    let modal = Modal::new(&session.title, &session.body)
+        .alert()
+        .buttons(&buttons);
+    render_modal(frame, area, &modal, styles);
+}
+
+fn draw_hide_menu(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    body: &str,
+    styles: &mtui_ui::Styles,
+) {
+    let buttons = [
+        ModalButton {
+            label: "Hide",
+            keys: "y / enter",
+            kind: ModalButtonKind::Primary,
+        },
+        ModalButton {
+            label: "Cancel",
+            keys: "n / esc",
+            kind: ModalButtonKind::Secondary,
+        },
+    ];
+    let modal = Modal::new(title, body).alert().buttons(&buttons);
+    render_modal(frame, area, &modal, styles);
+}
+
+fn draw_forget(frame: &mut Frame<'_>, area: Rect, name: &str, styles: &mtui_ui::Styles) {
+    let body = format!(
+        "Forget {name}?\n\nThe saved host, pin, and remembered password for this device are removed. Other routers stay."
+    );
+    let buttons = [
+        ModalButton {
+            label: "Forget",
+            keys: "y / enter",
+            kind: ModalButtonKind::Primary,
+        },
+        ModalButton {
+            label: "Keep",
+            keys: "n / esc",
+            kind: ModalButtonKind::Secondary,
+        },
+    ];
+    let modal = Modal::new("Forget device", &body)
+        .alert()
+        .kicker("Explicit delete")
+        .buttons(&buttons);
+    render_modal(frame, area, &modal, styles);
+}
+
+fn draw_reauth(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let styles = app.styles();
+    render_reauth(
+        frame,
+        area,
+        &ReauthView {
+            username: app.login.username.trim(),
+            password_len: app.reauth.password.len(),
+            totp_len: app.reauth.totp.len(),
+            totp_focus: app.reauth.totp_focus,
+            error: app.reauth.error.as_deref(),
+        },
+        &styles,
     );
 }
 
 fn draw_trust(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    draw_login(frame, area, app);
+    draw_login(frame, area, app, false);
     let styles = app.styles();
     let fingerprint = format_fingerprint(app.trust_fingerprint.as_deref().unwrap_or_default());
     let buttons = [
@@ -447,7 +464,9 @@ a           action menu (Files: load backup)
 ctrl+s      save properties
 1-9         jump to a properties tab (when not typing)
 ctrl+k      command palette
-ctrl+l      log out
+ctrl+l      log out (keeps saved devices)
+n / x       login list: new / forget device
+space       login: toggle remember password
 -           hide menu (confirm) / restore (nav)
 .           show hidden menus / done
 ?           help

@@ -3,10 +3,9 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use mtui_core::{DASHBOARD_ID, about_copy, resource_by_id};
-use mtui_routeros::Resource;
-use mtui_ui::{FormSession, LoginField};
+use mtui_ui::{FormSession, LoginField, LoginPane};
 
-use crate::app::{App, AppCommand, Overlay, Pane, Screen, is_router_target};
+use crate::app::{App, AppCommand, Overlay, Pane, Screen};
 
 impl App {
     pub(crate) fn on_key(&mut self, key: KeyEvent) -> Vec<AppCommand> {
@@ -16,7 +15,12 @@ impl App {
         }
 
         match self.screen {
-            Screen::Login => self.keys_login(key),
+            Screen::Login => {
+                if self.overlay != Overlay::None {
+                    return self.keys_overlay(key);
+                }
+                self.keys_login(key)
+            }
             Screen::Connecting => {
                 if key.code == KeyCode::Esc {
                     self.screen = Screen::Login;
@@ -29,47 +33,157 @@ impl App {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn keys_login(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('l') {
+            return Vec::new();
+        }
         match key.code {
-            KeyCode::Tab | KeyCode::Down => self.login.focus = self.login.focus.next(),
-            KeyCode::BackTab | KeyCode::Up => self.login.focus = self.login.focus.prev(),
-            KeyCode::Enter => {
-                if self.login.focus != LoginField::Password {
+            KeyCode::Tab => {
+                if self.login.profiles.is_empty() {
                     self.login.focus = self.login.focus.next();
-                    return Vec::new();
+                } else if self.login.pane == LoginPane::List {
+                    self.login.pane = LoginPane::Form;
+                } else {
+                    self.login.pane = LoginPane::List;
                 }
-                if !is_router_target(&self.login.url) {
-                    self.login.error = Some("Enter a router host (host or host:8729)".into());
-                    self.status = "Enter a router host (host or host:8729)".into();
-                    return Vec::new();
-                }
-                if self.login.username.trim().is_empty() {
-                    self.login.error = Some("Username is required".into());
-                    self.status = "Username is required".into();
-                    return Vec::new();
-                }
-                self.login.error = None;
-                self.pending_password = Some(self.login.password.clone());
-                self.screen = Screen::Connecting;
-                self.status = "Negotiating secure connection…".into();
-                return vec![self.connect_command()];
             }
+            KeyCode::BackTab => {
+                if self.login.profiles.is_empty() {
+                    self.login.focus = self.login.focus.prev();
+                } else if self.login.pane == LoginPane::Form {
+                    self.login.pane = LoginPane::List;
+                } else {
+                    self.login.pane = LoginPane::Form;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') if self.login.pane == LoginPane::List => {
+                self.login.move_profile(1);
+            }
+            KeyCode::Up | KeyCode::Char('k') if self.login.pane == LoginPane::List => {
+                self.login.move_profile(-1);
+            }
+            KeyCode::Down if self.login.pane == LoginPane::Form => {
+                self.login.focus = self.login.focus.next();
+            }
+            KeyCode::Up if self.login.pane == LoginPane::Form => {
+                self.login.focus = self.login.focus.prev();
+            }
+            KeyCode::Enter => return self.login_enter(),
             KeyCode::Esc => {
+                if self.login.pane == LoginPane::Form && !self.login.profiles.is_empty() {
+                    self.login.pane = LoginPane::List;
+                    return Vec::new();
+                }
                 self.should_quit = true;
                 return vec![AppCommand::Quit];
             }
-            // Some Windows terminals report Backspace as ASCII BS (0x08) or DEL (0x7f).
             KeyCode::Backspace | KeyCode::Delete | KeyCode::Char('\u{8}' | '\u{7f}') => {
-                self.login.backspace();
+                if self.login.pane == LoginPane::Form {
+                    self.login.backspace();
+                }
             }
-            KeyCode::Char('q') if self.login.focus != LoginField::Password => {
+            KeyCode::Char(' ')
+                if self.login.pane == LoginPane::Form
+                    && self.login.focus == LoginField::Remember =>
+            {
+                self.login.toggle_remember();
+            }
+            KeyCode::Char('n') if self.login.pane == LoginPane::List => self.start_new_profile(),
+            KeyCode::Char('x' | 'd') if self.login.pane == LoginPane::List => {
+                if let Some(name) = self.login.selected_row().map(|row| row.name.clone()) {
+                    self.overlay = Overlay::ForgetProfile { name };
+                }
+            }
+            KeyCode::Char('e') if self.login.pane == LoginPane::List => {
+                self.apply_selected_profile();
+                self.login.pane = LoginPane::Form;
+                self.login.focus = LoginField::Name;
+            }
+            KeyCode::Char('q')
+                if self.login.pane == LoginPane::List || !self.login.focus.is_secret() =>
+            {
                 self.should_quit = true;
                 return vec![AppCommand::Quit];
             }
-            KeyCode::Char(ch) => self.login.insert_char(ch),
+            KeyCode::Char(ch) if self.login.pane == LoginPane::Form => {
+                if ch == ' ' && self.login.focus == LoginField::Remember {
+                    self.login.toggle_remember();
+                } else {
+                    self.login.insert_char(ch);
+                }
+            }
             _ => {}
         }
         Vec::new()
+    }
+
+    fn login_enter(&mut self) -> Vec<AppCommand> {
+        if self.login.pane == LoginPane::List {
+            self.apply_selected_profile();
+            if self.login.uses_totp && self.login.totp.is_empty() {
+                self.login.pane = LoginPane::Form;
+                self.login.focus = LoginField::Totp;
+                self.status = format!("Enter TOTP for {}", self.profile_label());
+                return Vec::new();
+            }
+            if !self.login.remember_password && self.login.password.is_empty() {
+                self.login.pane = LoginPane::Form;
+                self.login.focus = LoginField::Password;
+                self.status = format!("Password for {}", self.profile_label());
+                return Vec::new();
+            }
+            return self.begin_connect();
+        }
+        if matches!(
+            self.login.focus,
+            LoginField::Name | LoginField::Url | LoginField::Username
+        ) {
+            self.login.focus = self.login.focus.next();
+            return Vec::new();
+        }
+        if self.login.focus == LoginField::Password
+            && self.login.uses_totp
+            && self.login.totp.is_empty()
+        {
+            self.login.focus = LoginField::Totp;
+            return Vec::new();
+        }
+        self.begin_connect()
+    }
+
+    fn start_new_profile(&mut self) {
+        self.current_profile.clear();
+        self.login.name.clear();
+        self.login.url.clear();
+        self.login.username.clear();
+        self.login.password.clear();
+        self.login.totp.clear();
+        self.login.remember_password = true;
+        self.login.uses_totp = false;
+        self.login.error = None;
+        self.login.pane = LoginPane::Form;
+        self.login.focus = LoginField::Name;
+        self.saved_fingerprint = None;
+        self.saved_url = None;
+        self.custom_ca = None;
+        self.status = "New device · name the router, then connect".into();
+    }
+
+    fn apply_selected_profile(&mut self) {
+        let Some(row) = self.login.selected_row().cloned() else {
+            return;
+        };
+        if let Some(profile) = self
+            .profiles
+            .load()
+            .ok()
+            .into_iter()
+            .flatten()
+            .find(|item| item.name == row.name)
+        {
+            self.apply_profile(&profile, true);
+        }
     }
 
     fn keys_trust(&mut self, key: KeyEvent) -> Vec<AppCommand> {
@@ -105,8 +219,8 @@ impl App {
                 }
                 KeyCode::Char('l') => {
                     tracing::info!("logout");
-                    self.logout();
-                    return vec![AppCommand::ClearSession];
+                    self.disconnect_to_profiles();
+                    return Vec::new();
                 }
                 KeyCode::Char('u') => {
                     if self.pane == Pane::Console {
@@ -296,7 +410,10 @@ impl App {
         match self.overlay {
             Overlay::Help | Overlay::About => self.keys_help(key),
             Overlay::Palette => self.keys_palette(key),
-            Overlay::Confirm(_) | Overlay::HideMenu { .. } => self.keys_confirm(key),
+            Overlay::Confirm(_) | Overlay::HideMenu { .. } | Overlay::ForgetProfile { .. } => {
+                self.keys_confirm(key)
+            }
+            Overlay::Reauth => self.keys_reauth(key),
             Overlay::Form(_) => self.keys_form(key),
             Overlay::ActionMenu(_) => self.keys_action_menu(key, false),
             Overlay::TypePicker(_) => self.keys_action_menu(key, true),
@@ -463,9 +580,48 @@ impl App {
                 if matches!(self.overlay, Overlay::HideMenu { .. }) {
                     self.confirm_hide_menu();
                     Vec::new()
+                } else if let Overlay::ForgetProfile { name } = &self.overlay {
+                    let name = name.clone();
+                    self.overlay = Overlay::None;
+                    self.forget_profile(&name);
+                    Vec::new()
                 } else {
                     self.confirm_pending()
                 }
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn keys_reauth(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        match key.code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                self.status = "Still connected · credentials not updated".into();
+                Vec::new()
+            }
+            KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down => {
+                self.reauth.totp_focus = !self.reauth.totp_focus;
+                Vec::new()
+            }
+            KeyCode::Enter => self.begin_reauth_connect(),
+            KeyCode::Backspace | KeyCode::Delete | KeyCode::Char('\u{8}' | '\u{7f}') => {
+                if self.reauth.totp_focus {
+                    self.reauth.totp.pop();
+                } else {
+                    self.reauth.password.pop();
+                }
+                Vec::new()
+            }
+            KeyCode::Char(ch) if mtui_ui::is_printable_char(ch) => {
+                if self.reauth.totp_focus {
+                    if ch.is_ascii_digit() && self.reauth.totp.len() < 8 {
+                        self.reauth.totp.push(ch);
+                    }
+                } else {
+                    self.reauth.password.push(ch);
+                }
+                Vec::new()
             }
             _ => Vec::new(),
         }
@@ -908,13 +1064,8 @@ impl App {
     }
 
     fn logout(&mut self) {
-        self.client = None;
-        self.router = Resource::default();
-        self.screen = Screen::Login;
-        self.login.password.clear();
-        self.pending_password = None;
-        self.trust_fingerprint = None;
-        self.status = "Logged out · saved session removed".into();
+        tracing::info!("logout");
+        self.disconnect_to_profiles();
     }
 
     fn open_resource(&mut self, id: &str) -> Vec<AppCommand> {
@@ -955,9 +1106,23 @@ impl App {
     fn run_palette_command(&mut self, id: &str) -> Vec<AppCommand> {
         match id {
             "refresh" => self.refresh_now(),
-            "logout" => {
+            "logout" | "switch-device" => {
                 self.logout();
-                vec![AppCommand::ClearSession]
+                Vec::new()
+            }
+            "forget-device" => {
+                let name = if self.current_profile.is_empty() {
+                    self.login.name.clone()
+                } else {
+                    self.current_profile.clone()
+                };
+                if name.is_empty() {
+                    self.status = "No device to forget".into();
+                    Vec::new()
+                } else {
+                    self.overlay = Overlay::ForgetProfile { name };
+                    Vec::new()
+                }
             }
             "help" => {
                 self.open_help();
@@ -997,7 +1162,7 @@ mod login_edit_tests {
 
     use crate::app::App;
     use crate::event::AppEvent;
-    use mtui_ui::{LoginField, LoginForm};
+    use mtui_ui::{LoginField, LoginForm, LoginPane};
 
     fn press(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -1068,6 +1233,65 @@ mod login_edit_tests {
         assert!(cmds.is_empty());
         assert_eq!(app.login.focus, LoginField::Username);
         assert_eq!(app.screen, crate::app::Screen::Login);
+    }
+
+    #[test]
+    fn totp_is_appended_to_the_password_at_connect_and_not_used_as_the_name() {
+        let mut app = login_app();
+        app.login.url = "192.168.88.1:8729".into();
+        app.login.username = "reader".into();
+        app.login.password = "secret".into();
+        app.login.totp = "123456".into();
+        app.login.focus = LoginField::Totp;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                crate::app::AppCommand::Connect { password, .. } if password == "secret123456"
+            )),
+            "expected password+totp, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn list_j_k_moves_saved_profiles() {
+        let mut app = login_app();
+        app.login.profiles = vec![
+            mtui_ui::SavedProfileRow {
+                name: "alpha".into(),
+                url: "10.0.0.1:8729".into(),
+                username: "admin".into(),
+                remember_password: true,
+                uses_totp: false,
+            },
+            mtui_ui::SavedProfileRow {
+                name: "bravo".into(),
+                url: "10.0.0.2:8729".into(),
+                username: "reader".into(),
+                remember_password: false,
+                uses_totp: true,
+            },
+        ];
+        app.login.pane = LoginPane::List;
+        app.login.selected_profile = 0;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('j'))));
+        assert_eq!(app.login.selected_profile, 1);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('k'))));
+        assert_eq!(app.login.selected_profile, 0);
+    }
+
+    #[test]
+    fn ctrl_l_disconnects_without_a_forget_command() {
+        let mut app = login_app();
+        app.screen = crate::app::Screen::Main;
+        app.current_profile = "core".into();
+        let cmds = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Char('l'),
+            KeyModifiers::CONTROL,
+        )));
+        assert!(cmds.is_empty());
+        assert_eq!(app.screen, crate::app::Screen::Login);
+        assert!(app.status.contains("profiles kept"));
     }
 
     #[test]

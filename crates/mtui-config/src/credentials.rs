@@ -184,6 +184,94 @@ impl CredentialStore for FileCredentialStore {
     }
 }
 
+const KEYRING_SERVICE: &str = crate::paths::APPLICATION;
+
+/// OS keychain with owner-only JSON fallback.
+///
+/// Remembered passwords are written to the platform keyring first. If the
+/// keyring is unavailable (CI, containers, missing Secret Service), the
+/// existing [`FileCredentialStore`] is used. A successful keyring write
+/// deletes the plaintext JSON copy for that profile.
+pub struct PlatformCredentialStore {
+    file: FileCredentialStore,
+}
+
+impl PlatformCredentialStore {
+    /// Wraps a file store used as fallback and migration source.
+    #[must_use]
+    pub fn new(file: FileCredentialStore) -> Self {
+        Self { file }
+    }
+
+    /// Discovers the platform config directory and uses the file store there
+    /// as fallback.
+    pub fn discover() -> Result<Self> {
+        Ok(Self::new(FileCredentialStore::discover()?))
+    }
+}
+
+fn keyring_entry(profile: &str) -> Result<keyring::Entry> {
+    keyring::Entry::new(KEYRING_SERVICE, profile)
+        .map_err(|err| ConfigError::Keyring(err.to_string()))
+}
+
+fn keyring_get(profile: &str) -> Result<Option<String>> {
+    match keyring_entry(profile)?.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(err) => Err(ConfigError::Keyring(err.to_string())),
+    }
+}
+
+fn keyring_put(profile: &str, password: &str) -> Result<()> {
+    keyring_entry(profile)?
+        .set_password(password)
+        .map_err(|err| ConfigError::Keyring(err.to_string()))
+}
+
+fn keyring_delete(profile: &str) -> Result<()> {
+    match keyring_entry(profile)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(ConfigError::Keyring(err.to_string())),
+    }
+}
+
+impl CredentialStore for PlatformCredentialStore {
+    fn get(&self, profile: &str) -> Result<Credential> {
+        require_profile_name(profile)?;
+        match keyring_get(profile) {
+            Ok(Some(password)) => return Ok(Credential { password }),
+            Ok(None) => {}
+            Err(err) => {
+                tracing::debug!(error = %err, profile, "keyring get failed; trying file store");
+            }
+        }
+        self.file.get(profile)
+    }
+
+    fn put(&self, profile: &str, credential: Credential) -> Result<()> {
+        require_profile_name(profile)?;
+        match keyring_put(profile, &credential.password) {
+            Ok(()) => {
+                let _ = self.file.delete(profile);
+                Ok(())
+            }
+            Err(err) => {
+                tracing::debug!(error = %err, profile, "keyring put failed; using file store");
+                self.file.put(profile, credential)
+            }
+        }
+    }
+
+    fn delete(&self, profile: &str) -> Result<()> {
+        require_profile_name(profile)?;
+        if let Err(err) = keyring_delete(profile) {
+            tracing::debug!(error = %err, profile, "keyring delete failed");
+        }
+        self.file.delete(profile)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,5 +377,25 @@ mod tests {
         fs::set_permissions(store.path(), fs::Permissions::from_mode(0o644)).unwrap();
         let err = store.get("router1").unwrap_err();
         assert!(matches!(err, ConfigError::InsecurePermissions { .. }));
+    }
+
+    #[test]
+    fn platform_store_reads_file_fallback() {
+        let dir = TempDir::new("platform-fallback");
+        let file = FileCredentialStore::new(dir.path());
+        let name = format!("fallback-{}", std::process::id());
+        file.put(
+            &name,
+            Credential {
+                password: "from-file".into(),
+            },
+        )
+        .unwrap();
+        let platform = PlatformCredentialStore::new(file);
+        match platform.get(&name) {
+            Ok(credential) => assert_eq!(credential.password, "from-file"),
+            Err(err) => panic!("expected file fallback, got {err}"),
+        }
+        let _ = platform.delete(&name);
     }
 }

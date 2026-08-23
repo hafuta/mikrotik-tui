@@ -57,6 +57,12 @@ pub enum ConfigError {
     #[error("duplicate profile {0:?}")]
     DuplicateProfile(String),
 
+    #[error("profile {0:?} was not found")]
+    ProfileNotFound(String),
+
+    #[error("credential keyring: {0}")]
+    Keyring(String),
+
     #[error(
         "credential store {} has insecure permissions {mode:#o}; want 0600",
         path.display()
