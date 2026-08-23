@@ -2,7 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.98+-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/hafuta/mikrotik-tui/ci.yml?branch=main&label=CI)](https://github.com/hafuta/mikrotik-tui/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/hafuta/mikrotik-tui/ci.yml?branch=master&label=CI)](https://github.com/hafuta/mikrotik-tui/actions/workflows/ci.yml)
 
 > [!CAUTION]
 > This project is new. Expect bugs and unstable behavior. Tested against
