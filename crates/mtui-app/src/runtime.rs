@@ -229,7 +229,7 @@ fn dispatch_commands(
                     fetch_header(client, request_id, generation, tx, &mut view_rx, &gate).await;
                 });
             }
-            AppCommand::ClearSession => app.clear_saved_session(),
+            AppCommand::ForgetProfile { name } => app.forget_profile(&name),
             AppCommand::Mutate {
                 request_id,
                 generation,
@@ -242,7 +242,10 @@ fn dispatch_commands(
                 rt.spawn(async move {
                     let error = match run_mutation(&client, op).await {
                         Ok(()) => None,
-                        Err(err) => Some(err.to_string()),
+                        Err(err) => {
+                            send_if_auth(&tx, &err);
+                            Some(err.to_string())
+                        }
                     };
                     let _ = tx.send(WorkerMsg::MutateResult {
                         request_id,
@@ -458,6 +461,7 @@ async fn connect_worker(
                 client: Some(Arc::new(client)),
                 router: Some(router),
                 error: None,
+                error_kind: None,
             },
             Err(err) => tls_or_connect_error(url, had_pin, err).await,
         },
@@ -527,6 +531,7 @@ async fn fetch_resource(
             });
         }
         Err(err) => {
+            send_if_auth(&tx, &err);
             let _ = tx.send(WorkerMsg::ResourceResult {
                 request_id,
                 generation,
@@ -570,6 +575,18 @@ async fn fetch_resource(
     }
 }
 
+fn is_auth_failure(err: &mtui_routeros::Error) -> bool {
+    err.kind() == ErrorKind::Auth || matches!(err.status(), Some(401 | 403))
+}
+
+fn send_if_auth(tx: &mpsc::UnboundedSender<WorkerMsg>, err: &mtui_routeros::Error) {
+    if is_auth_failure(err) {
+        let _ = tx.send(WorkerMsg::AuthRequired {
+            message: crate::app::classify_connect_error(ErrorKind::Auth, err.message()),
+        });
+    }
+}
+
 async fn tls_or_connect_error(url: String, had_pin: bool, err: mtui_routeros::Error) -> WorkerMsg {
     if !had_pin && err.kind() == ErrorKind::Tls {
         return match probe_certificate(&url).await {
@@ -587,6 +604,7 @@ async fn tls_or_connect_error(url: String, had_pin: bool, err: mtui_routeros::Er
         client: None,
         router: None,
         error: Some(err.to_string()),
+        error_kind: Some(err.kind()),
     }
 }
 
@@ -667,11 +685,17 @@ async fn fetch_header(
 
     let (system, system_error) = match sys {
         Ok(record) => (Some(record), None),
-        Err(err) => (None, Some(err.to_string())),
+        Err(err) => {
+            send_if_auth(&tx, &err);
+            (None, Some(err.to_string()))
+        }
     };
     let (interfaces, interface_error) = match interfaces {
         Ok(rows) => (rows, None),
-        Err(err) => (Vec::new(), Some(err.to_string())),
+        Err(err) => {
+            send_if_auth(&tx, &err);
+            (Vec::new(), Some(err.to_string()))
+        }
     };
     let wan_name = select_wan_interface(&interfaces)
         .ok()
@@ -706,19 +730,31 @@ async fn fetch_dashboard(
 
     let (cpu, cpu_error) = match cpu {
         Ok(rows) => (rows, None),
-        Err(err) => (Vec::new(), Some(err.to_string())),
+        Err(err) => {
+            send_if_auth(&tx, &err);
+            (Vec::new(), Some(err.to_string()))
+        }
     };
     let (system, system_error) = match sys {
         Ok(record) => (Some(record), None),
-        Err(err) => (None, Some(err.to_string())),
+        Err(err) => {
+            send_if_auth(&tx, &err);
+            (None, Some(err.to_string()))
+        }
     };
     let (interfaces, interface_error) = match interfaces {
         Ok(rows) => (rows, None),
-        Err(err) => (Vec::new(), Some(err.to_string())),
+        Err(err) => {
+            send_if_auth(&tx, &err);
+            (Vec::new(), Some(err.to_string()))
+        }
     };
     let (firewall, firewall_error) = match firewall {
         Ok(rows) => (rows, None),
-        Err(err) => (Vec::new(), Some(err.to_string())),
+        Err(err) => {
+            send_if_auth(&tx, &err);
+            (Vec::new(), Some(err.to_string()))
+        }
     };
     let wan_name = select_wan_interface(&interfaces)
         .ok()

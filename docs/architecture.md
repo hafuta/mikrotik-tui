@@ -20,8 +20,8 @@ networking or persistence. `mtui-routeros` contains no terminal code.
 - TLS verification is mandatory on `api-ssl` (default 8729). Self-signed
   devices use custom roots or an
   explicitly approved SHA-256 leaf certificate pin.
-- Profile files exclude passwords. Credentials use a separate owner-only store
-  with a replaceable interface for future OS keyrings.
+- Profile files exclude passwords. Remembered passwords use the OS keychain
+  when available, with an owner-only file as fallback. TOTP is never stored.
 - Application logging writes JSON to a file and a redacted in-memory buffer
   for the in-app console. Tracing never writes to stdout while ratatui owns
   the terminal.

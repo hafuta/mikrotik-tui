@@ -39,7 +39,7 @@ allows remove/disconnect.
   precedence when both are set)
 - Confirmed reboot and shutdown from System Resources, plus named backup save
   and `.backup` load from Files
-- One saved connection profile and machine-local credentials
+- Named device profiles with last-used auto-reconnect, optional remember-password, and TOTP at connect time
 - Structured, redacted application logs on disk and in the in-app console
 
 RouterOS v7 with `api-ssl` enabled is required. Use a dedicated,
@@ -80,11 +80,17 @@ Semantic colors live in `mtui_core::Palette`. The built-in look is
 `DefaultTheme` (`id = "default"`), registered in `ThemeRegistry`. UI code
 never hard-codes product hex values - it uses `Styles::from_palette`.
 
-Profiles may store `preferences.theme = "default"` (see
+- Profiles may store `preferences.theme = "default"` (see
 `mtui_config::THEME_PREFERENCE_KEY`) so additional themes can be selected later
 without schema changes. Hidden sidebar items persist as
 `preferences.hidden_nav` (`mtui_config::HIDDEN_NAV_PREFERENCE_KEY`), a
 comma-separated list of navigation ids.
+
+Named device profiles live in `profiles.json`. Passwords are optional per
+profile (`remember_password`) and are stored in the OS keychain when available,
+falling back to an owner-only `credentials.json`. User Manager TOTP is typed at
+connect time, appended to the static password, and never saved. The last-used
+profile auto-reconnects unless it requires a fresh TOTP.
 
 ## Tooling
 
@@ -110,8 +116,9 @@ Equivalent: `cargo run -p mikrotik-tui`.
 
 Flags: `--version`, `--no-alt-screen`.
 
-On first launch, enter the RouterOS host (`192.168.88.1` or `host:8729`),
-username and password. For a self-signed certificate, the app presents a
+On first launch, pick a saved router or add a named profile: host
+(`192.168.88.1` or `host:8729`), username, password, and an optional TOTP.
+For a self-signed certificate, the app presents a
 SHA-256 fingerprint and asks you to trust it before credentials are sent. An
 approved fingerprint is treated as the router identity even when a local
 certificate is expired or lacks an IP subject; any certificate replacement is
@@ -121,9 +128,11 @@ migrated once to `host:8729`.
 Saved files land under the platform config and state directories
 (`~/.config/mikrotik-tui` on Linux, `%APPDATA%\mikrotik-tui` on Windows,
 `~/Library/Application Support/mikrotik-tui` on macOS). `XDG_CONFIG_HOME` and
-`XDG_STATE_HOME` override those locations on every platform. The credential
-file is owner-only on Unix and is not encrypted anywhere; use a protected
-machine or `MIKROTIK_TUI_PASSWORD_FILE`.
+`XDG_STATE_HOME` override those locations on every platform. Remembered
+passwords go to the OS keychain when it is available; otherwise they use an
+owner-only file that is not encrypted. Shared or kiosk machines should leave
+**Remember password** off, or use `MIKROTIK_TUI_PASSWORD_FILE`. TOTP codes are
+never written to disk.
 
 ### Environment overrides
 
@@ -153,13 +162,15 @@ Resources or saves a backup on Files, `o` shuts down (power off) on Resources,
 traceroute on Traceroute). On Certificates, `g` signs, `p` imports a file already
 on the router, and `w` exports PEM/PKCS12 (passphrases stay secret). `a` opens the
 action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,
-`ctrl+l` logs out, `` ` `` toggles the application log console, `-` hides the
+`ctrl+l` logs out (saved devices stay), `` ` `` toggles the application log console, `-` hides the
 selected sidebar item after confirmation (or restores it when hidden menus are
 showing), `.` shows hidden menus (marked with `×`
 and strikethrough) so they can be restored, `?` opens help, `i` or `F1` opens a short description
 of the current screen, `esc` closes overlays or clears the
-filter, and `q` quits. Logging out removes the saved local profile and
-credential; quitting keeps them for automatic reconnection.
+filter, and `q` quits. Logging out returns to the device list and keeps saved
+profiles and remembered passwords. `x` on the list (or **Forget this device**
+in the palette) deletes one profile and its credential. Quitting also keeps
+them so the last-used router can reconnect, unless that profile uses TOTP.
 
 The log console is hidden by default and docks to the lower quarter of the
 screen. Focus it with `` ` `` or `tab`, press `f` for fullscreen (header and

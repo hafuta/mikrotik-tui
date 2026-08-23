@@ -38,9 +38,13 @@ pub const HIDDEN_NAV_PREFERENCE_KEY: &str = "hidden_nav";
 ///   to omit from the sidebar until the operator reveals them.
 pub type Preferences = HashMap<String, String>;
 
+fn default_remember_password() -> bool {
+    true
+}
+
 /// A named `RouterOS` connection. Passwords and other secrets intentionally
 /// do not belong here; see [`crate::credentials`].
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
     pub url: String,
@@ -49,6 +53,16 @@ pub struct Profile {
     pub certificate_fingerprint: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub custom_ca: String,
+    /// When true, a successful connect stores the password in the credential
+    /// backend. Shared/kiosk machines can leave this off and type the
+    /// password each time. Defaults to true so existing single-profile files
+    /// keep auto-reconnect.
+    #[serde(default = "default_remember_password")]
+    pub remember_password: bool,
+    /// User Manager 2FA: a TOTP is appended to the password at connect time
+    /// and is never persisted. These profiles cannot auto-reconnect.
+    #[serde(default)]
+    pub uses_totp: bool,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub preferences: Preferences,
 }
@@ -113,6 +127,21 @@ impl Profile {
     }
 }
 
+impl Default for Profile {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            url: String::new(),
+            username: String::new(),
+            certificate_fingerprint: String::new(),
+            custom_ca: String::new(),
+            remember_password: true,
+            uses_totp: false,
+            preferences: HashMap::new(),
+        }
+    }
+}
+
 fn parse_hidden_nav(raw: &str) -> Vec<String> {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -137,6 +166,8 @@ fn parse_hidden_nav(raw: &str) -> Vec<String> {
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct ProfileDocument {
     version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_used: Option<String>,
     #[serde(default)]
     profiles: BTreeMap<String, Profile>,
 }
@@ -168,9 +199,35 @@ impl ProfileStore {
 
     /// Returns all profiles sorted by name. A missing store is empty.
     pub fn load(&self) -> Result<Vec<Profile>> {
+        Ok(self.load_document()?.into_profiles())
+    }
+
+    /// Last profile that connected successfully, if it still exists.
+    pub fn last_used(&self) -> Result<Option<String>> {
+        let doc = self.load_document()?;
+        Ok(doc.last_used.filter(|name| doc.profiles.contains_key(name)))
+    }
+
+    /// Records which profile connected last without rewriting the others.
+    pub fn set_last_used(&self, name: &str) -> Result<()> {
+        let mut doc = self.load_document()?;
+        if !doc.profiles.contains_key(name) {
+            return Err(ConfigError::ProfileNotFound(name.to_string()));
+        }
+        doc.last_used = Some(name.to_string());
+        self.save_document(&doc)
+    }
+
+    fn load_document(&self) -> Result<ProfileDocument> {
         let data = match fs::read(&self.path) {
             Ok(data) => data,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(ProfileDocument {
+                    version: PROFILE_FILE_VERSION,
+                    last_used: None,
+                    profiles: BTreeMap::new(),
+                });
+            }
             Err(source) => {
                 return Err(ConfigError::Read {
                     path: self.path.clone(),
@@ -179,7 +236,7 @@ impl ProfileStore {
             }
         };
 
-        let doc: ProfileDocument =
+        let mut doc: ProfileDocument =
             serde_json::from_slice(&data).map_err(|source| ConfigError::Decode {
                 path: self.path.clone(),
                 source,
@@ -190,23 +247,31 @@ impl ProfileStore {
                 version: doc.version,
             });
         }
-
-        let mut profiles = Vec::with_capacity(doc.profiles.len());
-        for (key, mut profile) in doc.profiles {
+        for (key, profile) in &mut doc.profiles {
             if profile.name.is_empty() {
-                profile.name = key;
+                profile.name.clone_from(key);
             }
             profile.validate()?;
-            profiles.push(profile);
         }
-        profiles.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(profiles)
+        Ok(doc)
+    }
+
+    fn save_document(&self, doc: &ProfileDocument) -> Result<()> {
+        let mut data = serde_json::to_vec_pretty(doc).map_err(|source| ConfigError::Encode {
+            what: "profiles",
+            source,
+        })?;
+        data.push(b'\n');
+        atomic_write_file(&self.path, &data, 0o600)
     }
 
     /// Atomically replaces the profile document with `profiles`.
+    /// Preserves `last_used` when that name is still present.
     pub fn save(&self, profiles: &[Profile]) -> Result<()> {
+        let previous = self.load_document().unwrap_or_default();
         let mut doc = ProfileDocument {
             version: PROFILE_FILE_VERSION,
+            last_used: previous.last_used,
             profiles: BTreeMap::new(),
         };
         for profile in profiles {
@@ -216,36 +281,43 @@ impl ProfileStore {
             }
             doc.profiles.insert(profile.name.clone(), profile.clone());
         }
-
-        let mut data = serde_json::to_vec_pretty(&doc).map_err(|source| ConfigError::Encode {
-            what: "profiles",
-            source,
-        })?;
-        data.push(b'\n');
-        atomic_write_file(&self.path, &data, 0o600)
+        if doc
+            .last_used
+            .as_ref()
+            .is_some_and(|name| !doc.profiles.contains_key(name))
+        {
+            doc.last_used = None;
+        }
+        self.save_document(&doc)
     }
 
     /// Adds or replaces a single profile by name, preserving the others.
     pub fn upsert(&self, profile: Profile) -> Result<()> {
         profile.validate()?;
-        let mut profiles = self.load()?;
-        match profiles.iter_mut().find(|p| p.name == profile.name) {
-            Some(existing) => *existing = profile,
-            None => profiles.push(profile),
-        }
-        self.save(&profiles)
+        let mut doc = self.load_document()?;
+        doc.profiles.insert(profile.name.clone(), profile);
+        self.save_document(&doc)
     }
 
     /// Removes the profile named `name`, if present. Deleting a missing
-    /// profile succeeds.
+    /// profile succeeds. Clears `last_used` when it pointed at this name.
     pub fn delete(&self, name: &str) -> Result<()> {
-        let mut profiles = self.load()?;
-        let before = profiles.len();
-        profiles.retain(|p| p.name != name);
-        if profiles.len() != before {
-            self.save(&profiles)?;
+        let mut doc = self.load_document()?;
+        if doc.profiles.remove(name).is_none() {
+            return Ok(());
         }
-        Ok(())
+        if doc.last_used.as_deref() == Some(name) {
+            doc.last_used = None;
+        }
+        self.save_document(&doc)
+    }
+}
+
+impl ProfileDocument {
+    fn into_profiles(self) -> Vec<Profile> {
+        let mut profiles: Vec<Profile> = self.profiles.into_values().collect();
+        profiles.sort_by(|a, b| a.name.cmp(&b.name));
+        profiles
     }
 }
 
@@ -397,5 +469,66 @@ mod tests {
             r#"["bridge-group","arp"]"#.into(),
         );
         assert_eq!(profile.hidden_nav_ids(), ["bridge-group", "arp"]);
+    }
+
+    #[test]
+    fn upsert_preserves_sibling_profiles() {
+        let dir = TempDir::new("siblings");
+        let store = ProfileStore::new(dir.path());
+        store.upsert(sample("core")).unwrap();
+        store.upsert(sample("edge")).unwrap();
+        let mut core = sample("core");
+        core.username = "full".to_string();
+        store.upsert(core).unwrap();
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].name, "core");
+        assert_eq!(loaded[0].username, "full");
+        assert_eq!(loaded[1].name, "edge");
+    }
+
+    #[test]
+    fn last_used_roundtrips_and_clears_on_delete() {
+        let dir = TempDir::new("last-used");
+        let store = ProfileStore::new(dir.path());
+        store.upsert(sample("core")).unwrap();
+        store.upsert(sample("edge")).unwrap();
+        store.set_last_used("edge").unwrap();
+        assert_eq!(store.last_used().unwrap().as_deref(), Some("edge"));
+        store.delete("edge").unwrap();
+        assert_eq!(store.last_used().unwrap(), None);
+        assert_eq!(store.load().unwrap()[0].name, "core");
+    }
+
+    #[test]
+    fn missing_remember_password_defaults_to_true() {
+        let dir = TempDir::new("remember-default");
+        let path = dir.path().join(PROFILE_FILE_NAME);
+        fs::write(
+            &path,
+            br#"{"version":1,"profiles":{"core":{"name":"core","url":"192.168.88.1:8729","username":"admin"}}}"#,
+        )
+        .unwrap();
+        let store = ProfileStore::new(dir.path());
+        let loaded = store.load().unwrap();
+        assert!(loaded[0].remember_password);
+        assert!(!loaded[0].uses_totp);
+    }
+
+    #[test]
+    fn same_host_different_users_are_two_profiles() {
+        let dir = TempDir::new("two-users");
+        let store = ProfileStore::new(dir.path());
+        let mut reader = sample("core-read");
+        reader.url = "192.168.88.1:8729".into();
+        reader.username = "reader".into();
+        let mut admin = sample("core-admin");
+        admin.url = "192.168.88.1:8729".into();
+        admin.username = "admin".into();
+        store.save(&[reader, admin]).unwrap();
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].username, "admin");
+        assert_eq!(loaded[1].username, "reader");
     }
 }
