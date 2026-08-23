@@ -1,6 +1,6 @@
 //! Event loop: terminal + tokio worker bridge.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyEventKind};
@@ -12,27 +12,55 @@ use mtui_core::FetchKind;
 use mtui_routeros::{Client, ClientOptions, ErrorKind, probe_certificate};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::app::{App, AppCommand};
 use crate::event::{AppEvent, WorkerMsg};
 use crate::render;
-use crate::write::{MutationOp, json_rows};
+use crate::telemetry::select_wan_interface;
+use crate::write::MutationOp;
 
 pub fn run(alt_screen: bool) -> anyhow::Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
+    let mut terminal = setup_terminal(alt_screen)?;
+    let result = rt.block_on(run_ui(&rt, &mut terminal, alt_screen));
+    restore_terminal(&mut terminal, alt_screen)?;
+    result
+}
 
+fn setup_terminal(alt_screen: bool) -> anyhow::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
     if alt_screen {
         execute!(stdout, EnterAlternateScreen)?;
     }
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    Ok(Terminal::new(CrosstermBackend::new(stdout))?)
+}
 
+fn restore_terminal(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    alt_screen: bool,
+) -> anyhow::Result<()> {
+    disable_raw_mode()?;
+    if alt_screen {
+        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    }
+    Ok(())
+}
+
+async fn run_ui(
+    rt: &tokio::runtime::Runtime,
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    alt_screen: bool,
+) -> anyhow::Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel::<WorkerMsg>();
+    let (view_tx, _) = watch::channel(0_u64);
+    let (torch_tx, _) = watch::channel(0_u64);
+    let (probe_tx, _) = watch::channel(0_u64);
+    let listen_gate = StreamGate::default();
+    let wan_gate = StreamGate::default();
     let mut app = App::new(alt_screen)?;
     let size = terminal.size()?;
     let _ = app.update(AppEvent::Resize {
@@ -40,62 +68,99 @@ pub fn run(alt_screen: bool) -> anyhow::Result<()> {
         height: size.height,
     });
     let startup = app.startup_commands();
-
-    let result = rt.block_on(async {
-        dispatch_commands(&rt, &tx, &mut app, startup);
-        let mut tick = tokio::time::interval(Duration::from_secs(2));
-        loop {
-            app.pull_console_logs();
-            terminal.draw(|f| render::draw(f, &app))?;
-
-            if app.should_quit {
-                break;
+    dispatch_commands(
+        rt,
+        &tx,
+        &mut app,
+        startup,
+        &view_tx,
+        &torch_tx,
+        &probe_tx,
+        &listen_gate,
+        &wan_gate,
+    );
+    let mut tick = tokio::time::interval(Duration::from_secs(2));
+    loop {
+        app.pull_console_logs();
+        terminal.draw(|f| render::draw(f, &app))?;
+        if app.should_quit {
+            break;
+        }
+        tokio::select! {
+            _ = tick.tick() => {
+                let cmds = app.update(AppEvent::Tick);
+                dispatch_commands(
+                    rt,
+                    &tx,
+                    &mut app,
+                    cmds,
+                    &view_tx,
+                    &torch_tx,
+                    &probe_tx,
+                    &listen_gate,
+                    &wan_gate,
+                );
             }
-
-            tokio::select! {
-                _ = tick.tick() => {
-                    let cmds = app.update(AppEvent::Tick);
-                    dispatch_commands(&rt, &tx, &mut app, cmds);
+            msg = rx.recv() => {
+                if let Some(msg) = msg {
+                    let cmds = app.update(AppEvent::Worker(msg));
+                    dispatch_commands(
+                        rt,
+                        &tx,
+                        &mut app,
+                        cmds,
+                        &view_tx,
+                        &torch_tx,
+                        &probe_tx,
+                        &listen_gate,
+                        &wan_gate,
+                    );
                 }
-                msg = rx.recv() => {
-                    if let Some(msg) = msg {
-                        let cmds = app.update(AppEvent::Worker(msg));
-                        dispatch_commands(&rt, &tx, &mut app, cmds);
-                    }
-                }
-                () = tokio::time::sleep(Duration::from_millis(16)) => {
-                    while event::poll(Duration::from_millis(0))? {
-                        match event::read()? {
-                            Event::Key(key) if key.kind == KeyEventKind::Press => {
-                                let cmds = app.update(AppEvent::Input(key));
-                                dispatch_commands(&rt, &tx, &mut app, cmds);
-                            }
-                            Event::Resize(width, height) => {
-                                let _ = app.update(AppEvent::Resize { width, height });
-                            }
-                            _ => {}
+            }
+            () = tokio::time::sleep(Duration::from_millis(16)) => {
+                while event::poll(Duration::from_millis(0))? {
+                    match event::read()? {
+                        Event::Key(key) if key.kind == KeyEventKind::Press => {
+                            let cmds = app.update(AppEvent::Input(key));
+                            dispatch_commands(
+                                rt,
+                                &tx,
+                                &mut app,
+                                cmds,
+                                &view_tx,
+                                &torch_tx,
+                                &probe_tx,
+                                &listen_gate,
+                                &wan_gate,
+                            );
                         }
+                        Event::Resize(width, height) => {
+                            let _ = app.update(AppEvent::Resize { width, height });
+                        }
+                        _ => {}
                     }
                 }
             }
         }
-        Ok::<(), anyhow::Error>(())
-    });
-
-    disable_raw_mode()?;
-    if alt_screen {
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     }
-    result
+    Ok(())
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn dispatch_commands(
     rt: &tokio::runtime::Runtime,
     tx: &mpsc::UnboundedSender<WorkerMsg>,
     app: &mut App,
     cmds: Vec<AppCommand>,
+    view_tx: &watch::Sender<u64>,
+    torch_tx: &watch::Sender<u64>,
+    probe_tx: &watch::Sender<u64>,
+    listen_gate: &StreamGate,
+    wan_gate: &StreamGate,
 ) {
+    let _ = view_tx.send_replace(app.poll_generation);
+    let _ = torch_tx.send_replace(app.torch_generation);
+    let _ = probe_tx.send_replace(app.probe_generation);
     for cmd in cmds {
         match cmd {
             AppCommand::Quit => app.should_quit = true,
@@ -121,9 +186,19 @@ fn dispatch_commands(
                     continue;
                 };
                 let tx = tx.clone();
+                let mut view_rx = view_tx.subscribe();
+                let gate = listen_gate.clone();
                 rt.spawn(async move {
-                    let msg = fetch_resource(client, request_id, generation, &resource_id).await;
-                    let _ = tx.send(msg);
+                    fetch_resource(
+                        client,
+                        request_id,
+                        generation,
+                        resource_id,
+                        tx,
+                        &mut view_rx,
+                        &gate,
+                    )
+                    .await;
                 });
             }
             AppCommand::FetchDashboard {
@@ -134,9 +209,10 @@ fn dispatch_commands(
                     continue;
                 };
                 let tx = tx.clone();
+                let mut view_rx = view_tx.subscribe();
+                let gate = wan_gate.clone();
                 rt.spawn(async move {
-                    let msg = fetch_dashboard(client, request_id, generation).await;
-                    let _ = tx.send(msg);
+                    fetch_dashboard(client, request_id, generation, tx, &mut view_rx, &gate).await;
                 });
             }
             AppCommand::FetchHeader {
@@ -147,9 +223,10 @@ fn dispatch_commands(
                     continue;
                 };
                 let tx = tx.clone();
+                let mut view_rx = view_tx.subscribe();
+                let gate = wan_gate.clone();
                 rt.spawn(async move {
-                    let msg = fetch_header(client, request_id, generation).await;
-                    let _ = tx.send(msg);
+                    fetch_header(client, request_id, generation, tx, &mut view_rx, &gate).await;
                 });
             }
             AppCommand::ClearSession => app.clear_saved_session(),
@@ -187,10 +264,20 @@ fn dispatch_commands(
                     continue;
                 };
                 let tx = tx.clone();
+                let mut torch_rx = torch_tx.subscribe();
                 rt.spawn(async move {
-                    let msg =
-                        fetch_torch(client, generation, interface, src, dst, protocol, port).await;
-                    let _ = tx.send(msg);
+                    stream_torch(
+                        client,
+                        generation,
+                        interface,
+                        src,
+                        dst,
+                        protocol,
+                        port,
+                        tx,
+                        &mut torch_rx,
+                    )
+                    .await;
                 });
             }
             AppCommand::FetchPing {
@@ -204,10 +291,20 @@ fn dispatch_commands(
                     continue;
                 };
                 let tx = tx.clone();
+                let mut probe_rx = probe_tx.subscribe();
                 rt.spawn(async move {
-                    let msg =
-                        fetch_probe(client, generation, "ping", address, count, src, None).await;
-                    let _ = tx.send(msg);
+                    stream_probe(
+                        client,
+                        generation,
+                        "ping",
+                        address,
+                        count,
+                        src,
+                        None,
+                        tx,
+                        &mut probe_rx,
+                    )
+                    .await;
                 });
             }
             AppCommand::FetchTraceroute {
@@ -222,8 +319,9 @@ fn dispatch_commands(
                     continue;
                 };
                 let tx = tx.clone();
+                let mut probe_rx = probe_tx.subscribe();
                 rt.spawn(async move {
-                    let msg = fetch_probe(
+                    stream_probe(
                         client,
                         generation,
                         "traceroute",
@@ -231,9 +329,10 @@ fn dispatch_commands(
                         count,
                         src,
                         Some(protocol),
+                        tx,
+                        &mut probe_rx,
                     )
                     .await;
-                    let _ = tx.send(msg);
                 });
             }
             AppCommand::CopyToClipboard { text } => match copy_to_clipboard(&text) {
@@ -353,7 +452,7 @@ async fn connect_worker(
     if let Some(pem) = ca_pem {
         options = options.with_ca_pem(pem);
     }
-    match Client::new(options) {
+    match Client::connect(options).await {
         Ok(client) => match client.system("/rest/system/resource").await {
             Ok(router) => WorkerMsg::Connected {
                 client: Some(Arc::new(client)),
@@ -363,6 +462,111 @@ async fn connect_worker(
             Err(err) => tls_or_connect_error(url, had_pin, err).await,
         },
         Err(err) => tls_or_connect_error(url, had_pin, err).await,
+    }
+}
+
+#[derive(Clone, Default)]
+struct StreamGate(Arc<Mutex<Option<(u64, String)>>>);
+
+impl StreamGate {
+    fn try_own(&self, generation: u64, id: &str) -> bool {
+        let Ok(mut slot) = self.0.lock() else {
+            return false;
+        };
+        if slot.as_ref() == Some(&(generation, id.to_string())) {
+            return false;
+        }
+        *slot = Some((generation, id.to_string()));
+        true
+    }
+}
+
+async fn until_stale(rx: &mut watch::Receiver<u64>, generation: u64) {
+    loop {
+        if *rx.borrow() != generation {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
+async fn fetch_resource(
+    client: Arc<Client>,
+    request_id: u64,
+    generation: u64,
+    resource_id: String,
+    tx: mpsc::UnboundedSender<WorkerMsg>,
+    view_rx: &mut watch::Receiver<u64>,
+    gate: &StreamGate,
+) {
+    let Some(spec) = mtui_core::resource_by_id(&resource_id) else {
+        let _ = tx.send(WorkerMsg::ResourceResult {
+            request_id,
+            generation,
+            resource_id,
+            rows: Vec::new(),
+            error: Some("unknown resource".into()),
+        });
+        return;
+    };
+    let result = match spec.fetch {
+        FetchKind::Local => Ok(Vec::new()),
+        FetchKind::List { endpoint } => client.list(endpoint).await,
+        FetchKind::System { endpoint } => client.system(endpoint).await.map(|r| vec![r]),
+    };
+    match result {
+        Ok(rows) => {
+            let _ = tx.send(WorkerMsg::ResourceResult {
+                request_id,
+                generation,
+                resource_id: resource_id.clone(),
+                rows,
+                error: None,
+            });
+        }
+        Err(err) => {
+            let _ = tx.send(WorkerMsg::ResourceResult {
+                request_id,
+                generation,
+                resource_id,
+                rows: Vec::new(),
+                error: Some(err.to_string()),
+            });
+            return;
+        }
+    }
+    if !gate.try_own(generation, spec.id) {
+        return;
+    }
+    let stream = match spec.fetch {
+        FetchKind::List { .. } if spec.id == "logs" => client.follow_log().await,
+        FetchKind::List { endpoint } => client.listen(endpoint).await,
+        _ => return,
+    };
+    let Ok(mut stream) = stream else {
+        return;
+    };
+    loop {
+        tokio::select! {
+            () = until_stale(view_rx, generation) => {
+                let _ = stream.cancel().await;
+                return;
+            }
+            sample = stream.recv() => {
+                match sample {
+                    Ok(Some(row)) => {
+                        let _ = tx.send(WorkerMsg::ListenDelta {
+                            generation,
+                            resource_id: resource_id.clone(),
+                            row,
+                        });
+                    }
+                    Ok(None) | Err(_) => return,
+                }
+            }
+        }
     }
 }
 
@@ -383,44 +587,6 @@ async fn tls_or_connect_error(url: String, had_pin: bool, err: mtui_routeros::Er
         client: None,
         router: None,
         error: Some(err.to_string()),
-    }
-}
-
-async fn fetch_resource(
-    client: Arc<Client>,
-    request_id: u64,
-    generation: u64,
-    resource_id: &str,
-) -> WorkerMsg {
-    let Some(spec) = mtui_core::resource_by_id(resource_id) else {
-        return WorkerMsg::ResourceResult {
-            request_id,
-            generation,
-            resource_id: resource_id.to_string(),
-            rows: Vec::new(),
-            error: Some("unknown resource".into()),
-        };
-    };
-    let result = match spec.fetch {
-        FetchKind::Local => Ok(Vec::new()),
-        FetchKind::List { endpoint } => client.list(endpoint).await,
-        FetchKind::System { endpoint } => client.system(endpoint).await.map(|r| vec![r]),
-    };
-    match result {
-        Ok(rows) => WorkerMsg::ResourceResult {
-            request_id,
-            generation,
-            resource_id: resource_id.to_string(),
-            rows,
-            error: None,
-        },
-        Err(err) => WorkerMsg::ResourceResult {
-            request_id,
-            generation,
-            resource_id: resource_id.to_string(),
-            rows: Vec::new(),
-            error: Some(err.to_string()),
-        },
     }
 }
 
@@ -486,7 +652,14 @@ fn lookup_option_values(rows: &[mtui_routeros::Resource], value_key: &str) -> Ve
     out
 }
 
-async fn fetch_header(client: Arc<Client>, request_id: u64, generation: u64) -> WorkerMsg {
+async fn fetch_header(
+    client: Arc<Client>,
+    request_id: u64,
+    generation: u64,
+    tx: mpsc::UnboundedSender<WorkerMsg>,
+    view_rx: &mut watch::Receiver<u64>,
+    gate: &StreamGate,
+) {
     let (sys, interfaces) = tokio::join!(
         client.system("/rest/system/resource"),
         client.list("/rest/interface"),
@@ -500,18 +673,30 @@ async fn fetch_header(client: Arc<Client>, request_id: u64, generation: u64) -> 
         Ok(rows) => (rows, None),
         Err(err) => (Vec::new(), Some(err.to_string())),
     };
-
-    WorkerMsg::HeaderResult {
+    let wan_name = select_wan_interface(&interfaces)
+        .ok()
+        .and_then(|iface| iface.field("name").map(ToOwned::to_owned));
+    let _ = tx.send(WorkerMsg::HeaderResult {
         request_id,
         generation,
         system,
         system_error,
         interfaces,
         interface_error,
+    });
+    if let Some(name) = wan_name {
+        stream_wan(client, generation, name, tx, view_rx, gate).await;
     }
 }
 
-async fn fetch_dashboard(client: Arc<Client>, request_id: u64, generation: u64) -> WorkerMsg {
+async fn fetch_dashboard(
+    client: Arc<Client>,
+    request_id: u64,
+    generation: u64,
+    tx: mpsc::UnboundedSender<WorkerMsg>,
+    view_rx: &mut watch::Receiver<u64>,
+    gate: &StreamGate,
+) {
     let (cpu, sys, interfaces, firewall) = tokio::join!(
         client.list("/rest/system/resource/cpu"),
         client.system("/rest/system/resource"),
@@ -535,8 +720,10 @@ async fn fetch_dashboard(client: Arc<Client>, request_id: u64, generation: u64) 
         Ok(rows) => (rows, None),
         Err(err) => (Vec::new(), Some(err.to_string())),
     };
-
-    WorkerMsg::DashboardResult {
+    let wan_name = select_wan_interface(&interfaces)
+        .ok()
+        .and_then(|iface| iface.field("name").map(ToOwned::to_owned));
+    let _ = tx.send(WorkerMsg::DashboardResult {
         request_id,
         generation,
         cpu,
@@ -547,6 +734,45 @@ async fn fetch_dashboard(client: Arc<Client>, request_id: u64, generation: u64) 
         interface_error,
         firewall,
         firewall_error,
+    });
+    if let Some(name) = wan_name {
+        stream_wan(client, generation, name, tx, view_rx, gate).await;
+    }
+}
+
+async fn stream_wan(
+    client: Arc<Client>,
+    generation: u64,
+    interface: String,
+    tx: mpsc::UnboundedSender<WorkerMsg>,
+    view_rx: &mut watch::Receiver<u64>,
+    gate: &StreamGate,
+) {
+    if !gate.try_own(generation, "wan") {
+        return;
+    }
+    let Ok(mut stream) = client.monitor_traffic(&interface).await else {
+        return;
+    };
+    loop {
+        tokio::select! {
+            () = until_stale(view_rx, generation) => {
+                let _ = stream.cancel().await;
+                return;
+            }
+            sample = stream.recv() => {
+                match sample {
+                    Ok(Some(sample)) => {
+                        let _ = tx.send(WorkerMsg::WanSample {
+                            generation,
+                            interface: interface.clone(),
+                            sample,
+                        });
+                    }
+                    Ok(None) | Err(_) => return,
+                }
+            }
+        }
     }
 }
 
@@ -576,18 +802,20 @@ async fn run_mutation(client: &Client, op: MutationOp) -> mtui_routeros::Result<
     }
 }
 
-async fn fetch_torch(
-    client: std::sync::Arc<Client>,
+#[allow(clippy::too_many_arguments)]
+async fn stream_torch(
+    client: Arc<Client>,
     generation: u64,
     interface: String,
     src: String,
     dst: String,
     protocol: String,
     port: String,
-) -> WorkerMsg {
+    tx: mpsc::UnboundedSender<WorkerMsg>,
+    gen_rx: &mut watch::Receiver<u64>,
+) {
     let mut fields = std::collections::BTreeMap::new();
     fields.insert("interface".into(), interface);
-    fields.insert("duration".into(), "2s".into());
     if !src.trim().is_empty() {
         fields.insert("src-address".into(), src);
     }
@@ -600,17 +828,55 @@ async fn fetch_torch(
     if !port.trim().is_empty() {
         fields.insert("port".into(), port);
     }
-    match client.command("/rest/tool", "torch", &fields).await {
-        Ok(value) => WorkerMsg::TorchResult {
-            generation,
-            rows: json_rows(value),
-            error: None,
-        },
-        Err(err) => WorkerMsg::TorchResult {
-            generation,
-            rows: Vec::new(),
-            error: Some(err.to_string()),
-        },
+    let mut stream = match client.stream_command("/rest/tool", "torch", &fields).await {
+        Ok(stream) => stream,
+        Err(err) => {
+            let _ = tx.send(WorkerMsg::TorchResult {
+                generation,
+                rows: Vec::new(),
+                error: Some(err.to_string()),
+                done: true,
+            });
+            return;
+        }
+    };
+    loop {
+        tokio::select! {
+            () = until_stale(gen_rx, generation) => {
+                let _ = stream.cancel().await;
+                return;
+            }
+            sample = stream.recv() => {
+                match sample {
+                    Ok(Some(row)) => {
+                        let _ = tx.send(WorkerMsg::TorchResult {
+                            generation,
+                            rows: vec![row.display_row()],
+                            error: None,
+                            done: false,
+                        });
+                    }
+                    Ok(None) => {
+                        let _ = tx.send(WorkerMsg::TorchResult {
+                            generation,
+                            rows: Vec::new(),
+                            error: None,
+                            done: true,
+                        });
+                        return;
+                    }
+                    Err(err) => {
+                        let _ = tx.send(WorkerMsg::TorchResult {
+                            generation,
+                            rows: Vec::new(),
+                            error: Some(err.to_string()),
+                            done: true,
+                        });
+                        return;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -640,15 +906,18 @@ async fn fetch_file_record(
     }
 }
 
-async fn fetch_probe(
-    client: std::sync::Arc<Client>,
+#[allow(clippy::too_many_arguments)]
+async fn stream_probe(
+    client: Arc<Client>,
     generation: u64,
     command: &str,
     address: String,
     count: String,
     src: String,
     protocol: Option<String>,
-) -> WorkerMsg {
+    tx: mpsc::UnboundedSender<WorkerMsg>,
+    gen_rx: &mut watch::Receiver<u64>,
+) {
     let mut fields = std::collections::BTreeMap::new();
     fields.insert("address".into(), address);
     fields.insert("count".into(), count);
@@ -660,17 +929,55 @@ async fn fetch_probe(
     {
         fields.insert("protocol".into(), protocol);
     }
-    match client.command("/rest/tool", command, &fields).await {
-        Ok(value) => WorkerMsg::PingTraceResult {
-            generation,
-            rows: json_rows(value),
-            error: None,
-        },
-        Err(err) => WorkerMsg::PingTraceResult {
-            generation,
-            rows: Vec::new(),
-            error: Some(err.to_string()),
-        },
+    let mut stream = match client.stream_command("/rest/tool", command, &fields).await {
+        Ok(stream) => stream,
+        Err(err) => {
+            let _ = tx.send(WorkerMsg::PingTraceResult {
+                generation,
+                rows: Vec::new(),
+                error: Some(err.to_string()),
+                done: true,
+            });
+            return;
+        }
+    };
+    loop {
+        tokio::select! {
+            () = until_stale(gen_rx, generation) => {
+                let _ = stream.cancel().await;
+                return;
+            }
+            sample = stream.recv() => {
+                match sample {
+                    Ok(Some(row)) => {
+                        let _ = tx.send(WorkerMsg::PingTraceResult {
+                            generation,
+                            rows: vec![row.display_row()],
+                            error: None,
+                            done: false,
+                        });
+                    }
+                    Ok(None) => {
+                        let _ = tx.send(WorkerMsg::PingTraceResult {
+                            generation,
+                            rows: Vec::new(),
+                            error: None,
+                            done: true,
+                        });
+                        return;
+                    }
+                    Err(err) => {
+                        let _ = tx.send(WorkerMsg::PingTraceResult {
+                            generation,
+                            rows: Vec::new(),
+                            error: Some(err.to_string()),
+                            done: true,
+                        });
+                        return;
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -9,15 +9,15 @@ pub enum ActionKind {
     Edit,
     /// Open a create sheet (or a type picker when `overlay` is `create-type`).
     Create,
-    /// Confirm, then run a REST command or delete.
+    /// Confirm, then run an API command or delete.
     Confirm { command: ActionCommand },
-    /// Prompt for extra fields, then run a REST command.
+    /// Prompt for extra fields, then run an API command.
     Prompt { command: ActionCommand },
     /// Open a dedicated overlay (`torch`, `create-type`).
     Overlay { id: &'static str },
 }
 
-/// REST command word (or delete) after confirmation / prompt.
+/// API command word (or delete) after confirmation / prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActionCommand {
     Enable,
@@ -532,19 +532,6 @@ pub const FILTER_ACTIONS: &[ActionSpec] = &[
     ACTION_RESET,
 ];
 
-pub const ACTION_FILE_UPLOAD: ActionSpec = ActionSpec {
-    id: "upload",
-    label: "Upload",
-    key: Some('u'),
-    enter: false,
-    needs_selection: false,
-    danger: false,
-    kind: ActionKind::Prompt {
-        command: ActionCommand::Upload,
-    },
-    when: ActionWhen::Always,
-};
-
 pub const ACTION_FILE_FETCH: ActionSpec = ActionSpec {
     id: "fetch",
     label: "Fetch URL",
@@ -558,26 +545,11 @@ pub const ACTION_FILE_FETCH: ActionSpec = ActionSpec {
     when: ActionWhen::Always,
 };
 
-pub const ACTION_FILE_DOWNLOAD: ActionSpec = ActionSpec {
-    id: "download",
-    label: "Download",
-    key: Some('w'),
-    enter: false,
-    needs_selection: true,
-    danger: false,
-    kind: ActionKind::Prompt {
-        command: ActionCommand::Download,
-    },
-    when: ActionWhen::HasSelection,
-};
-
-/// Files: backup, upload/download/fetch, and remove. No property sheet.
+/// Files: backup, fetch, and remove. File contents are not transferred over the API.
 pub const FILE_ACTIONS: &[ActionSpec] = &[
     ACTION_BACKUP_SAVE,
     ACTION_BACKUP_LOAD,
-    ACTION_FILE_UPLOAD,
     ACTION_FILE_FETCH,
-    ACTION_FILE_DOWNLOAD,
     ACTION_REMOVE_SELECTED,
 ];
 
@@ -750,28 +722,16 @@ mod tests {
     }
 
     #[test]
-    fn files_actions_document_u_f_w_and_remove() {
+    fn files_actions_document_fetch_backup_and_remove() {
         let keys: Vec<_> = FILE_ACTIONS
             .iter()
             .filter_map(|action| action.key)
             .collect();
-        assert_eq!(keys, ['b', 'u', 'f', 'w', 'x']);
+        assert_eq!(keys, ['b', 'f', 'x']);
         let ids: Vec<_> = FILE_ACTIONS.iter().map(|action| action.id).collect();
-        assert_eq!(
-            ids,
-            [
-                "backup-save",
-                "backup-load",
-                "upload",
-                "fetch",
-                "download",
-                "remove"
-            ]
-        );
+        assert_eq!(ids, ["backup-save", "backup-load", "fetch", "remove"]);
         assert!(!FILE_ACTIONS[2].needs_selection);
-        assert!(!FILE_ACTIONS[3].needs_selection);
-        assert!(FILE_ACTIONS[4].needs_selection);
-        assert!(FILE_ACTIONS[5].needs_selection);
+        assert!(FILE_ACTIONS[3].needs_selection);
     }
 
     #[test]

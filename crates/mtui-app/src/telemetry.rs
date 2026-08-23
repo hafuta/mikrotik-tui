@@ -153,6 +153,33 @@ impl DashboardTelemetry {
         self.firewall_has_base = true;
     }
 
+    /// Live rates from `/interface/monitor-traffic`.
+    pub fn update_wan_monitor(&mut self, interface: &str, sample: &Resource) {
+        if !interface.is_empty() {
+            self.traffic_interface = interface.to_string();
+        }
+        let rx = resource_counter(sample, &["rx-bits-per-second", "rx-bits", "rx-byte"]);
+        let tx = resource_counter(sample, &["tx-bits-per-second", "tx-bits", "tx-byte"]);
+        #[allow(clippy::cast_precision_loss)]
+        {
+            self.traffic_rx_rate = rx as f64;
+            self.traffic_tx_rate = tx as f64;
+        }
+        if self.traffic_samples.is_empty() {
+            self.traffic_samples.push(TrafficSample::default());
+        }
+        self.traffic_samples.push(TrafficSample {
+            rx: self.traffic_rx_rate,
+            tx: self.traffic_tx_rate,
+        });
+        if self.traffic_samples.len() > TRAFFIC_HISTORY {
+            let keep = self.traffic_samples.len() - TRAFFIC_HISTORY;
+            self.traffic_samples.drain(..keep);
+        }
+        self.traffic_has_base = true;
+        self.traffic_updated = Some(Instant::now());
+    }
+
     pub fn update_wan(&mut self, iface: &Resource, at: Instant) {
         let rx = resource_counter(iface, &["rx-byte", "fp-rx-byte"]);
         let tx = resource_counter(iface, &["tx-byte", "fp-tx-byte"]);

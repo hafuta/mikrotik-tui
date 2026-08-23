@@ -17,17 +17,17 @@ pub enum ErrorKind {
     Transport,
     /// A TLS handshake, certificate pin, or trust failure.
     Tls,
-    /// The router rejected the credentials (HTTP 401/403).
+    /// The router rejected the credentials.
     Auth,
-    /// The requested record or endpoint does not exist (HTTP 404).
+    /// The requested record or endpoint does not exist.
     NotFound,
-    /// The router is rate-limiting requests (HTTP 429).
+    /// The router is rate-limiting requests.
     RateLimited,
-    /// The router reported an internal error (HTTP 5xx).
+    /// The router reported an internal error.
     Server,
-    /// Any other non-2xx REST API response.
+    /// A `RouterOS` `!trap` or other API-level failure.
     Api,
-    /// The response body could not be decoded as the expected JSON shape.
+    /// The reply could not be decoded.
     Decode,
 }
 
@@ -55,7 +55,7 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-/// Normalized `RouterOS` REST client error.
+/// Normalized `RouterOS` API client error.
 #[derive(Debug, thiserror::Error)]
 #[error("{display}")]
 pub struct Error {
@@ -113,8 +113,8 @@ impl Error {
             parts.push(operation.to_string());
         }
         parts.push(kind.to_string());
-        if let Some(status) = status {
-            parts.push(format!("HTTP {status}"));
+        if let Some(status) = status.filter(|code| *code != 0) {
+            parts.push(format!("status {status}"));
         }
         if !message.is_empty() {
             parts.push(message.clone());
@@ -153,6 +153,15 @@ impl Error {
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    pub(crate) fn trap(
+        kind: ErrorKind,
+        operation: &'static str,
+        api_code: Option<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::build(kind, operation, None, api_code, message.into(), None)
     }
 
     pub(crate) fn transport(operation: &'static str, message: impl Into<String>) -> Self {

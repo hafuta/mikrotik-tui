@@ -17,7 +17,8 @@ networking or persistence. `mtui-routeros` contains no terminal code.
 
 ## Security boundaries
 
-- HTTPS verification is mandatory. Self-signed devices use custom roots or an
+- TLS verification is mandatory on `api-ssl` (default 8729). Self-signed
+  devices use custom roots or an
   explicitly approved SHA-256 leaf certificate pin.
 - Profile files exclude passwords. Credentials use a separate owner-only store
   with a replaceable interface for future OS keyrings.

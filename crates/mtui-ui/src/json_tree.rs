@@ -1,6 +1,6 @@
 //! Collapsible JSON outline for console expanded rows.
 //!
-//! `RouterOS` REST errors are small objects (`error` / `message` / `detail`).
+//! `RouterOS` API errors are small objects (`error` / `message` / `detail`).
 //! A dedicated JSON-editor widget would pull in an editor crate and a
 //! mismatched ratatui major; this flatten+toggle is enough to inspect them.
 

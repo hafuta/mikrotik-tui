@@ -45,7 +45,7 @@ pub struct LoginForm {
 impl Default for LoginForm {
     fn default() -> Self {
         Self {
-            url: String::from("https://"),
+            url: String::new(),
             username: String::new(),
             password: String::new(),
             focus: LoginField::Url,
@@ -113,16 +113,16 @@ mod tests {
     #[test]
     fn backspace_removes_last_character_of_focused_field() {
         let mut form = LoginForm {
-            url: "https://router".into(),
+            url: "192.168.88.1".into(),
             ..LoginForm::default()
         };
         form.backspace();
-        assert_eq!(form.url, "https://route");
+        assert_eq!(form.url, "192.168.88.");
         form.focus = LoginField::Username;
         form.username = "admin".into();
         form.backspace();
         assert_eq!(form.username, "admi");
-        assert_eq!(form.url, "https://route");
+        assert_eq!(form.url, "192.168.88.");
     }
 
     #[test]

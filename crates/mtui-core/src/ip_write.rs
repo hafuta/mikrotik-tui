@@ -1158,7 +1158,7 @@ mod tests {
 
     #[test]
     fn service_name_is_readonly() {
-        // Disabling www-ssl drops REST access to this app.
+        // Disabling api-ssl drops classic API access to this app.
         assert!(!SERVICE_FORM.writable_keys().contains(&"name"));
         assert!(SERVICE_FORM.writable_keys().contains(&"disabled"));
         status_readonly(&SERVICE_FORM);

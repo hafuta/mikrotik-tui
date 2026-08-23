@@ -5,7 +5,7 @@ use std::time::Duration;
 use crate::actions::ActionSpec;
 use crate::forms::FormSchema;
 
-/// Dashboard nav / content id (not a REST list resource).
+/// Dashboard nav / content id (not a list resource).
 pub const DASHBOARD_ID: &str = "dashboard";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,11 +17,11 @@ pub struct ColumnSpec {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FetchKind {
-    /// List-like `/rest/...` collection.
+    /// List-like collection.
     List { endpoint: &'static str },
     /// Singleton system resource.
     System { endpoint: &'static str },
-    /// Overlay-driven screen; never polled over HTTP.
+    /// Overlay-driven screen; never polled.
     Local,
 }
 
@@ -3671,7 +3671,7 @@ mod tests {
         assert!(
             resource_by_id("files").is_some_and(|spec| spec.form.is_none()
                 && spec.actions.iter().any(|action| action.id == "backup-save")
-                && spec.actions.iter().any(|action| action.id == "upload"))
+                && spec.actions.iter().any(|action| action.id == "fetch"))
         );
     }
 

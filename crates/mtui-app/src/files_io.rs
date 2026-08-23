@@ -1,16 +1,10 @@
-//! Local filesystem helpers for Files upload/download. Used only from workers.
+//! Local filesystem helpers. Used only from workers.
 
 use std::path::Path;
 
-pub const MAX_REST_UPLOAD_BYTES: u64 = 1024 * 1024;
-
-pub fn read_utf8_upload(path: &Path) -> Result<String, String> {
-    let meta = std::fs::metadata(path).map_err(|err| err.to_string())?;
-    if meta.len() > MAX_REST_UPLOAD_BYTES {
-        return Err("file too large for REST contents upload — use Fetch URL".into());
-    }
-    let bytes = std::fs::read(path).map_err(|err| err.to_string())?;
-    String::from_utf8(bytes).map_err(|_| "binary upload not supported; use /tool/fetch".into())
+/// Contents upload is not supported on the classic API.
+pub fn read_utf8_upload(_path: &Path) -> Result<String, String> {
+    Err("Classic API cannot transfer file contents; use Fetch URL".into())
 }
 
 pub fn write_download(path: &Path, contents: &str) -> Result<(), String> {
@@ -26,36 +20,20 @@ pub fn write_download(path: &Path, contents: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_path(name: &str) -> std::path::PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
             .expect("time")
             .as_nanos();
         std::env::temp_dir().join(format!("mtui-files-{stamp}-{name}"))
     }
 
     #[test]
-    fn oversized_upload_is_rejected() {
-        let path = temp_path("big.txt");
-        let len = usize::try_from(MAX_REST_UPLOAD_BYTES.saturating_add(1)).expect("size");
-        let data = vec![b'a'; len];
-        fs::write(&path, data).expect("write");
-        let err = read_utf8_upload(&path).expect_err("too large");
-        let _ = fs::remove_file(&path);
-        assert!(err.contains("file too large"));
+    fn contents_upload_is_rejected() {
+        let err = read_utf8_upload(Path::new("any.txt")).expect_err("unsupported");
         assert!(err.contains("Fetch URL"));
-    }
-
-    #[test]
-    fn binary_upload_is_rejected() {
-        let path = temp_path("bin.dat");
-        fs::write(&path, [0xff, 0xfe, 0x00]).expect("write");
-        let err = read_utf8_upload(&path).expect_err("binary");
-        let _ = fs::remove_file(&path);
-        assert!(err.contains("binary upload not supported"));
+        assert!(!err.to_ascii_lowercase().contains("rest"));
     }
 
     #[test]

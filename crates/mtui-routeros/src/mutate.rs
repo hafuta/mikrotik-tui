@@ -1,4 +1,4 @@
-//! JSON encoding helpers for `RouterOS` REST mutations.
+//! Field encoding helpers for `RouterOS` API mutations.
 
 use std::collections::BTreeMap;
 
@@ -27,7 +27,7 @@ pub fn is_command_name(command: &str) -> bool {
 }
 
 /// Diff writable fields. Unchanged keys, read-only keys, and still-masked
-/// secrets are omitted so PATCH/PUT bodies only contain intentional edits.
+/// secrets are omitted so set/add bodies only contain intentional edits.
 #[must_use]
 pub fn changed_fields(
     original: &BTreeMap<String, String>,

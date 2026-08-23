@@ -2,8 +2,8 @@
 //!
 //! Mirrors the `OverrideStore` behavior in `internal/credentials/credentials.go`,
 //! scoped to the generic (non-profile-prefixed) `MIKROTIK_TUI_*` variables:
-//! `URL`, `USERNAME`, `PASSWORD`, `PASSWORD_FILE`, `CA_FILE`, and
-//! `CERT_FINGERPRINT`.
+//! `HOST` (or deprecated `URL`), `USERNAME`, `PASSWORD`, `PASSWORD_FILE`,
+//! `CA_FILE`, and `CERT_FINGERPRINT`.
 
 use std::path::PathBuf;
 
@@ -19,7 +19,7 @@ pub const ENV_PREFIX: &str = "MIKROTIK_TUI";
 /// [`EnvOverrides::from_env`] (or [`EnvOverrides::from_lookup`] in tests).
 #[derive(Debug, Clone, Default)]
 pub struct EnvOverrides {
-    /// `MIKROTIK_TUI_URL`
+    /// `MIKROTIK_TUI_HOST`, or deprecated `MIKROTIK_TUI_URL`.
     pub url: Option<String>,
     /// `MIKROTIK_TUI_USERNAME`
     pub username: Option<String>,
@@ -45,7 +45,7 @@ impl EnvOverrides {
     pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Self {
         let get = |suffix: &str| lookup(&format!("{ENV_PREFIX}_{suffix}"));
         Self {
-            url: get("URL"),
+            url: get("HOST").or_else(|| get("URL")),
             username: get("USERNAME"),
             password: get("PASSWORD"),
             password_file: get("PASSWORD_FILE"),
@@ -132,13 +132,13 @@ mod tests {
     #[test]
     fn from_lookup_reads_all_fields() {
         let mut map = HashMap::new();
-        map.insert("MIKROTIK_TUI_URL", "https://10.0.0.1");
+        map.insert("MIKROTIK_TUI_HOST", "10.0.0.1:8729");
         map.insert("MIKROTIK_TUI_USERNAME", "admin");
         map.insert("MIKROTIK_TUI_PASSWORD", "hunter2");
         map.insert("MIKROTIK_TUI_CERT_FINGERPRINT", "aa:bb");
         let overrides = EnvOverrides::from_lookup(lookup_from(map));
 
-        assert_eq!(overrides.url, Some("https://10.0.0.1".to_string()));
+        assert_eq!(overrides.url, Some("10.0.0.1:8729".to_string()));
         assert_eq!(overrides.username, Some("admin".to_string()));
         assert_eq!(overrides.password, Some("hunter2".to_string()));
         assert_eq!(overrides.cert_fingerprint, Some("aa:bb".to_string()));
@@ -147,21 +147,38 @@ mod tests {
     }
 
     #[test]
+    fn host_overrides_deprecated_url() {
+        let mut map = HashMap::new();
+        map.insert("MIKROTIK_TUI_HOST", "new.lan:8729");
+        map.insert("MIKROTIK_TUI_URL", "https://old.lan");
+        let overrides = EnvOverrides::from_lookup(lookup_from(map));
+        assert_eq!(overrides.url, Some("new.lan:8729".to_string()));
+    }
+
+    #[test]
+    fn deprecated_url_is_used_without_host() {
+        let mut map = HashMap::new();
+        map.insert("MIKROTIK_TUI_URL", "https://10.0.0.1");
+        let overrides = EnvOverrides::from_lookup(lookup_from(map));
+        assert_eq!(overrides.url, Some("https://10.0.0.1".to_string()));
+    }
+
+    #[test]
     fn apply_to_profile_overrides_fields() {
         let mut map = HashMap::new();
-        map.insert("MIKROTIK_TUI_URL", "https://override");
+        map.insert("MIKROTIK_TUI_HOST", "override.lan:8729");
         map.insert("MIKROTIK_TUI_USERNAME", "override-user");
         let overrides = EnvOverrides::from_lookup(lookup_from(map));
 
         let mut profile = Profile {
             name: "r1".to_string(),
-            url: "https://original".to_string(),
+            url: "192.168.88.1:8729".to_string(),
             username: "original-user".to_string(),
             ..Profile::default()
         };
         overrides.apply_to_profile(&mut profile).unwrap();
 
-        assert_eq!(profile.url, "https://override");
+        assert_eq!(profile.url, "override.lan:8729");
         assert_eq!(profile.username, "override-user");
     }
 

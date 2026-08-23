@@ -1,6 +1,6 @@
 //! Form schemas for the System nav group.
 //!
-//! Extra REST endpoints for the parent catalog (not wired from this module):
+//! Extra API endpoints for the parent catalog (not wired from this module):
 //! - `/rest/system/identity`
 //! - `/rest/system/resource`
 //! - `/rest/system/health`

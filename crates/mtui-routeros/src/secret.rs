@@ -1,7 +1,7 @@
 //! Secret field masking for `RouterOS` record values.
 //!
 //! `RouterOS` returns credentials (PPP secrets, `WiFi` passphrases, `IPsec`
-//! pre-shared keys, ...) as plain-text REST field values. Any UI or log
+//! pre-shared keys, ...) as plain-text field values. Any UI or log
 //! surface that renders [`crate::Resource`] fields must mask these before
 //! display.
 

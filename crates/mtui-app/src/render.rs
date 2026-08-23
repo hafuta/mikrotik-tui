@@ -123,7 +123,7 @@ fn draw_login(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
     let fields = [
         (
-            "URL",
+            "Host",
             app.login.url.as_str(),
             app.login.focus == mtui_ui::LoginField::Url,
         ),
@@ -434,9 +434,7 @@ g           certificates: sign (Home still jumps to first row)
 p           certificates: import (file already on the router)
 w           certificates: export
 x           remove
-u           Files: upload local file
 f           Files: fetch URL · logs: follow · console: fullscreen
-w           Files: download to local path
 z           reset counters
 [ / ]       move rule up / down; properties: previous / next tab
 m           make DHCP lease static

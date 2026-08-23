@@ -15,19 +15,18 @@
 </p>
 
 MikroTik TUI is a keyboard-first terminal client for MikroTik RouterOS. It
-connects over HTTPS REST and presents live operational state - interfaces,
-addressing, DHCP, firewall, hardware, and logs - so any RouterOS device can be
-inspected without leaving the terminal. Interface screens can create, edit,
-and run per-row actions (enable/disable, copy, remove, torch, reset counters)
-through confirmation dialogs and a sectioned properties sheet. Operator menus
-beyond Interfaces — PPP, Bridge, Switch, IP, IPv6, Routing, Queues, Files,
-Tools, RADIUS, and System — use the same action catalog. On Files, `u` uploads
-a local UTF-8 file (1 MiB REST cap), `w` downloads the selected file, and `f`
-runs `/tool/fetch` so the router pulls a package or backup from HTTP(S). Tools
-includes Ping and Traceroute overlays (POST `/tool/ping` and `/tool/traceroute`;
-those screens are not live-polled). Runtime-only views
-(logs, health, RouterBOARD, neighbor/session tables) stay non-editable except
-where WebFig allows remove/disconnect.
+connects over the classic TCP API (`api-ssl`, port 8729) and presents live
+operational state - interfaces, addressing, DHCP, firewall, hardware, and logs
+- so any RouterOS device can be inspected without leaving the terminal.
+Interface screens can create, edit, and run per-row actions (enable/disable,
+copy, remove, torch, reset counters) through confirmation dialogs and a
+sectioned properties sheet. Operator menus beyond Interfaces — PPP, Bridge,
+Switch, IP, IPv6, Routing, Queues, Files, Tools, RADIUS, and System — use the
+same action catalog. On Files, `f` runs `/tool/fetch` so the router pulls a
+package or backup from HTTP(S). Tools includes Ping and Traceroute overlays
+that stream replies until you stop them. Runtime-only views (logs, health,
+RouterBOARD, neighbor/session tables) stay non-editable except where WebFig
+allows remove/disconnect.
 
 ## Features
 
@@ -36,16 +35,16 @@ where WebFig allows remove/disconnect.
 - Browse live RouterOS operational state across the common WebFig operator menus
 - Search, sorting, detail inspector, application log console, command palette, in-app keyboard help, and per-screen RouterOS summaries
 - Hide unused sidebar menus (categories or screens) and reveal them later to restore
-- HTTPS with a custom CA or a pinned device certificate (the pin takes
+- `api-ssl` with a custom CA or a pinned device certificate (the pin takes
   precedence when both are set)
 - Confirmed reboot and shutdown from System Resources, plus named backup save
   and `.backup` load from Files
 - One saved connection profile and machine-local credentials
 - Structured, redacted application logs on disk and in the in-app console
 
-RouterOS v7 with `www-ssl` and REST access is required. Use a dedicated,
+RouterOS v7 with `api-ssl` enabled is required. Use a dedicated,
 least-privileged RouterOS account. Screens you edit require write permission
-for those menus; inspect-only views still work with read-only REST access.
+for those menus; inspect-only views still work with read-only API access.
 
 ## Roadmap
 
@@ -71,7 +70,7 @@ acceptance notes live on each milestone; the full list is
 | Crate | Role |
 |-------|------|
 | `mtui-core` | Resource catalog, shared types, **pluggable themes** |
-| `mtui-routeros` | HTTPS REST client (TLS pin / custom CA; GET plus mutations) |
+| `mtui-routeros` | Classic TCP API client (`api-ssl`; TLS pin / custom CA; print/set/add/remove/command plus listen/streams) |
 | `mtui-config` | Profiles, credentials, env overrides, file logging |
 | `mtui-ui` | Pure widgets/layouts (no networking); styles from theme palette |
 | `mtui-app` | State machine, polling, orchestration |
@@ -111,12 +110,13 @@ Equivalent: `cargo run -p mikrotik-tui`.
 
 Flags: `--version`, `--no-alt-screen`.
 
-On first launch, enter the RouterOS HTTPS URL, username and password. For a
-self-signed certificate, the app presents a SHA-256 fingerprint and asks you
-to trust it before credentials are sent. An approved fingerprint is treated as
-the router identity even when a local certificate is expired or lacks an IP
-subject; any certificate replacement is blocked until its new fingerprint is
-reviewed.
+On first launch, enter the RouterOS host (`192.168.88.1` or `host:8729`),
+username and password. For a self-signed certificate, the app presents a
+SHA-256 fingerprint and asks you to trust it before credentials are sent. An
+approved fingerprint is treated as the router identity even when a local
+certificate is expired or lacks an IP subject; any certificate replacement is
+blocked until its new fingerprint is reviewed. Saved `https://` profiles are
+migrated once to `host:8729`.
 
 Saved files land under the platform config and state directories
 (`~/.config/mikrotik-tui` on Linux, `%APPDATA%\mikrotik-tui` on Windows,
@@ -127,7 +127,8 @@ machine or `MIKROTIK_TUI_PASSWORD_FILE`.
 
 ### Environment overrides
 
-- `MIKROTIK_TUI_URL`
+- `MIKROTIK_TUI_HOST` (host or `host:8729`)
+- `MIKROTIK_TUI_URL` (deprecated; migrated like a saved HTTPS profile)
 - `MIKROTIK_TUI_USERNAME`
 - `MIKROTIK_TUI_PASSWORD`
 - `MIKROTIK_TUI_PASSWORD_FILE` (preferred for containers)
@@ -147,11 +148,10 @@ cycles sort (not on Logs), `r` refreshes, `g`/`G` or Home/End jump, `pgup`/
 `c` copies, `x` removes, `z` resets counters, `[` / `]` move a filter-like rule
 up or down, `m` makes a DHCP lease static, `t` opens torch, `b` reboots on
 Resources or saves a backup on Files, `o` shuts down (power off) on Resources,
-`u` uploads a UTF-8 file on Files, `w` downloads the selected file, `f` fetches a
-URL onto the router, and load-backup is on the Files action menu (`a`) for
-`.backup` rows. `p` opens ping on the Ping tool screen (Enter starts traceroute
-on Traceroute). On Certificates, `g` signs, `p` imports a file already on the
-router, and `w` exports PEM/PKCS12 (passphrases stay secret). `a` opens the
+`f` fetches a URL onto the router, and load-backup is on the Files action menu
+(`a`) for `.backup` rows. `p` opens ping on the Ping tool screen (Enter starts
+traceroute on Traceroute). On Certificates, `g` signs, `p` imports a file already
+on the router, and `w` exports PEM/PKCS12 (passphrases stay secret). `a` opens the
 action menu, `ctrl+s` saves a properties sheet, `ctrl+k` opens the command palette,
 `ctrl+l` logs out, `` ` `` toggles the application log console, `-` hides the
 selected sidebar item after confirmation (or restores it when hidden menus are
@@ -168,7 +168,7 @@ footer stay), `/` for case-insensitive search, `enter` to expand extra fields
 and `c` to copy the focused record.
 
 The Logs page keeps a bounded 500-event local stream with stable deduplication
-and continues polling after a failed fetch. `space` pauses the view while
+and follows `/log/print` after the first print. `space` pauses the view while
 ingestion continues, `f` returns to the newest event, `e` cycles severity, and
 `c` clears only the local buffer (it never deletes logs from RouterOS). Moving
 upward detaches from the tail and shows an unread-event counter.
