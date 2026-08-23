@@ -123,12 +123,7 @@ fn is_apple_terminal(program: &str) -> bool {
 /// `TERM_PROGRAM_VERSION` is either a bundle version (`455`, `470.2`) or a
 /// marketing version (`2.14`, `2.15.1`).
 fn apple_terminal_has_truecolor(version: &str) -> bool {
-    let token = version
-        .trim()
-        .split([' ', '('])
-        .next()
-        .unwrap_or("")
-        .trim();
+    let token = version.trim().split([' ', '(']).next().unwrap_or("").trim();
     let mut parts = token.split('.');
     let Some(major) = parts.next().and_then(|part| part.parse::<u32>().ok()) else {
         return false;
@@ -193,11 +188,7 @@ fn cube_component(value: u8) -> u8 {
 }
 
 fn cube_level(index: u8) -> u8 {
-    if index == 0 {
-        0
-    } else {
-        40 * index + 55
-    }
+    if index == 0 { 0 } else { 40 * index + 55 }
 }
 
 fn gray_index(r: u8, g: u8, b: u8) -> u8 {
@@ -315,10 +306,7 @@ mod tests {
 
     #[test]
     fn term_direct_is_truecolor() {
-        assert_eq!(
-            depth(&[("TERM", "xterm-direct")]),
-            ColorDepth::TrueColor
-        );
+        assert_eq!(depth(&[("TERM", "xterm-direct")]), ColorDepth::TrueColor);
     }
 
     #[test]
