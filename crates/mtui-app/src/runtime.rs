@@ -10,6 +10,7 @@ use crossterm::terminal::{
 };
 use mtui_core::FetchKind;
 use mtui_routeros::{Client, ClientOptions, ErrorKind, probe_certificate};
+use mtui_ui::ColorDepth;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use tokio::sync::{mpsc, watch};
@@ -21,6 +22,7 @@ use crate::telemetry::select_wan_interface;
 use crate::write::MutationOp;
 
 pub fn run(alt_screen: bool, demo: bool) -> anyhow::Result<()> {
+    tracing::info!(color_depth = ?ColorDepth::detect(), "terminal color depth");
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
