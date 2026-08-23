@@ -17,3 +17,6 @@ run the app. Issues, PRs, and chat are where design decisions belong.
    fatigue; put it in the issue or PR instead.
 4. Match the real filename and URL in commands. If a sentence exists only to
    justify a choice made in chat, delete it.
+5. Do not use AI hyphen style. No em dashes (`—`) and no en dashes used as
+   clause breaks (`word – word`). Write a period, a comma, or a colon
+   instead. Empty-value glyphs in the TUI are not this rule.

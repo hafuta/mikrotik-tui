@@ -132,36 +132,22 @@ impl App {
 
     fn login_enter(&mut self) -> Vec<AppCommand> {
         if self.login.pane == LoginPane::List {
-            self.apply_selected_profile();
-            if self.login.uses_totp && self.login.totp.is_empty() {
-                self.login.pane = LoginPane::Form;
+            self.open_selected_profile_form();
+            return Vec::new();
+        }
+        match self.login.focus {
+            LoginField::Connect => return self.begin_connect(),
+            LoginField::Password if self.login.uses_totp && self.login.totp.is_empty() => {
                 self.login.focus = LoginField::Totp;
-                self.status = format!("Enter TOTP for {}", self.profile_label());
-                return Vec::new();
             }
-            if !self.login.remember_password && self.login.password.is_empty() {
-                self.login.pane = LoginPane::Form;
-                self.login.focus = LoginField::Password;
-                self.status = format!("Password for {}", self.profile_label());
-                return Vec::new();
+            LoginField::Password | LoginField::Totp | LoginField::Remember => {
+                self.login.focus = LoginField::Connect;
             }
-            return self.begin_connect();
+            LoginField::Name | LoginField::Url | LoginField::Username => {
+                self.login.focus = self.login.focus.next();
+            }
         }
-        if matches!(
-            self.login.focus,
-            LoginField::Name | LoginField::Url | LoginField::Username
-        ) {
-            self.login.focus = self.login.focus.next();
-            return Vec::new();
-        }
-        if self.login.focus == LoginField::Password
-            && self.login.uses_totp
-            && self.login.totp.is_empty()
-        {
-            self.login.focus = LoginField::Totp;
-            return Vec::new();
-        }
-        self.begin_connect()
+        Vec::new()
     }
 
     fn start_new_profile(&mut self) {
@@ -220,10 +206,10 @@ impl App {
         self.apply_selected_profile();
         self.login.pane = LoginPane::Form;
         self.login.error = None;
-        self.login.focus = if self.login.uses_totp && self.login.totp.is_empty() {
-            LoginField::Totp
+        self.login.focus = if crate::demo::is_demo_target(&self.login.url) {
+            LoginField::Connect
         } else {
-            LoginField::Name
+            self.login.open_focus()
         };
         self.status = format!("Opened {}", self.profile_label());
     }
@@ -390,8 +376,8 @@ impl App {
             KeyCode::Char('l') if self.on_table_content() => {
                 self.table.scroll_columns(1);
             }
-            KeyCode::Left => self.arrow_horizontal(-1),
-            KeyCode::Right => self.arrow_horizontal(1),
+            KeyCode::Left => return self.arrow_horizontal(-1),
+            KeyCode::Right => return self.arrow_horizontal(1),
             KeyCode::Char('y')
                 if (self.pane == Pane::Content || self.pane == Pane::Inspector)
                     && self.current_resource != "logs"
@@ -1098,12 +1084,35 @@ impl App {
         self.current_resource != DASHBOARD_ID && self.pane == Pane::Content
     }
 
-    fn arrow_horizontal(&mut self, delta: isize) {
+    fn arrow_horizontal(&mut self, delta: isize) -> Vec<AppCommand> {
         if self.on_table_content() && self.table.can_scroll_columns(delta) {
             self.table.scroll_columns(delta);
-            return;
+            return Vec::new();
         }
+        let cmds = if delta > 0 && self.pane == Pane::Nav {
+            self.apply_focused_nav()
+        } else {
+            Vec::new()
+        };
         self.shift_main_pane(delta > 0);
+        cmds
+    }
+
+    /// Open the highlighted nav row if it is not the current screen.
+    fn apply_focused_nav(&mut self) -> Vec<AppCommand> {
+        let Some(id) = self.nav.selected_id().map(str::to_owned) else {
+            return Vec::new();
+        };
+        if !self.nav.select_id(&id) {
+            return Vec::new();
+        }
+        let Some(open_id) = self.nav.selected_id().map(str::to_owned) else {
+            return Vec::new();
+        };
+        if open_id == self.current_resource {
+            return Vec::new();
+        }
+        self.open_resource(&open_id)
     }
 
     fn move_content(&mut self, delta: isize) {
@@ -1294,12 +1303,25 @@ mod login_edit_tests {
     }
 
     #[test]
-    fn enter_on_password_starts_a_secure_connection() {
+    fn enter_on_password_moves_to_the_login_button() {
         let mut app = login_app();
         app.login.url = "192.168.88.1:8729".into();
         app.login.username = "reader".into();
         app.login.password = "secret".into();
         app.login.focus = LoginField::Password;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.login.focus, LoginField::Connect);
+        assert_eq!(app.screen, crate::app::Screen::Login);
+    }
+
+    #[test]
+    fn enter_on_login_button_starts_a_secure_connection() {
+        let mut app = login_app();
+        app.login.url = "192.168.88.1:8729".into();
+        app.login.username = "reader".into();
+        app.login.password = "secret".into();
+        app.login.focus = LoginField::Connect;
         let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
         assert_eq!(app.screen, crate::app::Screen::Connecting);
         assert!(
@@ -1331,7 +1353,7 @@ mod login_edit_tests {
         app.login.username = "reader".into();
         app.login.password = "secret".into();
         app.login.totp = "123456".into();
-        app.login.focus = LoginField::Totp;
+        app.login.focus = LoginField::Connect;
         let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
         assert!(
             cmds.iter().any(|cmd| matches!(
@@ -1389,6 +1411,8 @@ mod login_edit_tests {
         }
         assert_eq!(app.login.focus, LoginField::Remember);
         let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
+        assert_eq!(app.login.focus, LoginField::Connect);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
         assert_eq!(app.login.pane, LoginPane::List);
     }
 
@@ -1418,6 +1442,15 @@ mod login_edit_tests {
         assert_eq!(app.login.pane, LoginPane::Form);
         assert_eq!(app.login.name, "bravo");
         assert_eq!(app.login.focus, LoginField::Totp);
+        assert_eq!(app.screen, crate::app::Screen::Login);
+
+        app.login.pane = LoginPane::List;
+        app.login.selected_profile = 0;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.login.pane, LoginPane::Form);
+        assert_eq!(app.login.name, "alpha");
+        assert_eq!(app.login.focus, LoginField::Connect);
         assert_eq!(app.screen, crate::app::Screen::Login);
     }
 
@@ -1494,6 +1527,7 @@ mod table_scroll_tests {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;
         app.current_resource = "interfaces".into();
+        let _ = app.nav.select_id("interfaces");
         app.pane = Pane::Content;
         let spec = resource_by_id("interfaces").expect("interfaces resource");
         app.table = TableState::new(spec.columns);
@@ -1868,6 +1902,7 @@ mod about_overlay_tests {
 #[cfg(test)]
 mod nav_accordion_tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use mtui_core::DASHBOARD_ID;
 
     use crate::app::{App, Pane, Screen};
     use crate::event::AppEvent;
@@ -1927,6 +1962,43 @@ mod nav_accordion_tests {
                     if resource_id == "ppp-secrets"
             )),
             "expected PPP secrets load, got {cmds:?}"
+        );
+    }
+
+    #[test]
+    fn right_on_nav_opens_the_focused_item_then_moves_to_content() {
+        let mut app = main_app();
+        let _ = app.update(AppEvent::Resize {
+            width: 140,
+            height: 24,
+        });
+        assert_eq!(app.pane, Pane::Nav);
+        assert_eq!(app.current_resource, DASHBOARD_ID);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        assert_eq!(app.nav.selected_id(), Some("interfaces-group"));
+        assert_eq!(app.current_resource, DASHBOARD_ID);
+
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Right)));
+        assert_eq!(app.current_resource, "interfaces");
+        assert_eq!(app.nav.selected_id(), Some("interfaces"));
+        assert_eq!(app.pane, Pane::Content);
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                crate::app::AppCommand::FetchResource { resource_id, .. }
+                    if resource_id == "interfaces"
+            )),
+            "expected interfaces resource load, got {cmds:?}"
+        );
+
+        app.pane = Pane::Nav;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Right)));
+        assert_eq!(app.current_resource, "interfaces");
+        assert_eq!(app.pane, Pane::Content);
+        assert!(
+            cmds.is_empty(),
+            "right on the already-open item should only move focus, got {cmds:?}"
         );
     }
 

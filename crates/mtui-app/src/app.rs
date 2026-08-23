@@ -393,7 +393,7 @@ impl App {
                     self.profile_label()
                 )
             } else {
-                format!("Loaded {} · enter to connect", self.profile_label())
+                format!("Loaded {} · enter to open", self.profile_label())
             };
         } else if has_router && self.login.uses_totp {
             self.login.pane = LoginPane::Form;
