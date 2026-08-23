@@ -66,7 +66,7 @@ const releases = `${repo}/releases`;
           </li>
           <li class="path">
             <code>/ip</code>
-            <span>Addresses, ARP, DHCP, DNS, routes, pools, services, NAT, mangle, and filter.</span>
+            <span>Addresses, DHCP, DNS, firewall, IPsec, hotspot, proxy, and related IP menus.</span>
           </li>
           <li class="path">
             <code>/ppp</code>
@@ -123,16 +123,17 @@ const releases = `${repo}/releases`;
           <div>
             <p class="prose">
               Linux, macOS, and Windows binaries ship unsigned from GitHub
-              Releases. First launch asks for the HTTPS URL, username, and
-              password.
+              Releases. First launch asks for host (<code>192.168.88.1</code> or
+              <code>host:8729</code>), username, and password.
             </p>
             <pre class="term"><code><span class="cmt"># unpack a release, then</span>
 ./mikrotik-tui</code></pre>
           </div>
           <p class="note">
-            Needs RouterOS v7 with REST over HTTPS. Saved files live under your
-            OS config directory (<code>~/.config/mikrotik-tui</code> on Linux).
-            See <a href={`${repo}#run`}>first launch</a> for certificate pinning.
+            Needs RouterOS v7 with <code>api-ssl</code> enabled. Saved files live
+            under your OS config directory (<code>~/.config/mikrotik-tui</code> on
+            Linux). See <a href={`${repo}#run`}>first launch</a> for certificate
+            pinning.
           </p>
         </div>
         <div class="btn-row btn-row--start">
