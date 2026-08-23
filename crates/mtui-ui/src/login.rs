@@ -6,7 +6,7 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
 
-use crate::chrome::{footer_bar, header_line};
+use crate::chrome::{Signal, SignalLevel, footer_bar, session_header};
 use crate::layout::{clip_line, fit_cell};
 use crate::overlay::{Modal, ModalButton, ModalButtonKind, render_modal};
 use crate::paint::{fill_rect, line_on_bg};
@@ -62,6 +62,30 @@ impl LoginField {
     #[must_use]
     pub fn is_secret(self) -> bool {
         matches!(self, Self::Password | Self::Totp)
+    }
+
+    #[must_use]
+    pub fn next_in_form(self) -> Option<Self> {
+        match self {
+            Self::Name => Some(Self::Url),
+            Self::Url => Some(Self::Username),
+            Self::Username => Some(Self::Password),
+            Self::Password => Some(Self::Totp),
+            Self::Totp => Some(Self::Remember),
+            Self::Remember => None,
+        }
+    }
+
+    #[must_use]
+    pub fn prev_in_form(self) -> Option<Self> {
+        match self {
+            Self::Name => None,
+            Self::Url => Some(Self::Name),
+            Self::Username => Some(Self::Url),
+            Self::Password => Some(Self::Username),
+            Self::Totp => Some(Self::Password),
+            Self::Remember => Some(Self::Totp),
+        }
     }
 }
 
@@ -149,6 +173,46 @@ impl LoginForm {
         self.remember_password = !self.remember_password;
     }
 
+    pub fn set_remember(&mut self, value: bool) {
+        self.remember_password = value;
+    }
+
+    /// Tab from the form walks fields; the last step jumps to the router list.
+    pub fn tab_forward(&mut self) {
+        if self.profiles.is_empty() {
+            self.focus = self.focus.next();
+            return;
+        }
+        match self.pane {
+            LoginPane::List => {
+                self.pane = LoginPane::Form;
+                self.focus = LoginField::Name;
+            }
+            LoginPane::Form => match self.focus.next_in_form() {
+                Some(field) => self.focus = field,
+                None => self.pane = LoginPane::List,
+            },
+        }
+    }
+
+    /// Shift+Tab walks fields backward; the first step from Name returns to the list.
+    pub fn tab_back(&mut self) {
+        if self.profiles.is_empty() {
+            self.focus = self.focus.prev();
+            return;
+        }
+        match self.pane {
+            LoginPane::List => {
+                self.pane = LoginPane::Form;
+                self.focus = LoginField::Remember;
+            }
+            LoginPane::Form => match self.focus.prev_in_form() {
+                Some(field) => self.focus = field,
+                None => self.pane = LoginPane::List,
+            },
+        }
+    }
+
     pub fn move_profile(&mut self, delta: isize) {
         let len = self.profiles.len();
         if len == 0 {
@@ -208,6 +272,7 @@ pub struct LoginView<'a> {
     pub form: &'a LoginForm,
     pub status: &'a str,
     pub connecting: bool,
+    pub clock: &'a str,
 }
 
 pub fn render_login(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, styles: &Styles) {
@@ -227,8 +292,20 @@ pub fn render_login(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, sty
     } else {
         "devices"
     };
+    let clock_signals = if view.clock.is_empty() {
+        Vec::new()
+    } else {
+        vec![Signal::new("", view.clock, SignalLevel::Idle)]
+    };
     frame.render_widget(
-        Paragraph::new(header_line("mikrotik-tui", subtitle, styles)),
+        Paragraph::new(session_header(
+            "mikrotik-tui",
+            subtitle,
+            &clock_signals,
+            usize::from(area.width.max(1)),
+            styles,
+            false,
+        )),
         chunks[0],
     );
 
@@ -277,15 +354,16 @@ fn login_hints(form: &LoginForm) -> Vec<(&'static str, &'static str)> {
     } else if form.pane == LoginPane::List {
         vec![
             ("enter", "connect"),
+            ("→", "open"),
             ("n", "new"),
             ("x", "forget"),
-            ("tab", "edit"),
+            ("tab", "fields"),
             ("q", "quit"),
         ]
     } else {
         vec![
             ("enter", "connect"),
-            ("tab", "devices"),
+            ("tab", "field"),
             ("space", "remember"),
             ("esc", "list"),
             ("q", "quit"),
@@ -293,9 +371,20 @@ fn login_hints(form: &LoginForm) -> Vec<(&'static str, &'static str)> {
     }
 }
 
+fn inset_h(area: Rect, pad: u16) -> Rect {
+    let pad = pad.min(area.width / 2);
+    Rect {
+        x: area.x.saturating_add(pad),
+        y: area.y,
+        width: area.width.saturating_sub(pad.saturating_mul(2)),
+        height: area.height,
+    }
+}
+
 fn render_login_body(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, styles: &Styles) {
+    let area = inset_h(area, 1);
     if view.form.profiles.is_empty() || area.width < 72 {
-        render_form_column(frame, area, view.form, styles, true);
+        render_form_column(frame, inset_h(area, 1), view.form, styles, true);
         return;
     }
     let cols = Layout::default()
@@ -303,7 +392,7 @@ fn render_login_body(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, st
         .constraints([Constraint::Length(28), Constraint::Min(36)])
         .split(area);
     render_profile_list(frame, cols[0], view.form, styles);
-    render_form_column(frame, cols[1], view.form, styles, false);
+    render_form_column(frame, inset_h(cols[1], 1), view.form, styles, false);
 }
 
 fn render_profile_list(frame: &mut Frame<'_>, area: Rect, form: &LoginForm, styles: &Styles) {
@@ -396,7 +485,7 @@ fn render_form_column(
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(3),
-        Constraint::Length(2),
+        Constraint::Length(3),
         Constraint::Min(1),
     ]);
     let chunks = Layout::default()
@@ -426,11 +515,6 @@ fn render_form_column(
     } else {
         "•".repeat(form.totp.len())
     };
-    let remember_shown = if form.remember_password {
-        "on  ·  stored in the OS keychain"
-    } else {
-        "off · type the password each connect"
-    };
 
     let fields = [
         ("Name", form.name.as_str(), LoginField::Name),
@@ -438,13 +522,20 @@ fn render_form_column(
         ("Username", form.username.as_str(), LoginField::Username),
         ("Password", password_shown.as_str(), LoginField::Password),
         ("TOTP", totp_shown.as_str(), LoginField::Totp),
-        ("Remember password", remember_shown, LoginField::Remember),
     ];
     for (label, value, field) in fields {
         let focused = form_focus && form.focus == field;
         render_field(frame, chunks[idx], label, value, focused, field, styles);
         idx += 1;
     }
+    render_remember_field(
+        frame,
+        chunks[idx],
+        form.remember_password,
+        form_focus && form.focus == LoginField::Remember,
+        styles,
+    );
+    idx += 1;
 
     let err = form.error.clone().unwrap_or_default();
     frame.render_widget(Paragraph::new(err).style(styles.error), chunks[idx]);
@@ -472,7 +563,6 @@ fn render_field(
 ) {
     let hint = match field {
         LoginField::Totp => " optional · 6 digits · never saved",
-        LoginField::Remember => " space toggles",
         _ => "",
     };
     let title = if hint.is_empty() {
@@ -488,13 +578,55 @@ fn render_field(
         ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(if focused { styles.focus } else { styles.border });
-    let shown = if focused && field != LoginField::Remember {
+        .border_style(if focused { styles.focus } else { styles.border })
+        .padding(Padding::new(1, 1, 0, 0));
+    let shown = if focused {
         format!("{value}▏")
     } else {
         value.to_string()
     };
     frame.render_widget(Paragraph::new(shown).style(style).block(block), area);
+}
+
+fn render_remember_field(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    on: bool,
+    focused: bool,
+    styles: &Styles,
+) {
+    let block = Block::default()
+        .title(Span::styled(
+            " Remember password ",
+            if focused { styles.focus } else { styles.muted },
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(if focused { styles.focus } else { styles.border })
+        .padding(Padding::new(1, 1, 0, 0));
+    let on_mark = if on { "(•)" } else { "( )" };
+    let off_mark = if on { "( )" } else { "(•)" };
+    let on_style = if focused && on {
+        styles.focus
+    } else if on {
+        styles.text
+    } else {
+        styles.muted
+    };
+    let off_style = if focused && !on {
+        styles.focus
+    } else if !on {
+        styles.text
+    } else {
+        styles.muted
+    };
+    let line = Line::from(vec![
+        Span::styled(format!("{on_mark} On"), on_style),
+        Span::styled("    ", styles.muted),
+        Span::styled(format!("{off_mark} Off"), off_style),
+        Span::styled("  space toggles", styles.muted),
+    ]);
+    frame.render_widget(Paragraph::new(line).block(block), area);
 }
 
 /// Re-auth overlay copy while a live session is still on screen.
@@ -639,6 +771,94 @@ mod tests {
         assert_eq!(LoginField::Password.prev(), LoginField::Username);
     }
 
+    fn sample_rows() -> Vec<SavedProfileRow> {
+        vec![SavedProfileRow {
+            name: "core".into(),
+            url: "192.168.88.1:8729".into(),
+            username: "admin".into(),
+            remember_password: true,
+            uses_totp: false,
+        }]
+    }
+
+    #[test]
+    fn tab_on_form_walks_fields_then_returns_to_the_list() {
+        let mut form = LoginForm {
+            profiles: sample_rows(),
+            pane: LoginPane::Form,
+            focus: LoginField::Name,
+            ..LoginForm::default()
+        };
+        form.tab_forward();
+        assert_eq!(form.focus, LoginField::Url);
+        assert_eq!(form.pane, LoginPane::Form);
+        form.tab_forward();
+        assert_eq!(form.focus, LoginField::Username);
+        form.tab_forward();
+        assert_eq!(form.focus, LoginField::Password);
+        form.tab_forward();
+        assert_eq!(form.focus, LoginField::Totp);
+        form.tab_forward();
+        assert_eq!(form.focus, LoginField::Remember);
+        form.tab_forward();
+        assert_eq!(form.pane, LoginPane::List);
+        form.tab_forward();
+        assert_eq!(form.pane, LoginPane::Form);
+        assert_eq!(form.focus, LoginField::Name);
+        form.tab_back();
+        assert_eq!(form.pane, LoginPane::List);
+        form.tab_back();
+        assert_eq!(form.pane, LoginPane::Form);
+        assert_eq!(form.focus, LoginField::Remember);
+    }
+
+    #[test]
+    fn remember_field_draws_on_and_off_choices() {
+        let backend = TestBackend::new(90, 28);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let form = LoginForm {
+            remember_password: true,
+            pane: LoginPane::Form,
+            focus: LoginField::Remember,
+            profiles: sample_rows(),
+            ..LoginForm::default()
+        };
+        terminal
+            .draw(|frame| {
+                render_login(
+                    frame,
+                    frame.area(),
+                    &LoginView {
+                        form: &form,
+                        status: "ok",
+                        connecting: false,
+                        clock: "",
+                    },
+                    &styles,
+                );
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut found_on = false;
+        let mut found_off = false;
+        for y in 0..buf.area.height {
+            let mut row = String::new();
+            for x in 0..buf.area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            if row.contains("On") {
+                found_on = true;
+            }
+            if row.contains("Off") {
+                found_off = true;
+            }
+        }
+        assert!(found_on, "remember On choice missing");
+        assert!(found_off, "remember Off choice missing");
+    }
+
     #[test]
     fn login_layout_keeps_header_and_footer_on_a_narrow_terminal() {
         let backend = TestBackend::new(60, 24);
@@ -668,6 +888,7 @@ mod tests {
                         form: &form,
                         status: "pick a router",
                         connecting: false,
+                        clock: "2026-08-23  14:12:00",
                     },
                     &styles,
                 );
@@ -676,6 +897,7 @@ mod tests {
         let buf = terminal.backend().buffer();
         let mut found_title = false;
         let mut found_footer = false;
+        let mut found_clock = false;
         for y in 0..buf.area.height {
             let mut row = String::new();
             for x in 0..buf.area.width {
@@ -684,12 +906,16 @@ mod tests {
             if row.contains("mikrotik-tui") {
                 found_title = true;
             }
+            if row.contains("2026-08-23") {
+                found_clock = true;
+            }
             if row.contains("enter") {
                 found_footer = true;
             }
         }
         assert!(found_title);
         assert!(found_footer);
+        assert!(found_clock);
     }
 
     #[test]
@@ -729,6 +955,7 @@ mod tests {
                         form: &form,
                         status: "ok",
                         connecting: false,
+                        clock: "2026-08-23  14:12:00",
                     },
                     &styles,
                 );

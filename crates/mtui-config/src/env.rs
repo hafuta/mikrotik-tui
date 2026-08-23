@@ -102,6 +102,7 @@ impl EnvOverrides {
         }
         if let Some(store) = store {
             return match store.get(profile_name) {
+                Ok(credential) if credential.password.is_empty() => Ok(None),
                 Ok(credential) => Ok(Some(credential.password)),
                 Err(ConfigError::CredentialsNotFound(_)) => Ok(None),
                 Err(err) => Err(err),

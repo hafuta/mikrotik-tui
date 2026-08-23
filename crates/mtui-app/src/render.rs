@@ -73,6 +73,12 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
     }
 }
 
+fn login_clock() -> String {
+    chrono::Local::now()
+        .format("%Y-%m-%d  %H:%M:%S")
+        .to_string()
+}
+
 fn draw_login(frame: &mut Frame<'_>, area: Rect, app: &App, connecting: bool) {
     let styles = app.styles();
     render_login(
@@ -82,6 +88,7 @@ fn draw_login(frame: &mut Frame<'_>, area: Rect, app: &App, connecting: bool) {
             form: &app.login,
             status: &app.status,
             connecting,
+            clock: &login_clock(),
         },
         &styles,
     );

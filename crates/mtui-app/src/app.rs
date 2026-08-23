@@ -386,14 +386,14 @@ impl App {
         let has_router =
             is_router_target(&self.login.url) && !self.login.username.trim().is_empty();
         if has_router && !self.login.uses_totp {
-            self.restore_on_start = true;
+            self.login.pane = LoginPane::List;
             self.status = if self.login.password.is_empty() && !self.login.remember_password {
                 format!(
                     "Loaded {} · enter password to connect",
                     self.profile_label()
                 )
             } else {
-                format!("Restoring {}…", self.profile_label())
+                format!("Loaded {} · enter to connect", self.profile_label())
             };
         } else if has_router && self.login.uses_totp {
             self.login.pane = LoginPane::Form;
@@ -437,6 +437,7 @@ impl App {
     }
 
     pub(crate) fn apply_profile(&mut self, profile: &Profile, load_secret: bool) {
+        let same_profile = self.current_profile == profile.name || self.login.name == profile.name;
         self.current_profile.clone_from(&profile.name);
         self.login.name.clone_from(&profile.name);
         self.login.url = migrate_connection_target(&profile.url);
@@ -473,11 +474,14 @@ impl App {
         if load_secret && profile.remember_password {
             match EnvOverrides::from_env().resolve_password(&profile.name, Some(&*self.credentials))
             {
-                Ok(Some(password)) => self.login.password = password,
-                Ok(None) => self.login.password.clear(),
+                Ok(Some(password)) if !password.is_empty() => self.login.password = password,
+                Ok(_) if same_profile && !self.login.password.is_empty() => {}
+                Ok(_) => self.login.password.clear(),
                 Err(err) => {
                     self.status = format!("Saved credentials unavailable: {err}");
-                    self.login.password.clear();
+                    if !same_profile {
+                        self.login.password.clear();
+                    }
                 }
             }
         } else if load_secret {
@@ -496,7 +500,7 @@ impl App {
         }
     }
 
-    /// Auto-connect when a saved profile exists, matching the Go startup path.
+    /// Kept for TOTP and empty-session startup; saved profiles no longer auto-connect.
     pub fn startup_commands(&mut self) -> Vec<AppCommand> {
         if !self.restore_on_start {
             return Vec::new();
@@ -583,6 +587,92 @@ impl App {
         }
     }
 
+    fn password_to_remember(&self) -> String {
+        let totp = self.login.totp.trim();
+        if let Some(pending) = self.pending_password.as_deref() {
+            let static_part = if !totp.is_empty() && pending.ends_with(totp) {
+                pending[..pending.len().saturating_sub(totp.len())].to_string()
+            } else {
+                pending.to_string()
+            };
+            if !static_part.is_empty() {
+                return static_part;
+            }
+        }
+        self.login.password.clone()
+    }
+
+    fn store_or_forget_password(&mut self, name: &str) {
+        if !self.login.remember_password {
+            let _ = self.credentials.delete(name);
+            return;
+        }
+        let password = self.password_to_remember();
+        if password.is_empty() {
+            return;
+        }
+        if self.credentials.put(name, Credential { password }).is_err() {
+            self.status = "Password could not be stored".into();
+        }
+    }
+
+    /// Save a remembered draft from the login screen so a typed password
+    /// survives quitting without requiring another successful connect.
+    pub(crate) fn persist_login_draft(&mut self) {
+        if self.demo.is_some()
+            || self
+                .login
+                .name
+                .trim()
+                .eq_ignore_ascii_case(DEMO_PROFILE_NAME)
+            || is_demo_target(&self.login.url)
+        {
+            return;
+        }
+        if !is_router_target(&self.login.url) || self.login.username.trim().is_empty() {
+            return;
+        }
+        if !self.login.remember_password && self.login.password.is_empty() {
+            return;
+        }
+        let url = normalize_router_url(&self.login.url);
+        let name = if !self.login.name.trim().is_empty() {
+            self.login.name.trim().to_string()
+        } else if !self.current_profile.trim().is_empty() {
+            self.current_profile.trim().to_string()
+        } else {
+            suggested_profile_name(
+                &url,
+                self.login.username.trim(),
+                &self
+                    .login
+                    .profiles
+                    .iter()
+                    .map(|row| row.name.clone())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        if name.eq_ignore_ascii_case(DEMO_PROFILE_NAME) {
+            return;
+        }
+        self.current_profile.clone_from(&name);
+        self.login.name.clone_from(&name);
+        let mut profile = self.named_profile().unwrap_or_else(|| Profile {
+            name: name.clone(),
+            ..Profile::default()
+        });
+        profile.name.clone_from(&name);
+        profile.url.clone_from(&url);
+        profile.username = self.login.username.trim().to_string();
+        profile.remember_password = self.login.remember_password;
+        if self.profiles.upsert(profile).is_err() {
+            return;
+        }
+        let _ = self.profiles.set_last_used(&name);
+        self.store_or_forget_password(&name);
+        self.reload_profile_rows();
+    }
+
     fn persist_connected_session(&mut self) {
         if self.demo.is_some()
             || self
@@ -630,28 +720,12 @@ impl App {
         self.login.uses_totp = profile.uses_totp;
         profile.set_theme_id(self.theme.id.as_str());
         profile.set_hidden_nav_ids(self.nav.hidden.iter().cloned());
-        let static_password = self.login.password.clone();
         if self.profiles.upsert(profile).is_err() {
             self.status = "Connected · profile could not be saved".into();
             return;
         }
         let _ = self.profiles.set_last_used(&name);
-        if self.login.remember_password {
-            if self
-                .credentials
-                .put(
-                    &name,
-                    Credential {
-                        password: static_password,
-                    },
-                )
-                .is_err()
-            {
-                self.status = "Connected · password could not be stored".into();
-            }
-        } else {
-            let _ = self.credentials.delete(&name);
-        }
+        self.store_or_forget_password(&name);
         self.login.totp.clear();
         self.reload_profile_rows();
         self.saved_url = Some(url);
@@ -2626,6 +2700,92 @@ mod session_profile_tests {
         assert!(!app.restore_on_start);
         assert_eq!(app.login.focus, mtui_ui::LoginField::Totp);
         assert!(app.startup_commands().is_empty());
+        drop(app);
+    }
+
+    #[test]
+    fn last_used_profile_is_selected_without_connecting() {
+        let (_app, dir) = isolated_app("no-auto");
+        ProfileStore::new(&dir.0)
+            .upsert(sample_profile("core", "admin"))
+            .unwrap();
+        FileCredentialStore::new(&dir.0)
+            .put(
+                "core",
+                Credential {
+                    password: "pw".into(),
+                },
+            )
+            .unwrap();
+        let mut app = App::compose(
+            false,
+            ProfileStore::new(&dir.0),
+            Box::new(FileCredentialStore::new(&dir.0)),
+        );
+        assert!(!app.restore_on_start);
+        assert_eq!(app.screen, Screen::Login);
+        assert!(app.login.error.is_none());
+        assert!(app.startup_commands().is_empty());
+        assert_eq!(app.screen, Screen::Login);
+        assert!(app.login.profiles.iter().any(|row| row.name == "core"));
+        assert_eq!(app.login.password, "pw");
+        drop(app);
+    }
+
+    #[test]
+    fn apply_profile_keeps_a_typed_password_when_none_is_stored() {
+        let (mut app, dir) = isolated_app("keep-typed");
+        ProfileStore::new(&dir.0)
+            .upsert(sample_profile("core", "admin"))
+            .unwrap();
+        app.reload_profile_rows();
+        app.login.name = "core".into();
+        app.current_profile = "core".into();
+        app.login.password = "typed".into();
+        app.login.remember_password = true;
+        let profile = ProfileStore::new(&dir.0)
+            .load()
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        app.apply_profile(&profile, true);
+        assert_eq!(app.login.password, "typed");
+    }
+
+    #[test]
+    fn persist_stores_the_pending_password_when_the_form_field_is_empty() {
+        let (mut app, dir) = isolated_app("pending-secret");
+        app.login.url = "10.0.0.1:8729".into();
+        app.login.username = "admin".into();
+        app.login.name = "core".into();
+        app.login.password.clear();
+        app.login.remember_password = true;
+        app.current_profile = "core".into();
+        app.pending_password = Some("secret".into());
+        app.persist_connected_session();
+        let creds = FileCredentialStore::new(&dir.0);
+        assert_eq!(creds.get("core").unwrap().password, "secret");
+    }
+
+    #[test]
+    fn persist_login_draft_remembers_password_without_connecting() {
+        let (mut app, dir) = isolated_app("draft");
+        app.login.url = "10.0.0.1:8729".into();
+        app.login.username = "admin".into();
+        app.login.name = "core".into();
+        app.login.password = "typed".into();
+        app.login.remember_password = true;
+        app.persist_login_draft();
+        let creds = FileCredentialStore::new(&dir.0);
+        assert_eq!(creds.get("core").unwrap().password, "typed");
+        let app = App::compose(
+            false,
+            ProfileStore::new(&dir.0),
+            Box::new(FileCredentialStore::new(&dir.0)),
+        );
+        assert_eq!(app.login.password, "typed");
+        assert!(app.login.remember_password);
         drop(app);
     }
 
