@@ -23,8 +23,8 @@ copy, remove, torch, reset counters) through confirmation dialogs and a
 sectioned properties sheet. Operator menus beyond Interfaces — PPP, Bridge,
 Switch, IP, IPv6, Routing, Queues, Files, Tools, RADIUS, and System — use the
 same action catalog. On Files, `f` runs `/tool/fetch` so the router pulls a
-package or backup from HTTP(S). Tools includes Ping and Traceroute overlays
-that stream replies until you stop them. Runtime-only views (logs, health,
+package or backup from HTTP(S). Tools screens open diagnostic overlays that
+stream until you stop them. Runtime-only views (logs, health,
 RouterBOARD, neighbor/session tables) stay non-editable except where WebFig
 allows remove/disconnect.
 
@@ -48,21 +48,22 @@ for those menus; inspect-only views still work with read-only API access.
 
 ## Roadmap
 
-Work is tracked as GitHub milestones, in this order. Open issues and
-acceptance notes live on each milestone; the full list is
+Work is tracked as GitHub milestones. Open issues and acceptance notes live
+on each milestone; the full list is
 [hafuta/mikrotik-tui milestones](https://github.com/hafuta/mikrotik-tui/milestones).
+
+Shipped: [session, profiles, and login](https://github.com/hafuta/mikrotik-tui/milestone/2)
+and [classic TCP API](https://github.com/hafuta/mikrotik-tui/milestone/3) (`api-ssl`).
+
+Still open, in this order:
 
 1. [Operator completeness](https://github.com/hafuta/mikrotik-tui/milestone/1) -
    remaining WebFig menus and row actions for a stock RouterOS 7 router
-2. [Session, profiles, and login](https://github.com/hafuta/mikrotik-tui/milestone/2) -
-   named device profiles, remember password / TOTP, and explicit forget vs re-auth
-3. [Classic TCP API](https://github.com/hafuta/mikrotik-tui/milestone/3) -
-   replace HTTPS REST with `api-ssl` so tables can `.listen` and tools can stream
-4. [Safe operations and session health](https://github.com/hafuta/mikrotik-tui/milestone/6) -
+2. [Safe operations and session health](https://github.com/hafuta/mikrotik-tui/milestone/6) -
    reconnect and stale-data cues, permission-aware inspect-only, keyring, undo-lite
-5. [Everyday operator UX](https://github.com/hafuta/mikrotik-tui/milestone/7) -
+3. [Everyday operator UX](https://github.com/hafuta/mikrotik-tui/milestone/7) -
    per-screen action hints, save preview, copy/export, bulk select, demo profile
-6. [Distribution and adoption](https://github.com/hafuta/mikrotik-tui/milestone/8) -
+4. [Distribution and adoption](https://github.com/hafuta/mikrotik-tui/milestone/8) -
    signed releases, install channels, and a documented RouterOS version matrix
 
 ## Crates
