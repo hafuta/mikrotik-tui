@@ -145,7 +145,8 @@ or opens the selected item. On an Interfaces table, `enter` edits the selected
 row. `/` filters the table, `s`
 cycles sort (not on Logs), `r` refreshes, `g`/`G` or Home/End jump, `pgup`/
 `pgdn` and `ctrl+u`/`ctrl+d` page, `e` edits, `n` adds, `d` enables or disables,
-`c` copies, `x` removes, `z` resets counters, `[` / `]` move a filter-like rule
+`c` copies, `x` removes, `y` copies the selected row or inspector details to clipboard,
+`z` resets counters, `[` / `]` move a filter-like rule
 up or down, `m` makes a DHCP lease static, `t` opens torch, `b` reboots on
 Resources or saves a backup on Files, `o` shuts down (power off) on Resources,
 `f` fetches a URL onto the router, and load-backup is on the Files action menu

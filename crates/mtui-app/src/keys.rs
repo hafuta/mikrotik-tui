@@ -236,6 +236,13 @@ impl App {
             }
             KeyCode::Left => self.arrow_horizontal(-1),
             KeyCode::Right => self.arrow_horizontal(1),
+            KeyCode::Char('y')
+                if (self.pane == Pane::Content || self.pane == Pane::Inspector)
+                    && self.current_resource != "logs"
+                    && !self.status.starts_with("Filter:") =>
+            {
+                return self.copy_current_view();
+            }
             KeyCode::Enter => {
                 if self.pane == Pane::Nav
                     && let Some(id) = self.nav.selected_id().map(str::to_owned)

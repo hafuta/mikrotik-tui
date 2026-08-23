@@ -820,6 +820,24 @@ impl App {
         self.request_id
     }
 
+    pub(crate) fn copy_current_view(&mut self) -> Vec<AppCommand> {
+        match self.pane {
+            Pane::Content => {
+                if let Some(row) = self.table.selected_row() {
+                    let text = format_row_for_copy(row);
+                    vec![AppCommand::CopyToClipboard { text }]
+                } else {
+                    Vec::new()
+                }
+            }
+            Pane::Inspector => {
+                let text = format_inspector_for_copy(&self.inspector);
+                vec![AppCommand::CopyToClipboard { text }]
+            }
+            _ => Vec::new(),
+        }
+    }
+
     pub(crate) fn select_resource(&mut self, id: &str) {
         tracing::trace!(resource_id = id, "opened pane");
         self.poll_generation = self.poll_generation.wrapping_add(1);
@@ -1905,4 +1923,64 @@ mod secret_mask_tests {
                 .any(|(_, value)| value.contains("MARKER"))
         );
     }
+
+    #[test]
+    fn y_key_copies_current_row_to_clipboard() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("interfaces");
+        app.pane = Pane::Content;
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("name".into(), "ether1".into());
+        fields.insert("type".into(), "ether".into());
+        fields.insert("mtu".into(), "1500".into());
+        let row = Resource {
+            id: "*1".into(),
+            fields,
+        };
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "interfaces".into(),
+            rows: vec![row],
+            error: None,
+        }));
+
+        let cmds = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Char('y'),
+            KeyModifiers::NONE,
+        )));
+
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                AppCommand::CopyToClipboard { text }
+                    if text.contains("name: ether1") && text.contains("mtu: 1500")
+            )),
+            "expected copy command, got {cmds:?}"
+        );
+    }
+}
+
+fn format_row_for_copy(row: &std::collections::HashMap<String, String>) -> String {
+    let mut pairs: Vec<_> = row.iter().collect();
+    pairs.sort_by_key(|(k, _)| *k);
+    pairs
+        .iter()
+        .map(|(k, v)| format!("{k}: {v}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_inspector_for_copy(inspector: &mtui_ui::InspectorState) -> String {
+    inspector
+        .fields
+        .iter()
+        .map(|(k, v)| format!("{k}: {v}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

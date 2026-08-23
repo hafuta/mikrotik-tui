@@ -164,6 +164,13 @@ impl App {
                 hints.push(("a".into(), "actions".into()));
             }
         }
+        // Add copy hint for content and inspector panes
+        if matches!(self.pane, Pane::Content | Pane::Inspector)
+            && self.current_resource != "logs"
+            && !self.status.starts_with("Filter:")
+        {
+            hints.push(("y".into(), "copy".into()));
+        }
         hints.push(("r".into(), "refresh".into()));
         hints.push(("q".into(), "quit".into()));
         hints
