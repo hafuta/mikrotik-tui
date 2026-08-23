@@ -448,6 +448,7 @@ impl Default for DemoStore {
 
 /// Serve a command from the fixture store. `None` means the runtime should
 /// handle the command itself (clipboard, quit, file I/O).
+#[allow(clippy::too_many_lines)]
 pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>> {
     match cmd {
         AppCommand::FetchResource {

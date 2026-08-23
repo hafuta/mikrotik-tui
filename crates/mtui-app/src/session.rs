@@ -139,7 +139,7 @@ impl Session {
         }
         let host = mtui_routeros::header_host(&self.login.url);
         if !host.is_empty() {
-            return host.to_string();
+            return host;
         }
         "Login".into()
     }

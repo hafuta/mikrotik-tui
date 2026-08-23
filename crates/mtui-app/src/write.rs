@@ -188,6 +188,7 @@ impl App {
             hints.push(("*".into(), "all".into()));
         }
         hints.push(("r".into(), "refresh".into()));
+        hints.push(("ctrl+t".into(), "tab".into()));
         hints.push(("q".into(), "quit".into()));
         hints
     }

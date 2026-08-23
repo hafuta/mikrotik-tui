@@ -37,7 +37,7 @@ flowchart TB
   (theme, saved profiles, credential store, file log). It does not own a
   RouterOS TCP session.
 - **Session** owns one `Client`, one UI tree, request generations, watches,
-  and `StreamGate`s. A new tab is `Session::default()` on Login.
+  and `StreamGate`s. A new tab is `Session::new(id)` on Login.
 - **Runtime** is the I/O loop. Every command and `WorkerMsg` carries a
   `SessionId`. Dispatch applies the message only to that session.
 
@@ -57,15 +57,15 @@ not open sockets or interpret tab ids.
 - **Shared stores.** Theme, profiles, credentials, and the file log are
   keyed by profile name. Sessions read and write those stores; they do not
   share in-memory maps of each other's UI.
-- **New tab.** Open at Login via `Session::default()`. Cap open tabs at
-  about 8 so chrome and worker load stay bounded.
+- **New tab.** Open at Login via `Session::new(id)`. Do not clone a
+  session. Cap open tabs at 8 (each connected tab uses two TLS sockets).
 
 ## Client handles
 
-`Client.clone()` is a cheap handle to the same TCP connection. Never wrap
-the client in `Arc<Client>` and hand that out across sessions. Each session
-constructs or receives its own client. Cloning inside one session (command
-vs watch) is fine; cloning across tab ids is not.
+`Client.clone()` and `Arc<Client>` share the same two TCP sessions. Each
+tab holds its own `Option<Arc<Client>>`. Clone that handle only inside the
+session that connected. Two tabs never store the same `Arc`, even when they
+log into the same host. Connect always opens a new pair.
 
 ## Paint vs apply
 

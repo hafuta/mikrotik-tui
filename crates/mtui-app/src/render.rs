@@ -3,13 +3,12 @@
 use mtui_core::{DASHBOARD_ID, WHEN_YOU_NEED_IT};
 use mtui_ui::{
     CpuCoreView, DashboardView, LayoutMetrics, LoginView, Modal, ModalButton, ModalButtonKind,
-    ModalPanel, ReauthView, constrain_lines, dashboard_content, fill_rect, footer_bar,
+    ModalPanel, ReauthView, TabLabel, constrain_lines, dashboard_content, fill_rect, footer_bar,
     format_fingerprint, modal_max_scroll, render_action_menu, render_form_sheet, render_login,
-    render_modal, render_probe, render_reauth, render_torch, session_header,
+    render_modal, render_probe, render_reauth, render_torch, session_header, tab_bar,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
 
 use crate::app::{App, Overlay, Pane, Screen};
@@ -83,17 +82,19 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
 fn draw_tab_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
     fill_rect(frame, area, styles.band);
-    let mut spans = Vec::with_capacity(app.sessions.len());
-    for (idx, session) in app.sessions.iter().enumerate() {
-        let label = format!(" {}:{} ", idx + 1, session.tab_title());
-        let style = if session.id == app.active {
-            styles.title
-        } else {
-            styles.muted
-        };
-        spans.push(Span::styled(label, style));
-    }
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    let tabs: Vec<TabLabel> = app
+        .sessions
+        .iter()
+        .map(|session| {
+            TabLabel::new(
+                session.id.get(),
+                session.tab_title(),
+                session.client.is_some() || session.demo.is_some(),
+            )
+        })
+        .collect();
+    let line = tab_bar(&tabs, app.active.get(), usize::from(area.width), &styles);
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 fn login_clock() -> String {

@@ -612,6 +612,7 @@ async fn until_stale(rx: &mut watch::Receiver<u64>, generation: u64) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn fetch_resource(
     session: SessionId,
     client: Arc<Client>,
