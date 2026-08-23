@@ -1,4 +1,4 @@
-//! `RouterOS` classic TCP API client (`api-ssl`).
+//! `RouterOS` classic TCP API client (`api-ssl` or plaintext `api`).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use crate::mutate::is_command_name;
 use crate::resource::Resource;
 use crate::sentence::Sentence;
 use crate::session::Session;
-use crate::target::{ConnectionTarget, parse_connection_target};
+use crate::target::{ConnectionTarget, parse_connection_target_for};
 use crate::tls;
 
 /// Default request timeout applied when [`ClientOptions::request_timeout`]
@@ -24,16 +24,20 @@ pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Configuration accepted by [`Client::connect`].
 #[derive(Clone, Debug)]
 pub struct ClientOptions {
-    /// Router host or `host:port` (default port [`DEFAULT_API_SSL_PORT`]).
+    /// Router host or `host:port`. The default port is `8729` when
+    /// [`use_tls`](Self::use_tls) is true and `8728` otherwise.
     pub target: String,
     pub username: String,
     pub password: String,
     /// Per-request timeout. Defaults to [`DEFAULT_REQUEST_TIMEOUT`] when
     /// `None`.
     pub request_timeout: Option<Duration>,
-    /// PEM-encoded custom CA bundle to trust instead of the system/webpki
-    /// trust store. Ignored when [`certificate_pin`](Self::certificate_pin)
-    /// is set.
+    /// Use `api-ssl` (TLS). When false, the plaintext `api` service is used
+    /// and certificate options are ignored.
+    pub use_tls: bool,
+    /// PEM- or DER-encoded custom CA bundle. Ignored when
+    /// [`certificate_pin`](Self::certificate_pin) is set or TLS is off.
+    /// When unset, the OS trust store is used.
     pub ca_pem: Option<Vec<u8>>,
     /// SHA-256 leaf certificate fingerprint to pin (see
     /// [`crate::normalize_certificate_pin`] for accepted formats). When set,
@@ -54,6 +58,7 @@ impl ClientOptions {
             username: username.into(),
             password: password.into(),
             request_timeout: None,
+            use_tls: true,
             ca_pem: None,
             certificate_pin: None,
         }
@@ -62,6 +67,12 @@ impl ClientOptions {
     #[must_use]
     pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = Some(timeout);
+        self
+    }
+
+    #[must_use]
+    pub fn with_tls(mut self, use_tls: bool) -> Self {
+        self.use_tls = use_tls;
         self
     }
 
@@ -93,10 +104,10 @@ struct ClientInner {
 }
 
 impl Client {
-    /// Opens two `api-ssl` sessions (control + stream) and logs in.
+    /// Opens two API sessions (control + stream) and logs in.
     pub async fn connect(options: ClientOptions) -> Result<Self> {
         let timeout = options.request_timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT);
-        let target = parse_connection_target(&options.target, "new_client")?;
+        let target = parse_connection_target_for(&options.target, "new_client", options.use_tls)?;
         let control = connect_session(&options, &target, timeout).await?;
         let stream = connect_session(&options, &target, timeout).await?;
         Ok(Self {
@@ -363,20 +374,6 @@ async fn connect_session(
     target: &ConnectionTarget,
     request_timeout: Duration,
 ) -> Result<Session> {
-    let config = if let Some(raw_pin) = &options.certificate_pin {
-        let pin = tls::normalize_certificate_pin(raw_pin)?;
-        tls::client_config_with_pin(&pin)?
-    } else if let Some(pem) = &options.ca_pem {
-        tls::client_config_with_ca(pem)?
-    } else {
-        return Err(Error::tls(
-            "new_client",
-            "certificate pin or custom CA is required",
-        ));
-    };
-    let server_name = ServerName::try_from(target.host.clone())
-        .map_err(|err| Error::tls("new_client", format!("invalid host name: {err}")))?;
-    let connector = TlsConnector::from(Arc::new(config));
     let tcp = tokio::time::timeout(
         request_timeout,
         TcpStream::connect((target.host.as_str(), target.port)),
@@ -390,6 +387,26 @@ async fn connect_session(
         )
     })?
     .map_err(|err| classify_connect(&err.to_string()))?;
+    if !options.use_tls {
+        return Session::from_stream(
+            tcp,
+            options.username.clone(),
+            options.password.clone(),
+            request_timeout,
+        )
+        .await;
+    }
+    let config = if let Some(raw_pin) = &options.certificate_pin {
+        let pin = tls::normalize_certificate_pin(raw_pin)?;
+        tls::client_config_with_pin(&pin)?
+    } else if let Some(pem) = &options.ca_pem {
+        tls::client_config_with_ca(pem)?
+    } else {
+        tls::client_config_with_native_roots()?
+    };
+    let server_name = ServerName::try_from(target.host.clone())
+        .map_err(|err| Error::tls("new_client", format!("invalid host name: {err}")))?;
+    let connector = TlsConnector::from(Arc::new(config));
     let tls = connector
         .connect(server_name, tcp)
         .await

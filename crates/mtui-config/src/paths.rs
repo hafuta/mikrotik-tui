@@ -20,6 +20,32 @@ use crate::error::{ConfigError, Result};
 /// Application name used to namespace every on-disk path.
 pub const APPLICATION: &str = "mikrotik-tui";
 
+/// Expands a leading `~/` or `~\` using `HOME` or `USERPROFILE`. Other paths
+/// are returned unchanged so Windows drive paths and Unix absolute paths work.
+#[must_use]
+pub fn expand_user_path(raw: &str) -> PathBuf {
+    let trimmed = raw.trim();
+    if trimmed == "~" {
+        return home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    }
+    let rest = trimmed
+        .strip_prefix("~/")
+        .or_else(|| trimmed.strip_prefix("~\\"));
+    if let Some(rest) = rest
+        && let Some(home) = home_dir()
+    {
+        return home.join(rest);
+    }
+    PathBuf::from(trimmed)
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
 fn project_dirs() -> Result<ProjectDirs> {
     ProjectDirs::from("", "", APPLICATION).ok_or(ConfigError::NoConfigDir)
 }

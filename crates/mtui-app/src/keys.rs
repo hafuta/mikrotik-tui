@@ -106,6 +106,16 @@ impl App {
                 self.login.set_remember(true);
             }
             KeyCode::Left
+                if self.login.pane == LoginPane::Form && self.login.focus == LoginField::Tls =>
+            {
+                self.login.set_tls(false);
+            }
+            KeyCode::Right
+                if self.login.pane == LoginPane::Form && self.login.focus == LoginField::Tls =>
+            {
+                self.login.set_tls(true);
+            }
+            KeyCode::Left
                 if self.login.pane == LoginPane::Form && !self.login.profiles.is_empty() =>
             {
                 self.login.pane = LoginPane::List;
@@ -131,6 +141,11 @@ impl App {
             {
                 self.login.toggle_remember();
             }
+            KeyCode::Char(' ')
+                if self.login.pane == LoginPane::Form && self.login.focus == LoginField::Tls =>
+            {
+                self.login.toggle_tls();
+            }
             KeyCode::Char('n') if self.login.pane == LoginPane::List => self.start_new_profile(),
             KeyCode::Char('x' | 'd') if self.login.pane == LoginPane::List => {
                 if let Some(row) = self.login.selected_row().cloned() {
@@ -155,6 +170,8 @@ impl App {
             KeyCode::Char(ch) if self.login.pane == LoginPane::Form => {
                 if ch == ' ' && self.login.focus == LoginField::Remember {
                     self.login.toggle_remember();
+                } else if ch == ' ' && self.login.focus == LoginField::Tls {
+                    self.login.toggle_tls();
                 } else {
                     self.login.insert_char(ch);
                 }
@@ -174,7 +191,8 @@ impl App {
             LoginField::Password if self.login.uses_totp && self.login.totp.is_empty() => {
                 self.login.focus = LoginField::Totp;
             }
-            LoginField::Password | LoginField::Totp | LoginField::Remember => {
+            LoginField::CaFile => return self.open_ca_file_picker(),
+            LoginField::Password | LoginField::Totp | LoginField::Tls | LoginField::Remember => {
                 self.login.focus = LoginField::Connect;
             }
             LoginField::Name | LoginField::Url | LoginField::Username => {
@@ -193,6 +211,8 @@ impl App {
         self.login.totp.clear();
         self.login.remember_password = true;
         self.login.uses_totp = false;
+        self.login.use_tls = true;
+        self.login.ca_file.clear();
         self.login.error = None;
         self.login.pane = LoginPane::Form;
         self.login.focus = LoginField::Name;
@@ -217,6 +237,8 @@ impl App {
             self.login.password.clear();
             self.login.totp.clear();
             self.login.uses_totp = false;
+            self.login.use_tls = true;
+            self.login.ca_file.clear();
             self.login.remember_password = false;
             self.current_profile = crate::demo::DEMO_PROFILE_NAME.into();
             return;
@@ -511,8 +533,85 @@ impl App {
             Overlay::TypePicker(_) => self.keys_action_menu(key, true),
             Overlay::Torch(_) => self.keys_torch(key),
             Overlay::Probe(_) => self.keys_probe(key),
+            Overlay::FilePicker(_) => self.keys_file_picker(key),
             Overlay::None => Vec::new(),
         }
+    }
+
+    fn keys_file_picker(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        match key.code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                self.status = "CA file browse canceled".into();
+                Vec::new()
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.move_selection(-1);
+                }
+                Vec::new()
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.move_selection(1);
+                }
+                Vec::new()
+            }
+            KeyCode::Home => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.jump_home();
+                }
+                Vec::new()
+            }
+            KeyCode::End => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.jump_end();
+                }
+                Vec::new()
+            }
+            KeyCode::PageUp => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.move_selection(-8);
+                }
+                Vec::new()
+            }
+            KeyCode::PageDown => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.move_selection(8);
+                }
+                Vec::new()
+            }
+            KeyCode::Left | KeyCode::Backspace | KeyCode::Char('h') => self.file_picker_parent(),
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.file_picker_open(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn file_picker_parent(&mut self) -> Vec<AppCommand> {
+        let Overlay::FilePicker(picker) = &self.overlay else {
+            return Vec::new();
+        };
+        match crate::files_io::parent_browse_dir(&picker.dir) {
+            Some(parent) => self.list_picker_dir(parent),
+            None => Vec::new(),
+        }
+    }
+
+    fn file_picker_open(&mut self) -> Vec<AppCommand> {
+        let Overlay::FilePicker(picker) = &self.overlay else {
+            return Vec::new();
+        };
+        let Some(entry) = picker.selected_entry().cloned() else {
+            return Vec::new();
+        };
+        if entry.is_dir {
+            return self.list_picker_dir(entry.path);
+        }
+        self.login.ca_file = entry.path;
+        self.login.focus = LoginField::CaFile;
+        self.overlay = Overlay::None;
+        self.status = "CA file selected".into();
+        Vec::new()
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1386,6 +1485,26 @@ mod login_edit_tests {
     }
 
     #[test]
+    fn enter_on_login_button_starts_a_plaintext_api_connection() {
+        let mut app = login_app();
+        app.login.url = "192.168.88.1".into();
+        app.login.username = "reader".into();
+        app.login.password = "secret".into();
+        app.login.use_tls = false;
+        app.login.focus = LoginField::Connect;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert_eq!(app.screen, crate::app::Screen::Connecting);
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                crate::app::AppCommand::Connect { url, use_tls, pin, ca_pem, .. }
+                    if url == "192.168.88.1:8728" && !*use_tls && pin.is_none() && ca_pem.is_none()
+            )),
+            "expected plaintext connect on 8728, got {cmds:?}"
+        );
+    }
+
+    #[test]
     fn enter_on_login_button_starts_a_secure_connection() {
         let mut app = login_app();
         app.login.url = "192.168.88.1:8729".into();
@@ -1402,6 +1521,117 @@ mod login_edit_tests {
             )),
             "expected connect command, got {cmds:?}"
         );
+    }
+
+    #[test]
+    fn enter_on_ca_file_opens_a_directory_browser() {
+        let mut app = login_app();
+        app.login.focus = LoginField::CaFile;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(
+            cmds.iter()
+                .any(|cmd| matches!(cmd, crate::app::AppCommand::ListLocalDir { .. })),
+            "expected list dir, got {cmds:?}"
+        );
+        assert!(matches!(app.overlay, crate::app::Overlay::FilePicker(_)));
+    }
+
+    #[test]
+    fn file_picker_selects_a_file_and_ignores_stale_listings() {
+        let mut app = login_app();
+        app.login.focus = LoginField::CaFile;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let generation = match &app.overlay {
+            crate::app::Overlay::FilePicker(picker) => picker.generation,
+            other => panic!("expected picker, got {other:?}"),
+        };
+        let _ = app.update(AppEvent::Worker(
+            crate::event::WorkerMsg::ListLocalDirResult {
+                session: app.test_session(),
+                generation: generation.wrapping_add(1),
+                dir: "/stale".into(),
+                entries: vec![mtui_ui::FilePickerEntry {
+                    name: "old.pem".into(),
+                    path: "/stale/old.pem".into(),
+                    is_dir: false,
+                }],
+                error: None,
+            },
+        ));
+        assert!(matches!(
+            &app.overlay,
+            crate::app::Overlay::FilePicker(picker) if picker.entries.is_empty()
+        ));
+        let _ = app.update(AppEvent::Worker(
+            crate::event::WorkerMsg::ListLocalDirResult {
+                session: app.test_session(),
+                generation,
+                dir: "/certs".into(),
+                entries: vec![
+                    mtui_ui::FilePickerEntry {
+                        name: "issued".into(),
+                        path: "/certs/issued".into(),
+                        is_dir: true,
+                    },
+                    mtui_ui::FilePickerEntry {
+                        name: "ca.pem".into(),
+                        path: "/certs/ca.pem".into(),
+                        is_dir: false,
+                    },
+                ],
+                error: None,
+            },
+        ));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.login.ca_file, "/certs/ca.pem");
+        assert_eq!(app.overlay, crate::app::Overlay::None);
+    }
+
+    #[test]
+    fn file_picker_enter_on_a_directory_requests_another_listing() {
+        let mut app = login_app();
+        app.login.focus = LoginField::CaFile;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let generation = match &app.overlay {
+            crate::app::Overlay::FilePicker(picker) => picker.generation,
+            other => panic!("expected picker, got {other:?}"),
+        };
+        let _ = app.update(AppEvent::Worker(
+            crate::event::WorkerMsg::ListLocalDirResult {
+                session: app.test_session(),
+                generation,
+                dir: "/certs".into(),
+                entries: vec![mtui_ui::FilePickerEntry {
+                    name: "issued".into(),
+                    path: "/certs/issued".into(),
+                    is_dir: true,
+                }],
+                error: None,
+            },
+        ));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                crate::app::AppCommand::ListLocalDir { path, .. } if path == "/certs/issued"
+            )),
+            "expected nested list, got {cmds:?}"
+        );
+        assert!(matches!(app.overlay, crate::app::Overlay::FilePicker(_)));
+    }
+
+    #[test]
+    fn file_picker_esc_closes_without_changing_the_path() {
+        let mut app = login_app();
+        app.login.ca_file = "/keep.pem".into();
+        app.login.focus = LoginField::CaFile;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.overlay, crate::app::Overlay::None);
+        assert_eq!(app.login.ca_file, "/keep.pem");
     }
 
     #[test]
@@ -1444,6 +1674,8 @@ mod login_edit_tests {
                 username: "admin".into(),
                 remember_password: true,
                 uses_totp: false,
+                use_tls: true,
+                ca_file: String::new(),
             },
             mtui_ui::SavedProfileRow {
                 name: "bravo".into(),
@@ -1451,6 +1683,8 @@ mod login_edit_tests {
                 username: "reader".into(),
                 remember_password: false,
                 uses_totp: true,
+                use_tls: true,
+                ca_file: String::new(),
             },
         ];
         app.login.pane = LoginPane::List;
@@ -1470,13 +1704,15 @@ mod login_edit_tests {
             username: "admin".into(),
             remember_password: true,
             uses_totp: false,
+            use_tls: true,
+            ca_file: String::new(),
         }];
         app.login.pane = LoginPane::Form;
         app.login.focus = LoginField::Name;
         let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
         assert_eq!(app.login.pane, LoginPane::Form);
         assert_eq!(app.login.focus, LoginField::Url);
-        for _ in 0..4 {
+        for _ in 0..6 {
             let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
         }
         assert_eq!(app.login.focus, LoginField::Remember);
@@ -1496,6 +1732,8 @@ mod login_edit_tests {
                 username: "admin".into(),
                 remember_password: true,
                 uses_totp: false,
+                use_tls: true,
+                ca_file: String::new(),
             },
             mtui_ui::SavedProfileRow {
                 name: "bravo".into(),
@@ -1503,6 +1741,8 @@ mod login_edit_tests {
                 username: "reader".into(),
                 remember_password: false,
                 uses_totp: true,
+                use_tls: true,
+                ca_file: String::new(),
             },
         ];
         app.login.pane = LoginPane::List;

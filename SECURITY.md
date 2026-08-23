@@ -4,9 +4,11 @@ MikroTik TUI mutates RouterOS through confirmed actions and property sheets.
 It still handles credentials that can be valuable on a local network.
 
 - Use a dedicated RouterOS user with only the permissions required for the
-  menus you inspect or edit, plus `api-ssl` access.
-- Keep TLS verification enabled. Approve a self-signed fingerprint only
-  after comparing it through a trusted channel.
+  menus you inspect or edit, plus `api-ssl` or `api` access.
+- Prefer `api-ssl`. Plain `api` sends the login and all traffic in the
+  clear. Keep TLS verification enabled. A CA-signed certificate is checked
+  against the OS trust store, or against a CA file you provide. Approve a
+  self-signed fingerprint only after comparing it through a trusted channel.
 - Treat remembered passwords as sensitive. They are stored in the OS keychain
   when it is available; the file fallback is permission-restricted, not
   encrypted. Prefer a mounted secret file on shared or container hosts.

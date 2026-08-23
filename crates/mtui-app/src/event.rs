@@ -111,6 +111,13 @@ pub enum WorkerMsg {
         options: Vec<String>,
         error: Option<String>,
     },
+    ListLocalDirResult {
+        session: SessionId,
+        generation: u64,
+        dir: String,
+        entries: Vec<mtui_ui::FilePickerEntry>,
+        error: Option<String>,
+    },
     ListenDelta {
         session: SessionId,
         generation: u64,
@@ -142,6 +149,7 @@ impl WorkerMsg {
             | Self::RecordResult { session, .. }
             | Self::PingTraceResult { session, .. }
             | Self::LookupResult { session, .. }
+            | Self::ListLocalDirResult { session, .. }
             | Self::ListenDelta { session, .. }
             | Self::WanSample { session, .. } => *session,
         }
