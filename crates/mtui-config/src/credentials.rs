@@ -240,8 +240,10 @@ impl CredentialStore for PlatformCredentialStore {
     fn get(&self, profile: &str) -> Result<Credential> {
         require_profile_name(profile)?;
         match keyring_get(profile) {
-            Ok(Some(password)) => return Ok(Credential { password }),
-            Ok(None) => {}
+            Ok(Some(password)) if !password.is_empty() => {
+                return Ok(Credential { password });
+            }
+            Ok(Some(_) | None) => {}
             Err(err) => {
                 tracing::debug!(error = %err, profile, "keyring get failed; trying file store");
             }
@@ -252,10 +254,19 @@ impl CredentialStore for PlatformCredentialStore {
     fn put(&self, profile: &str, credential: Credential) -> Result<()> {
         require_profile_name(profile)?;
         match keyring_put(profile, &credential.password) {
-            Ok(()) => {
-                let _ = self.file.delete(profile);
-                Ok(())
-            }
+            Ok(()) => match keyring_get(profile) {
+                Ok(Some(got)) if got == credential.password => {
+                    let _ = self.file.delete(profile);
+                    Ok(())
+                }
+                _ => {
+                    tracing::debug!(
+                        profile,
+                        "keyring put did not round-trip; keeping file store"
+                    );
+                    self.file.put(profile, credential)
+                }
+            },
             Err(err) => {
                 tracing::debug!(error = %err, profile, "keyring put failed; using file store");
                 self.file.put(profile, credential)

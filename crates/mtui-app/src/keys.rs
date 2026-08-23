@@ -10,6 +10,9 @@ use crate::app::{App, AppCommand, Overlay, Pane, Screen};
 impl App {
     pub(crate) fn on_key(&mut self, key: KeyEvent) -> Vec<AppCommand> {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            if self.screen == Screen::Login {
+                self.persist_login_draft();
+            }
             self.should_quit = true;
             return vec![AppCommand::Quit];
         }
@@ -39,24 +42,8 @@ impl App {
             return Vec::new();
         }
         match key.code {
-            KeyCode::Tab => {
-                if self.login.profiles.is_empty() {
-                    self.login.focus = self.login.focus.next();
-                } else if self.login.pane == LoginPane::List {
-                    self.login.pane = LoginPane::Form;
-                } else {
-                    self.login.pane = LoginPane::List;
-                }
-            }
-            KeyCode::BackTab => {
-                if self.login.profiles.is_empty() {
-                    self.login.focus = self.login.focus.prev();
-                } else if self.login.pane == LoginPane::Form {
-                    self.login.pane = LoginPane::List;
-                } else {
-                    self.login.pane = LoginPane::Form;
-                }
-            }
+            KeyCode::Tab => self.login.tab_forward(),
+            KeyCode::BackTab => self.login.tab_back(),
             KeyCode::Down | KeyCode::Char('j') if self.login.pane == LoginPane::List => {
                 self.login.move_profile(1);
             }
@@ -69,12 +56,33 @@ impl App {
             KeyCode::Up if self.login.pane == LoginPane::Form => {
                 self.login.focus = self.login.focus.prev();
             }
+            KeyCode::Right | KeyCode::Char('e') if self.login.pane == LoginPane::List => {
+                self.open_selected_profile_form();
+            }
+            KeyCode::Left
+                if self.login.pane == LoginPane::Form
+                    && self.login.focus == LoginField::Remember =>
+            {
+                self.login.set_remember(false);
+            }
+            KeyCode::Right
+                if self.login.pane == LoginPane::Form
+                    && self.login.focus == LoginField::Remember =>
+            {
+                self.login.set_remember(true);
+            }
+            KeyCode::Left
+                if self.login.pane == LoginPane::Form && !self.login.profiles.is_empty() =>
+            {
+                self.login.pane = LoginPane::List;
+            }
             KeyCode::Enter => return self.login_enter(),
             KeyCode::Esc => {
                 if self.login.pane == LoginPane::Form && !self.login.profiles.is_empty() {
                     self.login.pane = LoginPane::List;
                     return Vec::new();
                 }
+                self.persist_login_draft();
                 self.should_quit = true;
                 return vec![AppCommand::Quit];
             }
@@ -103,14 +111,10 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('e') if self.login.pane == LoginPane::List => {
-                self.apply_selected_profile();
-                self.login.pane = LoginPane::Form;
-                self.login.focus = LoginField::Name;
-            }
             KeyCode::Char('q')
                 if self.login.pane == LoginPane::List || !self.login.focus.is_secret() =>
             {
+                self.persist_login_draft();
                 self.should_quit = true;
                 return vec![AppCommand::Quit];
             }
@@ -206,7 +210,22 @@ impl App {
             .find(|item| item.name == row.name)
         {
             self.apply_profile(&profile, true);
+        } else {
+            self.login.apply_row(&row);
+            self.current_profile.clone_from(&row.name);
         }
+    }
+
+    fn open_selected_profile_form(&mut self) {
+        self.apply_selected_profile();
+        self.login.pane = LoginPane::Form;
+        self.login.error = None;
+        self.login.focus = if self.login.uses_totp && self.login.totp.is_empty() {
+            LoginField::Totp
+        } else {
+            LoginField::Name
+        };
+        self.status = format!("Opened {}", self.profile_label());
     }
 
     fn keys_trust(&mut self, key: KeyEvent) -> Vec<AppCommand> {
@@ -1348,6 +1367,58 @@ mod login_edit_tests {
         assert_eq!(app.login.selected_profile, 1);
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('k'))));
         assert_eq!(app.login.selected_profile, 0);
+    }
+
+    #[test]
+    fn tab_on_form_walks_fields_before_the_profile_list() {
+        let mut app = login_app();
+        app.login.profiles = vec![mtui_ui::SavedProfileRow {
+            name: "alpha".into(),
+            url: "10.0.0.1:8729".into(),
+            username: "admin".into(),
+            remember_password: true,
+            uses_totp: false,
+        }];
+        app.login.pane = LoginPane::Form;
+        app.login.focus = LoginField::Name;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
+        assert_eq!(app.login.pane, LoginPane::Form);
+        assert_eq!(app.login.focus, LoginField::Url);
+        for _ in 0..4 {
+            let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
+        }
+        assert_eq!(app.login.focus, LoginField::Remember);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
+        assert_eq!(app.login.pane, LoginPane::List);
+    }
+
+    #[test]
+    fn right_on_list_opens_the_selected_profile_form() {
+        let mut app = login_app();
+        app.login.profiles = vec![
+            mtui_ui::SavedProfileRow {
+                name: "alpha".into(),
+                url: "10.0.0.1:8729".into(),
+                username: "admin".into(),
+                remember_password: true,
+                uses_totp: false,
+            },
+            mtui_ui::SavedProfileRow {
+                name: "bravo".into(),
+                url: "10.0.0.2:8729".into(),
+                username: "reader".into(),
+                remember_password: false,
+                uses_totp: true,
+            },
+        ];
+        app.login.pane = LoginPane::List;
+        app.login.selected_profile = 1;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Right)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.login.pane, LoginPane::Form);
+        assert_eq!(app.login.name, "bravo");
+        assert_eq!(app.login.focus, LoginField::Totp);
+        assert_eq!(app.screen, crate::app::Screen::Login);
     }
 
     #[test]
