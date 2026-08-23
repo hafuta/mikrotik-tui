@@ -11,17 +11,20 @@
   <img src="assets/banner.png" alt="MikroTik TUI" width="520">
 </p>
 
-Keyboard-first terminal client for MikroTik RouterOS. It connects over
-`api-ssl` (port 8729) and shows live device state: interfaces, addressing,
-DHCP, firewall, hardware, and logs, without leaving the terminal.
+Keyboard-first terminal client for MikroTik RouterOS. It speaks the RouterOS
+API over TCP, and only through the `api-ssl` service (TLS, default port 8729).
+It shows live device state: interfaces, addressing, DHCP, firewall, hardware,
+and logs, without leaving the terminal.
 
-You can create, edit, and run the usual row actions (enable/disable, copy,
-remove, torch, backups) through confirmations and a properties sheet. The
-same pattern covers PPP, Bridge, Switch, IP, IPv6, Routing, Queues, Files,
-Tools, RADIUS, and System.
+You can keep several devices open in tabs, each with its own connection. Create,
+edit, and run the usual row actions (enable/disable, copy, remove, torch,
+backups) through confirmations and a properties sheet. The same pattern covers
+PPP, Bridge, Switch, IP, IPv6, Routing, Queues, Files, Tools, RADIUS, and
+System.
 
 ## Features
 
+- Several device tabs at once, each with its own live session
 - Live dashboard for CPU, memory, WAN throughput, and firewall activity
 - Tables for the common WebFig operator menus, with search, sort, and a detail pane
 - Named device profiles, last-used reconnect, optional saved password, and TOTP at connect
@@ -31,8 +34,10 @@ Tools, RADIUS, and System.
 - Hide menus you do not use; restore them later
 - In-app help (`?`) and a short description of the current screen (`i`)
 
-RouterOS v7 with `api-ssl` enabled is required. Use a dedicated, least-privileged
-account. Inspect-only access still works when you only have read permission.
+RouterOS v7 is required, with the `api-ssl` service enabled (`/ip service`).
+The client does not use the plain `api` service. Use a dedicated,
+least-privileged account. Inspect-only access still works when you only have
+read permission.
 
 ## Install
 
@@ -84,6 +89,8 @@ are the ones you use constantly.
 | `a` | Action menu |
 | `ctrl+s` | Save a form |
 | `ctrl+k` | Command palette |
+| `ctrl+t` / `ctrl+w` | New / close device tab |
+| `ctrl+tab` / `ctrl+shift+tab` | Next / previous device tab |
 | `?` / `i` | Help / about this screen |
 | `esc` | Close overlay or clear filter |
 | `q` | Quit |

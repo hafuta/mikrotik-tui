@@ -30,7 +30,8 @@ const releases = `${repo}/releases`;
         <h1>RouterOS management, without leaving the keyboard.</h1>
         <p class="lede">
           A keyboard-first application for managing RouterOS devices from Linux,
-          macOS, and Windows. Built for operators who outgrow WebFig and WinBox
+          macOS, and Windows. Open several routers in tabs, each with its own
+          live session. Built for operators who outgrow WebFig and WinBox
           because neither is designed around the keyboard.
         </p>
         <div class="btn-row">
@@ -51,7 +52,8 @@ const releases = `${repo}/releases`;
             Interfaces, WireGuard, PPP, Bridge, Switch, IP, IPv6, Routing,
             Queues, Files, Tools, RADIUS, and System share the same
             create/edit/delete catalog, with a confirmation first. Torch and
-            counters sit on interface tables. Secrets stay masked; runtime
+            counters sit on interface tables. Keep more than one device open;
+            each tab holds its own connection. Secrets stay masked; runtime
             views such as logs remain inspect-only.
           </p>
         </div>
@@ -99,9 +101,10 @@ const releases = `${repo}/releases`;
         <div>
           <h2>Built for people who already live on j and k.</h2>
           <p class="prose">
-            Filter, sort, inspect, and jump with the command palette. The footer
-            is the cheat sheet; <code>?</code> opens the full map;
-            <code>i</code> explains the open RouterOS menu.
+            Filter, sort, inspect, and jump with the command palette. Open
+            another device with <code>ctrl+t</code>. The footer is the cheat
+            sheet; <code>?</code> opens the full map; <code>i</code> explains
+            the open RouterOS menu.
           </p>
         </div>
         <ul class="keys">
@@ -109,6 +112,7 @@ const releases = `${repo}/releases`;
           <li class="key"><b>enter</b><span>Open or edit</span></li>
           <li class="key"><b>/</b><span>Filter</span></li>
           <li class="key"><b>ctrl+k</b><span>Palette</span></li>
+          <li class="key"><b>ctrl+t</b><span>New device tab</span></li>
           <li class="key"><b>t</b><span>Torch</span></li>
           <li class="key"><b>`</b><span>App logs</span></li>
           <li class="key"><b>?</b><span>Help</span></li>
@@ -135,10 +139,11 @@ brew install mikrotik-tui
 curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh</code></pre>
           </div>
           <p class="note">
-            Needs RouterOS v7 with <code>api-ssl</code> enabled. Saved files live
-            under your OS config directory (<code>~/.config/mikrotik-tui</code> on
-            Linux). See <a href={`${repo}#install`}>install</a> for certificate
-            pinning.
+            Needs RouterOS v7 and the <code>api-ssl</code> service (RouterOS API
+            over TLS, default port 8729). The client does not use the plain
+            <code>api</code> service. Saved files live under your OS config
+            directory (<code>~/.config/mikrotik-tui</code> on Linux). See
+            <a href={`${repo}#install`}>install</a> for certificate pinning.
           </p>
         </div>
         <div class="btn-row btn-row--start">
