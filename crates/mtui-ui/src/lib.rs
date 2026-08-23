@@ -28,8 +28,8 @@ pub use charts::{
     BrailleSparkline, TrafficChart, TrafficSample, format_bytes, format_rate, format_traffic_rate,
 };
 pub use chrome::{
-    ACTIVITY_SHOW_AFTER, Signal, SignalLevel, activity_shown, footer_bar, footer_hints,
-    header_line, session_header, signal_rail, status_line,
+    ACTIVITY_SHOW_AFTER, Signal, SignalLevel, TabLabel, activity_shown, footer_bar, footer_hints,
+    header_line, session_header, signal_rail, status_line, tab_bar,
 };
 pub use color::ColorDepth;
 pub use console::{ConsoleEntry, ConsoleLevel, ConsoleState, TIME_COL, console_pane_height};

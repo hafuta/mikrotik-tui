@@ -1,4 +1,4 @@
-//! Header, status, and footer chrome.
+//! Header, tab bar, status, and footer chrome.
 
 use std::time::{Duration, Instant};
 
@@ -152,6 +152,61 @@ pub fn footer_hints(hints: &[(&str, &str)], styles: &Styles) -> Line<'static> {
     Line::from(spans)
 }
 
+/// One session tab. `id` is opaque and is not interpreted by the widget.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TabLabel {
+    pub id: u64,
+    pub title: String,
+    pub connected: bool,
+}
+
+impl TabLabel {
+    #[must_use]
+    pub fn new(id: u64, title: impl Into<String>, connected: bool) -> Self {
+        Self {
+            id,
+            title: title.into(),
+            connected,
+        }
+    }
+}
+
+/// Numbered session tabs clipped to `width`.
+///
+/// Tabs render as `1:title  2:title`. The active tab is `[n]:title` and bold
+/// so it is not color-only. Disconnected tabs use muted foreground.
+#[must_use]
+pub fn tab_bar(tabs: &[TabLabel], active: u64, width: usize, styles: &Styles) -> Line<'static> {
+    if width == 0 {
+        return Line::default();
+    }
+    if tabs.is_empty() {
+        return fit_line(Line::default(), width);
+    }
+    let mut spans = Vec::with_capacity(tabs.len().saturating_mul(2));
+    for (i, tab) in tabs.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw("  "));
+        }
+        let n = i + 1;
+        let is_active = tab.id == active;
+        let label = if is_active {
+            format!("[{n}]:{}", tab.title)
+        } else {
+            format!("{n}:{}", tab.title)
+        };
+        let style = if is_active {
+            styles.focus
+        } else if tab.connected {
+            styles.text
+        } else {
+            styles.muted
+        };
+        spans.push(Span::styled(label, style));
+    }
+    fit_line(Line::from(spans), width)
+}
+
 /// Hints on the left, optional status clipped to the right.
 #[must_use]
 pub fn footer_bar(
@@ -186,6 +241,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use mtui_core::{DefaultTheme, Theme};
+    use ratatui::style::Modifier;
 
     use super::*;
     use crate::layout::{line_plain, line_width};
@@ -315,5 +371,64 @@ mod tests {
         assert!(plain.starts_with("enter edit"));
         assert!(plain.contains("resource loaded interfaces"));
         assert_eq!(line_width(&line), 60);
+    }
+
+    #[test]
+    fn tab_bar_respects_width() {
+        let styles = styles();
+        let tabs = [
+            TabLabel::new(10, "edge-office", true),
+            TabLabel::new(20, "core", true),
+        ];
+        let line = tab_bar(&tabs, 10, 40, &styles);
+        assert_eq!(line_width(&line), 40);
+        for span in &line.spans {
+            assert!(span.style.bg.is_none());
+        }
+    }
+
+    #[test]
+    fn tab_bar_marks_active_tab() {
+        let styles = styles();
+        let tabs = [
+            TabLabel::new(10, "Login", false),
+            TabLabel::new(20, "core", true),
+        ];
+        let line = tab_bar(&tabs, 20, 48, &styles);
+        let plain = line_plain(&line);
+        assert!(plain.contains("1:Login"));
+        assert!(plain.contains("[2]:core"));
+        assert!(!plain.contains("[1]:"));
+        let active = line
+            .spans
+            .iter()
+            .find(|span| span.content.contains("[2]:core"))
+            .expect("active span");
+        assert!(active.style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn tab_bar_clips_narrow_width_without_panic() {
+        let styles = styles();
+        let tabs = [TabLabel::new(1, "very-long-profile-name", true)];
+        let empty = tab_bar(&tabs, 1, 0, &styles);
+        assert!(line_plain(&empty).is_empty());
+        let tiny = tab_bar(&tabs, 1, 3, &styles);
+        assert_eq!(line_width(&tiny), 3);
+        let none = tab_bar(&[], 99, 8, &styles);
+        assert_eq!(line_width(&none), 8);
+    }
+
+    #[test]
+    fn tab_bar_shows_both_tabs_when_width_allows() {
+        let styles = styles();
+        let tabs = [
+            TabLabel::new(1, "alpha", true),
+            TabLabel::new(2, "beta", false),
+        ];
+        let line = tab_bar(&tabs, 1, 32, &styles);
+        let plain = line_plain(&line);
+        assert!(plain.contains("[1]:alpha"));
+        assert!(plain.contains("2:beta"));
     }
 }
