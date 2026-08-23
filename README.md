@@ -95,6 +95,17 @@ falling back to an owner-only `credentials.json`. User Manager TOTP is typed at
 connect time, appended to the static password, and never saved. The last-used
 profile auto-reconnects unless it requires a fresh TOTP.
 
+## Install
+
+macOS:
+
+```sh
+brew tap hafuta/mikrotik-tui
+brew install mikrotik-tui
+```
+
+Linux and Windows: download a GitHub Release archive, or build from this repo.
+
 ## Tooling
 
 Install [rustup](https://rustup.rs/). Entering the repo installs the compiler
@@ -217,11 +228,6 @@ Linux or Windows test module.
 `just build` and `just release` compile `-p mikrotik-tui --release` and copy
 the binary to `bin/` and `dist/` respectively. `just --list` shows the rest
 (`fmt-fix`, `clippy`, `test`, `run`, `clean`).
-
-Pushing a `v*` tag runs GitHub Actions `Release`. It publishes unsigned
-archives for Linux (amd64, arm64), macOS (arm64, amd64), and Windows (amd64),
-plus `checksums.txt`. Mac Gatekeeper and Windows SmartScreen may warn until
-the binaries are signed.
 
 ## License
 
