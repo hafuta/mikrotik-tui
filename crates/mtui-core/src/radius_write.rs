@@ -51,6 +51,21 @@ pub static RADIUS_FORM: FormSchema = FormSchema {
     }],
 };
 
+pub static RADIUS_INCOMING_FORM: FormSchema = FormSchema {
+    title_key: "accept",
+    subtitle_keys: &["port"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("accept", "Accept", FieldKind::Toggle),
+            f!("port", "Port", FieldKind::Number),
+        ],
+    }],
+    create_sections: &[],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

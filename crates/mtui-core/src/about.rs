@@ -1117,6 +1117,390 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "note text, show-at-login."
     ),
     guide!(
+        "6to4",
+        "IPv6-in-IPv4 6to4 tunnels (`/interface 6to4`).",
+        "Use when you need 6to4 or similar IPv6 overlay without GRE.",
+        "name, local-address, remote-address, mtu, disabled."
+    ),
+    guide!(
+        "sit",
+        "SIT (IPv6-in-IPv4) tunnels (`/interface sit`).",
+        "Point-to-point IPv6 over IPv4 when GRE6 is not required.",
+        "name, local-address, remote-address, mtu, disabled."
+    ),
+    guide!(
+        "gre6",
+        "GRE tunnels that carry IPv6 (`/interface gre6`).",
+        "Same idea as GRE, for IPv6 endpoints.",
+        "name, local-address, remote-address, mtu, keepalive, disabled."
+    ),
+    guide!(
+        "wifi-security",
+        "Reusable wifiwave2 security profiles (WPA2/WPA3 PSK, enterprise).",
+        "Share one passphrase/profile across several WiFi interfaces or provisioned CAPs.",
+        "name, authentication-types, passphrase, disabled."
+    ),
+    guide!(
+        "wifi-channel",
+        "Reusable channel/band/width profiles for wifiwave2 radios.",
+        "Keep frequency plans in one place instead of editing each radio.",
+        "name, band, frequency, width, disabled."
+    ),
+    guide!(
+        "wifi-datapath",
+        "Bridge/VLAN datapath profiles for wifiwave2.",
+        "Steer stations onto a bridge or VLAN without repeating the same keys on every radio.",
+        "name, bridge, vlan-id, disabled."
+    ),
+    guide!(
+        "wifi-configuration",
+        "Named wifiwave2 configurations that bind SSID, country, security, datapath, and channel.",
+        "CAPsMAN and local WiFi both point at these names.",
+        "name, ssid, country, security, datapath, channel, disabled."
+    ),
+    guide!(
+        "wifi-provisioning",
+        "Rules that assign a master configuration to matching CAP radios.",
+        "Use on a CAPsMAN controller to auto-configure new APs by band.",
+        "action, supported-bands, master-configuration, disabled."
+    ),
+    guide!(
+        "wifi-cap",
+        "Client CAP settings: which CAPsMAN this radio should join.",
+        "Enable on AP hardware that should be managed, not on the controller.",
+        "enabled, caps-man-addresses, discovery-interfaces."
+    ),
+    guide!(
+        "wifi-capsman",
+        "Controller (CAPsMAN) enablement and certificates.",
+        "Turn on only on the manager. Certificates stay secrets.",
+        "enabled, ca-certificate, certificate."
+    ),
+    guide!(
+        "wireless-security-profiles",
+        "Legacy `/interface wireless security-profiles` (WPA PSK and friends).",
+        "Needed only when the old wireless package is installed.",
+        "name, mode, authentication-types, wpa2-pre-shared-key."
+    ),
+    guide!(
+        "wireless-access-list",
+        "Legacy wireless access-list (allow/deny by MAC).",
+        "Lock a radio to known stations or block a noisy client.",
+        "mac-address, interface, authentication, forwarding, disabled."
+    ),
+    guide!(
+        "wireless-registration-table",
+        "Live stations associated to a legacy wireless radio. Read-only besides disconnect.",
+        "See who is on the AP. Disconnect with remove; scan is on the radio row.",
+        "mac-address, interface, ap, signal-strength, uptime."
+    ),
+    guide!(
+        "ipsec-mode-config",
+        "IPsec mode-config (address pool and split-include handed to road warriors).",
+        "Use with IKEv2/XAuth clients that expect an internal IP from this router.",
+        "name, address-pool, address-prefix-length, split-include, system-dns."
+    ),
+    guide!(
+        "ipsec-key",
+        "IPsec private keys generated or imported on the router.",
+        "RSA/private keys for IPsec identities. Key material is a secret.",
+        "name, key-size."
+    ),
+    guide!(
+        "cloud",
+        "MikroTik Cloud DDNS and time (`/ip cloud`).",
+        "Enable DDNS if you want a stable name for a changing WAN IP. Not a graphing UI.",
+        "ddns-enabled, update-time, public-address, dns-name, status."
+    ),
+    guide!(
+        "kid-control",
+        "Kid Control profiles: time and rate limits for named users.",
+        "Limit a household profile; devices are a child table.",
+        "name, mon-fri, sat, sun, rate-limit, disabled."
+    ),
+    guide!(
+        "kid-control-devices",
+        "Devices assigned to a Kid Control user (usually by MAC).",
+        "Map phones/PCs onto a profile. Look up the user name.",
+        "name, mac-address, user, disabled."
+    ),
+    guide!(
+        "socks",
+        "SOCKS proxy listener (`/ip socks`).",
+        "Enable only if you intentionally run a SOCKS service on this router.",
+        "enabled, port, connection-idle-timeout."
+    ),
+    guide!(
+        "smb",
+        "SMB/CIFS service (`/ip smb`).",
+        "Share files from the router; guests and domain are the usual knobs.",
+        "enabled, domain, allow-guests, comment."
+    ),
+    guide!(
+        "upnp",
+        "UPnP global switches (`/ip upnp`).",
+        "Let LAN clients open NAT mappings. Keep dummy-rule/WAN-disable in mind.",
+        "enabled, allow-disable-external-interface, show-dummy-rule."
+    ),
+    guide!(
+        "upnp-interfaces",
+        "Which interfaces are internal vs external for UPnP.",
+        "Mark WAN as external and LAN as internal. Forced external IP is optional.",
+        "interface, type, forced-external-ip, disabled."
+    ),
+    guide!(
+        "dns-cache",
+        "Resolver cache entries (`/ip dns cache`) plus flush.",
+        "Inspect what the router cached. Flush is a table action, not a graph.",
+        "name, type, data, ttl. Flush clears the cache; remove drops one entry."
+    ),
+    guide!(
+        "dhcp-alerts",
+        "DHCP server alerts when a foreign DHCP server is seen on an interface.",
+        "Watch for rogue DHCP on a LAN you serve.",
+        "interface, valid-server, alert-timeout, disabled."
+    ),
+    guide!(
+        "connection-tracking",
+        "Connection-tracking timeouts and table size (`/ip firewall connection tracking`).",
+        "Tune timeouts; the connections table is a separate screen.",
+        "enabled, tcp-established-timeout, udp-timeout, icmp-timeout, total-entries."
+    ),
+    guide!(
+        "neighbor-discovery",
+        "MNDP/LLDP/CDP discovery settings (`/ip neighbor discovery-settings`).",
+        "Choose which interface list advertises this router. The neighbor table is separate.",
+        "discover-interface-list, protocol, lldp-med-net-policy-vlan, mode."
+    ),
+    guide!(
+        "ip-ssh",
+        "SSH server crypto settings (`/ip ssh`), not user accounts.",
+        "Strong-crypto and host-key size. User SSH keys live under System.",
+        "strong-crypto, host-key-size, always-allow-password-login, forwarding-enabled."
+    ),
+    guide!(
+        "proxy",
+        "HTTP proxy singleton (`/ip proxy`).",
+        "Enable a cache/proxy on this router. Child lists cover access, cache, and direct.",
+        "enabled, port, parent-proxy, max-cache-size, cache-administrator."
+    ),
+    guide!(
+        "proxy-access",
+        "Proxy access list (allow/deny clients and destinations).",
+        "Restrict who may use the proxy. Enable/disable via the usual toggle.",
+        "src-address, dst-address, dst-host, action, disabled."
+    ),
+    guide!(
+        "proxy-cache",
+        "Which responses the HTTP proxy may cache.",
+        "Do not treat this as a content browser — it is the cache rule list.",
+        "dst-host, method, action, disabled."
+    ),
+    guide!(
+        "proxy-direct",
+        "Destinations the proxy should bypass (go direct).",
+        "Skip parent-proxy or caching for local/internal hosts.",
+        "dst-host, dst-address, action, disabled."
+    ),
+    guide!(
+        "hotspot",
+        "Hotspot servers bound to an interface (`/ip hotspot`).",
+        "Captive portal on a LAN. Profiles, users, hosts, and walled garden are siblings.",
+        "name, interface, address-pool, profile, disabled."
+    ),
+    guide!(
+        "hotspot-profiles",
+        "Hotspot profiles: portal address, DNS name, HTML, login methods.",
+        "Point servers at a profile. RADIUS is optional.",
+        "name, hotspot-address, dns-name, html-directory, login-by, use-radius."
+    ),
+    guide!(
+        "hotspot-users",
+        "Hotspot user accounts (local, not RADIUS users).",
+        "Create trial/staff logins. Passwords are secrets. Look up profile and server.",
+        "name, password, profile, server, disabled."
+    ),
+    guide!(
+        "hotspot-cookies",
+        "Remembered Hotspot cookies. Remove to force a new login.",
+        "Clear a remembered MAC/user pair. Not an editor for cookie policy.",
+        "user, mac-address, expires-in."
+    ),
+    guide!(
+        "hotspot-hosts",
+        "Live Hotspot hosts with authenticate and bypass actions.",
+        "See who is in the portal. Authenticate or bypass a row when REST exposes those commands.",
+        "mac-address, address, server, authorized, bypassed, uptime."
+    ),
+    guide!(
+        "hotspot-ip-bindings",
+        "Static Hotspot IP bindings (bypassed, blocked, regular).",
+        "Pin a MAC to an address or always-bypass a kiosk.",
+        "mac-address, address, to-address, type, server, disabled."
+    ),
+    guide!(
+        "hotspot-walled-garden",
+        "HTTP walled garden (host/port exceptions before login).",
+        "Allow a payment or landing page through the portal.",
+        "dst-host, dst-port, action, server, disabled."
+    ),
+    guide!(
+        "hotspot-walled-garden-ip",
+        "IP-based walled garden exceptions.",
+        "Same idea as walled garden, matching destination addresses.",
+        "dst-address, action, server, disabled."
+    ),
+    guide!(
+        "package-update",
+        "Package update channel and check/install (`/system package update`).",
+        "Check for a new RouterOS build, then install (reboot-class). Distinct from RouterBOARD firmware.",
+        "channel, installed-version, latest-version, status. Check and Install are actions."
+    ),
+    guide!(
+        "reset-configuration",
+        "Factory-style `/system reset-configuration` with a confirm prompt.",
+        "Keep-users and no-defaults are the usual flags. Destructive; never Safe Mode.",
+        "keep-users, no-defaults, skip-backup."
+    ),
+    guide!(
+        "ssh-keys",
+        "User SSH public keys (`/user ssh-keys`).",
+        "Install keys so operators can log in without a password. Private keys stay off this table unless REST exposes them.",
+        "user, key-owner."
+    ),
+    guide!(
+        "history",
+        "Configuration history (`/system history`). Read-only.",
+        "See recent local changes. This is not Safe Mode/Undo.",
+        "time, action, by, policy."
+    ),
+    guide!(
+        "ipv6-dhcp-relay",
+        "DHCPv6 relay (`/ipv6 dhcp-relay`).",
+        "Forward DHCPv6 from a LAN to an off-box server.",
+        "name, interface, dhcp-server, disabled."
+    ),
+    guide!(
+        "ipv6-dhcp-bindings",
+        "DHCPv6 server bindings (static and dynamic leases).",
+        "Reserve a prefix/address for a DUID. Release/make-static follow IPv4 leases.",
+        "address, duid, server, disabled."
+    ),
+    guide!(
+        "ipv6-firewall-mangle",
+        "IPv6 mangle table with move and reset-counters like IPv4.",
+        "Mark or change IPv6 packets. Short New sheet: chain + action.",
+        "chain, action, src-address, dst-address, protocol, in/out-interface, packets."
+    ),
+    guide!(
+        "ipv6-firewall-raw",
+        "IPv6 raw table (prerouting/output before conntrack).",
+        "Drop or notrack early. Same filter actions as IPv4 raw.",
+        "chain, action, src-address, dst-address, in/out-interface, packets."
+    ),
+    guide!(
+        "rip-instances",
+        "RIP instance (`/routing rip instance`) for RIP v1/v2 on ROS 7.",
+        "Only if you still speak RIP with a neighbor. Prefer OSPF/BGP otherwise.",
+        "name, vrf, originate-default, disabled."
+    ),
+    guide!(
+        "rip-interface-templates",
+        "RIP interface templates (which interfaces run RIP).",
+        "Attach an instance to interfaces. Look up the instance name.",
+        "instance, interfaces, disabled."
+    ),
+    guide!(
+        "bfd",
+        "BFD sessions/configuration (`/routing bfd configuration`).",
+        "Faster neighbor failure detection for OSPF/BGP. Easy to flap a link if timers are too tight.",
+        "interfaces, addresses, min-tx-interval, min-rx-interval, multiplier."
+    ),
+    guide!(
+        "routing-filters",
+        "ROS 7 routing filters (`/routing filter rule`) — the large chain/rule language.",
+        "Control what OSPF/BGP accept or advertise. The rule body is a script-like filter.",
+        "chain, rule, disabled, comment."
+    ),
+    guide!(
+        "routing-id",
+        "Routing IDs (`/routing id`) used by OSPF/BGP instances.",
+        "Set a stable router-id selector instead of relying on a random address.",
+        "name, id, select, disabled."
+    ),
+    guide!(
+        "ospf-neighbors",
+        "OSPF neighbor table. Monitor-only; no Add.",
+        "See adjacency state. Configure instances/areas/templates elsewhere.",
+        "instance, router-id, address, state, adjacency."
+    ),
+    guide!(
+        "ospf-lsa",
+        "OSPF LSA database. Monitor-only.",
+        "Inspect what the area flooded. Not an editor.",
+        "type, id, originator, area, sequence."
+    ),
+    guide!(
+        "bgp-advertisements",
+        "BGP advertisements table. Monitor-only.",
+        "See what this router is announcing. VPN table is omitted unless REST lists it stably.",
+        "prefix, nexthop, peer, as-path."
+    ),
+    guide!(
+        "sniffer",
+        "Packet sniffer start/stop, optional save-to-file on the router.",
+        "Capture on-box; there is no live pcap UI. Start/stop are actions.",
+        "interface, file-name, file-limit, filter-stream, filter-interface."
+    ),
+    guide!(
+        "bandwidth-test",
+        "Bandwidth-test overlay (client to a MikroTik bandwidth-test server).",
+        "Measure throughput from this router. No graphs — streamed samples in the overlay.",
+        "address, protocol, duration/count, direction/user if the server requires them."
+    ),
+    guide!(
+        "flood-ping",
+        "Flood-ping overlay for a burst of ICMP from the router.",
+        "Stress a path briefly. Close the overlay to stop.",
+        "address, count, src-address."
+    ),
+    guide!(
+        "mac-scan",
+        "MAC-scan overlay on a L2 interface.",
+        "Discover neighbors by MAC on a LAN segment.",
+        "interface (src), results: address/mac-address/age."
+    ),
+    guide!(
+        "ip-scan",
+        "IP-scan overlay for a range on an interface.",
+        "Find which addresses answer on a subnet.",
+        "address range, interface (src), mac-address, time."
+    ),
+    guide!(
+        "profiler",
+        "CPU profiler overlay (`/tool profile`).",
+        "See which processes burn CPU. No WebFig-style graphs.",
+        "samples of name, usage, load."
+    ),
+    guide!(
+        "wol",
+        "Wake-on-LAN one-shot (`/tool wol`).",
+        "Send a magic packet out an interface to a MAC.",
+        "interface, mac."
+    ),
+    guide!(
+        "sms",
+        "SMS send (`/tool sms send`) when the sms package/REST exists.",
+        "Send a short message via a modem channel. Skip if the package is absent.",
+        "phone-number, message, channel."
+    ),
+    guide!(
+        "radius-incoming",
+        "RADIUS incoming (`/radius incoming`) — accept incoming RADIUS on a port.",
+        "Needed for some disconnect/CoA setups. Not User Manager.",
+        "accept, port."
+    ),
+    guide!(
         "logs",
         "Live log tail from `/log` (topics + message). This client keeps a bounded local \
          buffer; it does not delete logs on the router when you clear the view.",

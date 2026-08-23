@@ -770,6 +770,203 @@ pub static WIRELESS_FORM: FormSchema = FormSchema {
     }],
 };
 
+pub static WIFI_SECURITY_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["authentication-types"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("authentication-types", "Auth types", FieldKind::Text),
+            f!("passphrase", "Passphrase", FieldKind::Secret),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
+pub static WIFI_CHANNEL_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["band", "frequency"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("band", "Band", FieldKind::Text),
+            f!("frequency", "Frequency", FieldKind::Text),
+            f!("width", "Width", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
+pub static WIFI_DATAPATH_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["bridge"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("bridge", "Bridge", FieldKind::Text),
+            f!("vlan-id", "VLAN ID", FieldKind::Number),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
+pub static WIFI_CONFIGURATION_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["ssid"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("ssid", "SSID", FieldKind::Text),
+            f!("country", "Country", FieldKind::Text),
+            f!("security", "Security", FieldKind::Text),
+            f!("datapath", "Datapath", FieldKind::Text),
+            f!("channel", "Channel", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("ssid", "SSID", FieldKind::Text)],
+    }],
+};
+
+pub static WIFI_PROVISIONING_FORM: FormSchema = FormSchema {
+    title_key: "action",
+    subtitle_keys: &["supported-bands"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("action", "Action", FieldKind::Text),
+            f!("supported-bands", "Bands", FieldKind::Text),
+            f!("master-configuration", "Master config", FieldKind::Text),
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("action", "Action", FieldKind::Text)],
+    }],
+};
+
+pub static WIFI_CAP_FORM: FormSchema = FormSchema {
+    title_key: "enabled",
+    subtitle_keys: &["caps-man-addresses"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("enabled", "Enabled", FieldKind::Toggle),
+            f!("caps-man-addresses", "CAPsMAN", FieldKind::Text),
+            f!("discovery-interfaces", "Discovery", LOOKUP_IFACES),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static WIFI_CAPSMAN_FORM: FormSchema = FormSchema {
+    title_key: "enabled",
+    subtitle_keys: &["ca-certificate"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("enabled", "Enabled", FieldKind::Toggle),
+            f!("ca-certificate", "CA certificate", FieldKind::Text),
+            f!("certificate", "Certificate", FieldKind::Text),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static WIRELESS_SECURITY_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["mode"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("mode", "Mode", FieldKind::Text),
+            f!("authentication-types", "Auth types", FieldKind::Text),
+            f!("wpa2-pre-shared-key", "WPA2 PSK", FieldKind::Secret),
+            COMMENT,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
+pub static WIRELESS_ACCESS_LIST_FORM: FormSchema = FormSchema {
+    title_key: "mac-address",
+    subtitle_keys: &["interface"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            MAC,
+            INTERFACE,
+            f!("authentication", "Authentication", FieldKind::Toggle),
+            f!("forwarding", "Forwarding", FieldKind::Toggle),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[MAC],
+    }],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -295,15 +295,19 @@ fn dispatch_commands(
                 };
                 let tx = tx.clone();
                 let mut probe_rx = probe_tx.subscribe();
+                let mut fields = std::collections::BTreeMap::new();
+                fields.insert("address".into(), address);
+                fields.insert("count".into(), count);
+                if !src.trim().is_empty() {
+                    fields.insert("src-address".into(), src);
+                }
                 rt.spawn(async move {
                     stream_probe(
                         client,
                         generation,
-                        "ping",
-                        address,
-                        count,
-                        src,
-                        None,
+                        "/rest/tool".into(),
+                        "ping".into(),
+                        fields,
                         tx,
                         &mut probe_rx,
                     )
@@ -323,15 +327,47 @@ fn dispatch_commands(
                 };
                 let tx = tx.clone();
                 let mut probe_rx = probe_tx.subscribe();
+                let mut fields = std::collections::BTreeMap::new();
+                fields.insert("address".into(), address);
+                fields.insert("count".into(), count);
+                if !src.trim().is_empty() {
+                    fields.insert("src-address".into(), src);
+                }
+                if !protocol.trim().is_empty() {
+                    fields.insert("protocol".into(), protocol);
+                }
                 rt.spawn(async move {
                     stream_probe(
                         client,
                         generation,
-                        "traceroute",
-                        address,
-                        count,
-                        src,
-                        Some(protocol),
+                        "/rest/tool".into(),
+                        "traceroute".into(),
+                        fields,
+                        tx,
+                        &mut probe_rx,
+                    )
+                    .await;
+                });
+            }
+            AppCommand::FetchProbe {
+                generation,
+                endpoint,
+                command,
+                fields,
+                ..
+            } => {
+                let Some(client) = app.client.clone() else {
+                    continue;
+                };
+                let tx = tx.clone();
+                let mut probe_rx = probe_tx.subscribe();
+                rt.spawn(async move {
+                    stream_probe(
+                        client,
+                        generation,
+                        endpoint,
+                        command,
+                        fields,
                         tx,
                         &mut probe_rx,
                     )
@@ -946,26 +982,13 @@ async fn fetch_file_record(
 async fn stream_probe(
     client: Arc<Client>,
     generation: u64,
-    command: &str,
-    address: String,
-    count: String,
-    src: String,
-    protocol: Option<String>,
+    endpoint: String,
+    command: String,
+    fields: std::collections::BTreeMap<String, String>,
     tx: mpsc::UnboundedSender<WorkerMsg>,
     gen_rx: &mut watch::Receiver<u64>,
 ) {
-    let mut fields = std::collections::BTreeMap::new();
-    fields.insert("address".into(), address);
-    fields.insert("count".into(), count);
-    if !src.trim().is_empty() {
-        fields.insert("src-address".into(), src);
-    }
-    if let Some(protocol) = protocol
-        && !protocol.trim().is_empty()
-    {
-        fields.insert("protocol".into(), protocol);
-    }
-    let mut stream = match client.stream_command("/rest/tool", command, &fields).await {
+    let mut stream = match client.stream_command(&endpoint, &command, &fields).await {
         Ok(stream) => stream,
         Err(err) => {
             let _ = tx.send(WorkerMsg::PingTraceResult {

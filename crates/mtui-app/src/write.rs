@@ -5,9 +5,10 @@ use std::fmt;
 use std::path::Path;
 
 use mtui_core::{
-    ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
-    CERT_SIGN_PROMPT, DASHBOARD_ID, INTERFACE_CREATE_TARGETS, action_label, patch_body,
-    resource_by_id, truthy,
+    AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
+    CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, IMPORT_CONFIG_PROMPT,
+    INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, RESET_CONFIG_PROMPT, SMS_PROMPT, WOL_PROMPT,
+    action_label, patch_body, resource_by_id, truthy,
 };
 use mtui_routeros::MASKED_VALUE;
 use mtui_ui::{
@@ -254,6 +255,14 @@ impl App {
             ActionKind::Overlay { id: "torch" } => self.open_torch(),
             ActionKind::Overlay { id: "ping" } => self.open_probe(ProbeKind::Ping),
             ActionKind::Overlay { id: "traceroute" } => self.open_probe(ProbeKind::Traceroute),
+            ActionKind::Overlay {
+                id: "bandwidth-test",
+            } => self.open_probe(ProbeKind::BandwidthTest),
+            ActionKind::Overlay { id: "flood-ping" } => self.open_probe(ProbeKind::FloodPing),
+            ActionKind::Overlay { id: "mac-scan" } => self.open_probe(ProbeKind::MacScan),
+            ActionKind::Overlay { id: "ip-scan" } => self.open_probe(ProbeKind::IpScan),
+            ActionKind::Overlay { id: "profiler" } => self.open_probe(ProbeKind::Profiler),
+            ActionKind::Overlay { id: "wifi-scan" } => self.open_wifi_scan(),
             ActionKind::Overlay { id: "create-type" } => self.open_type_picker(),
             ActionKind::Overlay { .. } => Vec::new(),
         }
@@ -301,7 +310,13 @@ impl App {
             ActionCommand::Copy
             | ActionCommand::Sign
             | ActionCommand::Import
-            | ActionCommand::ExportCertificate => self.open_schema_prompt(command),
+            | ActionCommand::ExportCertificate
+            | ActionCommand::Export
+            | ActionCommand::Install
+            | ActionCommand::ResetConfiguration
+            | ActionCommand::WakeOnLan
+            | ActionCommand::SendSms
+            | ActionCommand::AtChat => self.open_schema_prompt(command),
             _ => Vec::new(),
         }
     }
@@ -360,8 +375,20 @@ impl App {
         let (schema, needs_row) = match command {
             ActionCommand::Copy => (&COPY_FORM, true),
             ActionCommand::Sign => (&CERT_SIGN_PROMPT, true),
-            ActionCommand::Import => (&CERT_IMPORT_PROMPT, false),
+            ActionCommand::Import => {
+                if self.current_resource == "files" {
+                    (&IMPORT_CONFIG_PROMPT, false)
+                } else {
+                    (&CERT_IMPORT_PROMPT, false)
+                }
+            }
             ActionCommand::ExportCertificate => (&CERT_EXPORT_PROMPT, true),
+            ActionCommand::Export => (&EXPORT_CONFIG_PROMPT, false),
+            ActionCommand::Install => (&INSTALL_PACKAGE_PROMPT, false),
+            ActionCommand::ResetConfiguration => (&RESET_CONFIG_PROMPT, false),
+            ActionCommand::WakeOnLan => (&WOL_PROMPT, false),
+            ActionCommand::SendSms => (&SMS_PROMPT, false),
+            ActionCommand::AtChat => (&AT_CHAT_PROMPT, true),
             _ => return Vec::new(),
         };
         let (id, name) = if needs_row {
@@ -437,7 +464,7 @@ impl App {
             })
             .cloned()
             .unwrap_or_else(|| record_id.clone());
-        if matches!(action.id, "reboot" | "shutdown" | "backup-load") {
+        if !action.needs_selection {
             record_id.clear();
         }
         let command = match (command, row) {
@@ -572,6 +599,22 @@ impl App {
         Vec::new()
     }
 
+    fn open_wifi_scan(&mut self) -> Vec<AppCommand> {
+        let Some(row) = self.table.selected_row() else {
+            return Vec::new();
+        };
+        let name = row.get("name").cloned().unwrap_or_default();
+        if name.is_empty() {
+            self.status = "Scan needs an interface name".into();
+            return Vec::new();
+        }
+        self.probe_generation = self.probe_generation.wrapping_add(1);
+        let mut probe = ProbeState::new(ProbeKind::WifiScan, self.probe_generation);
+        probe.src = name;
+        self.overlay = Overlay::Probe(probe);
+        Vec::new()
+    }
+
     fn save_prompt_form(&mut self, command: &'static str) -> Vec<AppCommand> {
         let Overlay::Form(session) = &self.overlay else {
             return Vec::new();
@@ -608,13 +651,46 @@ impl App {
                 fields,
                 "Saving backup…",
             )
-        } else {
+        } else if command == ActionCommand::Copy.rest_name() {
             let mut fields = BTreeMap::new();
             fields.insert(".id".into(), record_id);
             if let Some(name) = values.get("new-name") {
                 fields.insert("new-name".into(), name.clone());
             }
             (spec.endpoint().to_string(), fields, "Copying…")
+        } else {
+            let schema = match &self.overlay {
+                Overlay::Form(session) => session.prompt_schema,
+                _ => None,
+            };
+            let mut fields = BTreeMap::new();
+            if !record_id.is_empty() {
+                fields.insert(".id".into(), record_id);
+            }
+            if let Some(schema) = schema {
+                for key in schema.writable_keys() {
+                    let Some(value) = values.get(key) else {
+                        continue;
+                    };
+                    if value == MASKED_VALUE || value.is_empty() {
+                        continue;
+                    }
+                    fields.insert(key.to_string(), value.clone());
+                }
+            }
+            let action_id = match command {
+                "export" if resource_id == "files" => "export-config",
+                "import" if resource_id == "files" => "import-config",
+                "wol" => "wol",
+                "send" if resource_id == "sms" => "sms",
+                "reset-configuration" => "reset-configuration",
+                other => other,
+            };
+            (
+                command_base_path(action_id, spec.endpoint()),
+                fields,
+                "Running…",
+            )
         };
         if let Overlay::Form(session) = &mut self.overlay {
             session.saving = true;
@@ -699,7 +775,8 @@ impl App {
             "upload" => self.save_upload_prompt(),
             "download" => self.save_download_prompt(),
             "fetch" => self.save_fetch_prompt(),
-            "sign" | "import" | "export-certificate" => self.save_cert_prompt(),
+            "sign" | "export-certificate" => self.save_cert_prompt(),
+            "import" if self.current_resource != "files" => self.save_cert_prompt(),
             _ => self.save_prompt_form(command),
         }
     }
@@ -1141,22 +1218,22 @@ impl App {
             let Overlay::Probe(probe) = &mut self.overlay else {
                 return Vec::new();
             };
-            if probe.address.trim().is_empty() {
+            let kind = probe.kind;
+            if kind.requires_address() && probe.address.trim().is_empty() {
                 probe.error = Some("Address is required".into());
+                None
+            } else if kind.requires_interface() && probe.src.trim().is_empty() {
+                probe.error = Some("Interface is required".into());
                 None
             } else {
                 self.probe_generation = self.probe_generation.wrapping_add(1);
                 probe.generation = self.probe_generation;
                 probe.running = true;
                 probe.error = None;
-                let kind = probe.kind;
                 let count = {
                     let trimmed = probe.count.trim();
                     if trimmed.is_empty() {
-                        match kind {
-                            ProbeKind::Ping => "4".into(),
-                            ProbeKind::Traceroute => "8".into(),
-                        }
+                        kind.default_count().to_string()
                     } else {
                         trimmed.to_string()
                     }
@@ -1164,7 +1241,11 @@ impl App {
                 let protocol = {
                     let trimmed = probe.protocol.trim();
                     if trimmed.is_empty() {
-                        "icmp".into()
+                        match kind {
+                            ProbeKind::Traceroute => "icmp".into(),
+                            ProbeKind::BandwidthTest => "tcp".into(),
+                            _ => String::new(),
+                        }
                     } else {
                         trimmed.to_string()
                     }
@@ -1180,7 +1261,13 @@ impl App {
             }
         };
         let Some((kind, generation, address, count, src, protocol)) = prepared else {
-            self.status = "Address is required".into();
+            self.status = match &self.overlay {
+                Overlay::Probe(probe) => probe
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "Address is required".into()),
+                _ => "Address is required".into(),
+            };
             return Vec::new();
         };
         let request_id = self.next_request();
@@ -1199,6 +1286,13 @@ impl App {
                 count,
                 src,
                 protocol,
+            }],
+            other => vec![AppCommand::FetchProbe {
+                request_id,
+                generation,
+                endpoint: other.endpoint().to_string(),
+                command: other.command().to_string(),
+                fields: probe_fields(other, &address, &count, &src, &protocol),
             }],
         }
     }
@@ -1235,10 +1329,70 @@ impl App {
     }
 }
 
+fn probe_fields(
+    kind: ProbeKind,
+    address: &str,
+    count: &str,
+    src: &str,
+    protocol: &str,
+) -> BTreeMap<String, String> {
+    let mut fields = BTreeMap::new();
+    match kind {
+        ProbeKind::Ping | ProbeKind::Traceroute | ProbeKind::FloodPing => {
+            fields.insert("address".into(), address.to_string());
+            if !count.is_empty() {
+                fields.insert("count".into(), count.to_string());
+            }
+            if !src.is_empty() {
+                fields.insert("src-address".into(), src.to_string());
+            }
+            if kind == ProbeKind::Traceroute && !protocol.is_empty() {
+                fields.insert("protocol".into(), protocol.to_string());
+            }
+        }
+        ProbeKind::BandwidthTest => {
+            fields.insert("address".into(), address.to_string());
+            if !count.is_empty() {
+                fields.insert("duration".into(), count.to_string());
+            }
+            if !protocol.is_empty() {
+                fields.insert("protocol".into(), protocol.to_string());
+            }
+        }
+        ProbeKind::MacScan | ProbeKind::WifiScan => {
+            if !src.is_empty() {
+                let key = if kind == ProbeKind::WifiScan {
+                    "numbers"
+                } else {
+                    "interface"
+                };
+                fields.insert(key.into(), src.to_string());
+            }
+        }
+        ProbeKind::IpScan => {
+            fields.insert("address".into(), address.to_string());
+            if !src.is_empty() {
+                fields.insert("interface".into(), src.to_string());
+            }
+        }
+        ProbeKind::Profiler => {
+            if !count.is_empty() {
+                fields.insert("duration".into(), count.to_string());
+            }
+        }
+    }
+    fields
+}
+
 fn command_base_path(action_id: &str, resource_endpoint: &str) -> String {
     match action_id {
-        "reboot" | "shutdown" => "/rest/system".into(),
+        "reboot" | "shutdown" | "reset-configuration" => "/rest/system".into(),
         "backup-save" | "backup-load" => "/rest/system/backup".into(),
+        "upgrade" => "/rest/system/routerboard".into(),
+        "export-config" | "export" | "import-config" => "/rest".into(),
+        "check-for-updates" => "/rest/system/package/update".into(),
+        "wol" | "wake-on-lan" => "/rest/tool".into(),
+        "sms" | "send-sms" => "/rest/tool/sms".into(),
         _ => resource_endpoint.to_string(),
     }
 }
@@ -1251,6 +1405,13 @@ fn confirm_body(action_id: &str, label: &str, record_name: &str) -> String {
             format!("Load backup {record_name}? This replaces running config and reboots.")
         }
         "make-static" => format!("Make lease {record_name} static?"),
+        "upgrade" => "Upgrade RouterBOARD firmware? The router will reboot.".into(),
+        "reset-configuration" => {
+            "Reset configuration? This wipes the running config (keep-users if you set it).".into()
+        }
+        "flush" => format!("Flush {record_name}? Dynamic entries will be rebuilt."),
+        "run" => format!("Run {record_name} now?"),
+        "release" => format!("Release lease {record_name}?"),
         _ => format!("{label} {record_name}?"),
     }
 }
@@ -2250,5 +2411,122 @@ mod tests {
         };
         assert_eq!(probe.samples.len(), 1);
         assert!(probe.running);
+    }
+
+    #[test]
+    fn bandwidth_test_overlay_emits_fetch_probe() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("bandwidth-test");
+        app.pane = Pane::Content;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('p'))));
+        assert!(cmds.is_empty(), "overlay open must not issue I/O: {cmds:?}");
+        let Overlay::Probe(probe) = &app.overlay else {
+            panic!("expected bandwidth overlay, got {:?}", app.overlay);
+        };
+        assert_eq!(probe.kind, ProbeKind::BandwidthTest);
+        type_chars(&mut app, "192.0.2.8");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        match cmds.as_slice() {
+            [
+                AppCommand::FetchProbe {
+                    endpoint,
+                    command,
+                    fields,
+                    ..
+                },
+            ] => {
+                assert_eq!(endpoint, "/rest/tool");
+                assert_eq!(command, "bandwidth-test");
+                assert_eq!(fields.get("address").map(String::as_str), Some("192.0.2.8"));
+                assert_eq!(fields.get("duration").map(String::as_str), Some("10"));
+                assert_eq!(fields.get("protocol").map(String::as_str), Some("tcp"));
+            }
+            other => panic!("expected FetchProbe, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn profiler_starts_without_address() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("profiler");
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('p'))));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        match cmds.as_slice() {
+            [
+                AppCommand::FetchProbe {
+                    command, fields, ..
+                },
+            ] => {
+                assert_eq!(command, "profile");
+                assert_eq!(fields.get("duration").map(String::as_str), Some("5"));
+                assert!(!fields.contains_key("address"));
+            }
+            other => panic!("expected FetchProbe, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wol_prompt_posts_tool_wol() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("wol");
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('p'))));
+        let Overlay::Form(session) = &mut app.overlay else {
+            panic!("expected wol prompt, got {:?}", app.overlay);
+        };
+        session.values.insert("interface".into(), "ether1".into());
+        session
+            .values
+            .insert("mac".into(), "4C:5E:0C:00:00:01".into());
+        let cmds = app.save_form();
+        let (endpoint, command, fields) = command_fields(&cmds);
+        assert_eq!(endpoint, "/rest/tool");
+        assert_eq!(command, "wol");
+        assert_eq!(fields.get("interface").map(String::as_str), Some("ether1"));
+        assert_eq!(
+            fields.get("mac").map(String::as_str),
+            Some("4C:5E:0C:00:00:01")
+        );
+        assert!(!fields.contains_key(".id"));
+    }
+
+    #[test]
+    fn dns_cache_flush_does_not_attach_selected_id() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("dns-cache");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "example.com".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "dns-cache".into(),
+            rows: vec![Resource {
+                id: "*9".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected flush confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Flush);
+        assert!(session.record_id.is_empty());
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Command {
+                command, fields, ..
+            } => {
+                assert_eq!(command, "flush");
+                assert!(!fields.contains_key(".id"));
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
     }
 }
