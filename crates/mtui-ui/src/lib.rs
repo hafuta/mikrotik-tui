@@ -8,6 +8,7 @@ mod chrome;
 mod color;
 mod console;
 mod dashboard;
+mod file_picker;
 mod firewall;
 mod form;
 mod inspector;
@@ -35,6 +36,7 @@ pub use chrome::{
 pub use color::ColorDepth;
 pub use console::{ConsoleEntry, ConsoleLevel, ConsoleState, TIME_COL, console_pane_height};
 pub use dashboard::{CpuCoreView, DashboardGeometry, DashboardView, dashboard_content};
+pub use file_picker::{FilePickerEntry, FilePickerState, render_file_picker};
 pub use firewall::{FirewallHitChart, FirewallRuleMetric, MAX_FIREWALL_RULES};
 pub use form::{
     BACKUP_SAVE_FORM, COPY_FORM, DOWNLOAD_FORM, FETCH_FORM, FormMode, FormSession,

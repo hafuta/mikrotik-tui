@@ -410,6 +410,8 @@ fn login_hints(form: &LoginForm) -> Vec<(&'static str, &'static str)> {
                 "enter",
                 if form.focus == LoginField::Connect {
                     "login"
+                } else if form.focus == LoginField::CaFile {
+                    "browse"
                 } else {
                     "next"
                 },
@@ -440,6 +442,8 @@ fn login_hints(form: &LoginForm) -> Vec<(&'static str, &'static str)> {
                 "enter",
                 if form.focus == LoginField::Connect {
                     "login"
+                } else if form.focus == LoginField::CaFile {
+                    "browse"
                 } else {
                     "next"
                 },
@@ -681,7 +685,7 @@ fn render_field(
 ) {
     let hint = match field {
         LoginField::Totp => " optional · 6 digits · never saved",
-        LoginField::CaFile => " optional · PEM or DER · TLS only",
+        LoginField::CaFile => " optional · enter to browse · PEM or DER",
         _ => "",
     };
     let title = if hint.is_empty() {

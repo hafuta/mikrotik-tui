@@ -66,8 +66,10 @@ On first launch, add a device: host (`192.168.88.1` or `host:port`), username,
 and password. TLS is on by default (port 8729). Turn TLS off for the
 plaintext `api` service (port 8728). A CA-signed certificate is trusted from
 the OS store (Windows certificate store, macOS keychain, Linux CA bundle).
-You can also point CA file at a PEM or DER file. For a self-signed
-certificate, compare the SHA-256 fingerprint before trusting it.
+You can also point CA file at a PEM or DER file. On that field, press enter
+to browse folders in the terminal (Windows drive letters, macOS, and Linux).
+For a self-signed certificate, compare the SHA-256 fingerprint before
+trusting it.
 
 Apple Terminal.app before macOS 26 Tahoe does not support 24-bit color; the
 app falls back to 256 colors there. iTerm2 and Terminal on Tahoe use truecolor.

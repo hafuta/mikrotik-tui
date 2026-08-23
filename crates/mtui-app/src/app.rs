@@ -80,6 +80,7 @@ pub enum Overlay {
     TypePicker(ActionMenuState),
     Torch(TorchState),
     Probe(ProbeState),
+    FilePicker(mtui_ui::FilePickerState),
     ForgetProfile {
         name: String,
     },
@@ -195,6 +196,11 @@ pub enum AppCommand {
         resource_id: String,
         value_key: String,
     },
+    ListLocalDir {
+        session: SessionId,
+        generation: u64,
+        path: String,
+    },
 }
 
 impl AppCommand {
@@ -217,7 +223,8 @@ impl AppCommand {
             | Self::ReadLocalFile { session, .. }
             | Self::WriteLocalFile { session, .. }
             | Self::FetchRecord { session, .. }
-            | Self::FetchLookup { session, .. } => Some(*session),
+            | Self::FetchLookup { session, .. }
+            | Self::ListLocalDir { session, .. } => Some(*session),
         }
     }
 
@@ -239,7 +246,8 @@ impl AppCommand {
             | Self::ReadLocalFile { session, .. }
             | Self::WriteLocalFile { session, .. }
             | Self::FetchRecord { session, .. }
-            | Self::FetchLookup { session, .. } => *session = id,
+            | Self::FetchLookup { session, .. }
+            | Self::ListLocalDir { session, .. } => *session = id,
         }
     }
 }
@@ -703,6 +711,34 @@ impl App {
         self.screen = Screen::Connecting;
         self.status = format!("Connecting to {}…", self.profile_label());
         vec![self.connect_command()]
+    }
+
+    pub(crate) fn open_ca_file_picker(&mut self) -> Vec<AppCommand> {
+        let path = crate::files_io::default_browse_dir(&self.login.ca_file);
+        let generation = self.next_request();
+        self.overlay =
+            Overlay::FilePicker(mtui_ui::FilePickerState::loading(path.clone(), generation));
+        self.status = "Browse for a CA file".into();
+        vec![AppCommand::ListLocalDir {
+            session: SessionId::UNSTAMPED,
+            generation,
+            path,
+        }]
+    }
+
+    pub(crate) fn list_picker_dir(&mut self, path: String) -> Vec<AppCommand> {
+        if !matches!(self.overlay, Overlay::FilePicker(_)) {
+            return Vec::new();
+        }
+        let generation = self.next_request();
+        if let Overlay::FilePicker(picker) = &mut self.overlay {
+            picker.begin_list(path.clone(), generation);
+        }
+        vec![AppCommand::ListLocalDir {
+            session: SessionId::UNSTAMPED,
+            generation,
+            path,
+        }]
     }
 
     fn load_ca_file_if_needed(&mut self) -> std::result::Result<(), String> {
@@ -1302,6 +1338,18 @@ impl App {
             } => {
                 if let Overlay::Form(session) = &mut self.overlay {
                     session.apply_lookup_result(request_id, generation, options, error);
+                }
+                Vec::new()
+            }
+            WorkerMsg::ListLocalDirResult {
+                generation,
+                dir,
+                entries,
+                error,
+                ..
+            } => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.apply_listing(generation, dir, entries, error);
                 }
                 Vec::new()
             }

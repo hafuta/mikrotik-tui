@@ -5,8 +5,8 @@ use mtui_ui::{
     CpuCoreView, DashboardView, LayoutMetrics, LoginView, Modal, ModalButton, ModalButtonKind,
     ModalPanel, ReauthView, TabLabel, center_in_band, chrome_band_height, constrain_lines,
     dashboard_content, fill_rect, footer_bar, format_fingerprint, modal_max_scroll,
-    render_action_menu, render_form_sheet, render_login, render_modal, render_probe, render_reauth,
-    render_tab_bar, render_torch, session_header, tab_strip_height,
+    render_action_menu, render_file_picker, render_form_sheet, render_login, render_modal,
+    render_probe, render_reauth, render_tab_bar, render_torch, session_header, tab_strip_height,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -76,6 +76,9 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                 Overlay::Probe(ref probe) => {
                     render_probe(frame, full, probe, &styles);
                 }
+                Overlay::FilePicker(ref picker) => {
+                    render_file_picker(frame, full, picker, &styles);
+                }
                 Overlay::None => {}
             }
         }
@@ -128,6 +131,7 @@ fn draw_login_overlay(frame: &mut Frame<'_>, area: Rect, app: &App) {
             let modal = Modal::new("Keyboard help", &help).scroll(app.overlay_scroll);
             render_modal(frame, area, &modal, &styles);
         }
+        Overlay::FilePicker(picker) => render_file_picker(frame, area, picker, &styles),
         _ => {}
     }
 }

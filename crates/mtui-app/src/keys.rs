@@ -191,11 +191,8 @@ impl App {
             LoginField::Password if self.login.uses_totp && self.login.totp.is_empty() => {
                 self.login.focus = LoginField::Totp;
             }
-            LoginField::Password
-            | LoginField::Totp
-            | LoginField::Tls
-            | LoginField::CaFile
-            | LoginField::Remember => {
+            LoginField::CaFile => return self.open_ca_file_picker(),
+            LoginField::Password | LoginField::Totp | LoginField::Tls | LoginField::Remember => {
                 self.login.focus = LoginField::Connect;
             }
             LoginField::Name | LoginField::Url | LoginField::Username => {
@@ -536,8 +533,85 @@ impl App {
             Overlay::TypePicker(_) => self.keys_action_menu(key, true),
             Overlay::Torch(_) => self.keys_torch(key),
             Overlay::Probe(_) => self.keys_probe(key),
+            Overlay::FilePicker(_) => self.keys_file_picker(key),
             Overlay::None => Vec::new(),
         }
+    }
+
+    fn keys_file_picker(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        match key.code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                self.status = "CA file browse canceled".into();
+                Vec::new()
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.move_selection(-1);
+                }
+                Vec::new()
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.move_selection(1);
+                }
+                Vec::new()
+            }
+            KeyCode::Home => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.jump_home();
+                }
+                Vec::new()
+            }
+            KeyCode::End => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.jump_end();
+                }
+                Vec::new()
+            }
+            KeyCode::PageUp => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.move_selection(-8);
+                }
+                Vec::new()
+            }
+            KeyCode::PageDown => {
+                if let Overlay::FilePicker(picker) = &mut self.overlay {
+                    picker.move_selection(8);
+                }
+                Vec::new()
+            }
+            KeyCode::Left | KeyCode::Backspace | KeyCode::Char('h') => self.file_picker_parent(),
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.file_picker_open(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn file_picker_parent(&mut self) -> Vec<AppCommand> {
+        let Overlay::FilePicker(picker) = &self.overlay else {
+            return Vec::new();
+        };
+        match crate::files_io::parent_browse_dir(&picker.dir) {
+            Some(parent) => self.list_picker_dir(parent),
+            None => Vec::new(),
+        }
+    }
+
+    fn file_picker_open(&mut self) -> Vec<AppCommand> {
+        let Overlay::FilePicker(picker) = &self.overlay else {
+            return Vec::new();
+        };
+        let Some(entry) = picker.selected_entry().cloned() else {
+            return Vec::new();
+        };
+        if entry.is_dir {
+            return self.list_picker_dir(entry.path);
+        }
+        self.login.ca_file = entry.path;
+        self.login.focus = LoginField::CaFile;
+        self.overlay = Overlay::None;
+        self.status = "CA file selected".into();
+        Vec::new()
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1447,6 +1521,117 @@ mod login_edit_tests {
             )),
             "expected connect command, got {cmds:?}"
         );
+    }
+
+    #[test]
+    fn enter_on_ca_file_opens_a_directory_browser() {
+        let mut app = login_app();
+        app.login.focus = LoginField::CaFile;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(
+            cmds.iter()
+                .any(|cmd| matches!(cmd, crate::app::AppCommand::ListLocalDir { .. })),
+            "expected list dir, got {cmds:?}"
+        );
+        assert!(matches!(app.overlay, crate::app::Overlay::FilePicker(_)));
+    }
+
+    #[test]
+    fn file_picker_selects_a_file_and_ignores_stale_listings() {
+        let mut app = login_app();
+        app.login.focus = LoginField::CaFile;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let generation = match &app.overlay {
+            crate::app::Overlay::FilePicker(picker) => picker.generation,
+            other => panic!("expected picker, got {other:?}"),
+        };
+        let _ = app.update(AppEvent::Worker(
+            crate::event::WorkerMsg::ListLocalDirResult {
+                session: app.test_session(),
+                generation: generation.wrapping_add(1),
+                dir: "/stale".into(),
+                entries: vec![mtui_ui::FilePickerEntry {
+                    name: "old.pem".into(),
+                    path: "/stale/old.pem".into(),
+                    is_dir: false,
+                }],
+                error: None,
+            },
+        ));
+        assert!(matches!(
+            &app.overlay,
+            crate::app::Overlay::FilePicker(picker) if picker.entries.is_empty()
+        ));
+        let _ = app.update(AppEvent::Worker(
+            crate::event::WorkerMsg::ListLocalDirResult {
+                session: app.test_session(),
+                generation,
+                dir: "/certs".into(),
+                entries: vec![
+                    mtui_ui::FilePickerEntry {
+                        name: "issued".into(),
+                        path: "/certs/issued".into(),
+                        is_dir: true,
+                    },
+                    mtui_ui::FilePickerEntry {
+                        name: "ca.pem".into(),
+                        path: "/certs/ca.pem".into(),
+                        is_dir: false,
+                    },
+                ],
+                error: None,
+            },
+        ));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.login.ca_file, "/certs/ca.pem");
+        assert_eq!(app.overlay, crate::app::Overlay::None);
+    }
+
+    #[test]
+    fn file_picker_enter_on_a_directory_requests_another_listing() {
+        let mut app = login_app();
+        app.login.focus = LoginField::CaFile;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let generation = match &app.overlay {
+            crate::app::Overlay::FilePicker(picker) => picker.generation,
+            other => panic!("expected picker, got {other:?}"),
+        };
+        let _ = app.update(AppEvent::Worker(
+            crate::event::WorkerMsg::ListLocalDirResult {
+                session: app.test_session(),
+                generation,
+                dir: "/certs".into(),
+                entries: vec![mtui_ui::FilePickerEntry {
+                    name: "issued".into(),
+                    path: "/certs/issued".into(),
+                    is_dir: true,
+                }],
+                error: None,
+            },
+        ));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                crate::app::AppCommand::ListLocalDir { path, .. } if path == "/certs/issued"
+            )),
+            "expected nested list, got {cmds:?}"
+        );
+        assert!(matches!(app.overlay, crate::app::Overlay::FilePicker(_)));
+    }
+
+    #[test]
+    fn file_picker_esc_closes_without_changing_the_path() {
+        let mut app = login_app();
+        app.login.ca_file = "/keep.pem".into();
+        app.login.focus = LoginField::CaFile;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.overlay, crate::app::Overlay::None);
+        assert_eq!(app.login.ca_file, "/keep.pem");
     }
 
     #[test]

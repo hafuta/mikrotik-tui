@@ -25,11 +25,11 @@ pub fn keyboard_help(app: &App) -> String {
             &mut out,
             "Login",
             &[
-                ("enter", "select device or connect"),
+                ("enter", "select device, browse CA file, or connect"),
                 ("tab", "next field"),
                 ("n", "new device"),
                 ("x", "forget device"),
-                ("space", "remember password"),
+                ("space", "remember password or TLS"),
                 ("esc", "cancel connect"),
             ],
         ),

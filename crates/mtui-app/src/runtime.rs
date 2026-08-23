@@ -547,6 +547,30 @@ fn dispatch_commands(
                     let _ = tx.send(msg);
                 });
             }
+            AppCommand::ListLocalDir {
+                session,
+                generation,
+                path,
+            } => {
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let result =
+                        tokio::task::spawn_blocking(move || crate::files_io::list_local_dir(&path))
+                            .await;
+                    let (dir, entries, error) = match result {
+                        Ok(Ok((dir, entries))) => (dir, entries, None),
+                        Ok(Err(err)) => (String::new(), Vec::new(), Some(err)),
+                        Err(err) => (String::new(), Vec::new(), Some(err.to_string())),
+                    };
+                    let _ = tx.send(WorkerMsg::ListLocalDirResult {
+                        session,
+                        generation,
+                        dir,
+                        entries,
+                        error,
+                    });
+                });
+            }
         }
     }
 }
