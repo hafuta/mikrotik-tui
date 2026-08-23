@@ -4,17 +4,16 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/hafuta/mikrotik-tui/ci.yml?branch=main&label=CI)](https://github.com/hafuta/mikrotik-tui/actions/workflows/ci.yml)
 
-> [!WARNING]
-> Early preview. Tested against current RouterOS long-term only. Expect
-> missing menus and bugs; do not use it for production changes yet.
+> [!CAUTION]
+> Tested against current RouterOS long-term. Use with caution.
 
 <p align="center">
   <img src="assets/banner.png" alt="MikroTik TUI" width="520">
 </p>
 
 Keyboard-first terminal client for MikroTik RouterOS. It connects over
-`api-ssl` (port 8729) and shows live device state — interfaces, addressing,
-DHCP, firewall, hardware, and logs — without leaving the terminal.
+`api-ssl` (port 8729) and shows live device state: interfaces, addressing,
+DHCP, firewall, hardware, and logs, without leaving the terminal.
 
 You can create, edit, and run the usual row actions (enable/disable, copy,
 remove, torch, backups) through confirmations and a properties sheet. The

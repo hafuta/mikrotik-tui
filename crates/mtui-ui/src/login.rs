@@ -32,6 +32,7 @@ pub enum LoginField {
     Password,
     Totp,
     Remember,
+    Connect,
 }
 
 impl LoginField {
@@ -43,25 +44,35 @@ impl LoginField {
             Self::Username => Self::Password,
             Self::Password => Self::Totp,
             Self::Totp => Self::Remember,
-            Self::Remember => Self::Name,
+            Self::Remember => Self::Connect,
+            Self::Connect => Self::Name,
         }
     }
 
     #[must_use]
     pub fn prev(self) -> Self {
         match self {
-            Self::Name => Self::Remember,
+            Self::Name => Self::Connect,
             Self::Url => Self::Name,
             Self::Username => Self::Url,
             Self::Password => Self::Username,
             Self::Totp => Self::Password,
             Self::Remember => Self::Totp,
+            Self::Connect => Self::Remember,
         }
     }
 
     #[must_use]
     pub fn is_secret(self) -> bool {
         matches!(self, Self::Password | Self::Totp)
+    }
+
+    #[must_use]
+    pub fn is_text(self) -> bool {
+        matches!(
+            self,
+            Self::Name | Self::Url | Self::Username | Self::Password | Self::Totp
+        )
     }
 
     #[must_use]
@@ -72,7 +83,8 @@ impl LoginField {
             Self::Username => Some(Self::Password),
             Self::Password => Some(Self::Totp),
             Self::Totp => Some(Self::Remember),
-            Self::Remember => None,
+            Self::Remember => Some(Self::Connect),
+            Self::Connect => None,
         }
     }
 
@@ -85,6 +97,7 @@ impl LoginField {
             Self::Password => Some(Self::Username),
             Self::Totp => Some(Self::Password),
             Self::Remember => Some(Self::Totp),
+            Self::Connect => Some(Self::Remember),
         }
     }
 }
@@ -144,12 +157,12 @@ impl LoginForm {
             LoginField::Username => Some(&mut self.username),
             LoginField::Password => Some(&mut self.password),
             LoginField::Totp => Some(&mut self.totp),
-            LoginField::Remember => None,
+            LoginField::Remember | LoginField::Connect => None,
         }
     }
 
     pub fn insert_char(&mut self, ch: char) {
-        if !is_printable_char(ch) || self.focus == LoginField::Remember {
+        if !is_printable_char(ch) || !self.focus.is_text() {
             return;
         }
         if self.focus == LoginField::Totp {
@@ -204,7 +217,7 @@ impl LoginForm {
         match self.pane {
             LoginPane::List => {
                 self.pane = LoginPane::Form;
-                self.focus = LoginField::Remember;
+                self.focus = LoginField::Connect;
             }
             LoginPane::Form => match self.focus.prev_in_form() {
                 Some(field) => self.focus = field,
@@ -255,14 +268,19 @@ impl LoginForm {
         self.remember_password = row.remember_password;
         self.uses_totp = row.uses_totp;
         self.totp.clear();
-        if row.uses_totp {
-            self.focus = LoginField::Totp;
-            self.pane = LoginPane::Form;
-        } else if row.remember_password {
-            self.focus = LoginField::Password;
+        self.focus = self.open_focus();
+        self.pane = LoginPane::Form;
+    }
+
+    /// Saved profiles land on Login when credentials are already present.
+    #[must_use]
+    pub fn open_focus(&self) -> LoginField {
+        if self.uses_totp && self.totp.is_empty() {
+            LoginField::Totp
+        } else if self.password.is_empty() && !self.remember_password {
+            LoginField::Password
         } else {
-            self.focus = LoginField::Password;
-            self.pane = LoginPane::Form;
+            LoginField::Connect
         }
     }
 }
@@ -346,14 +364,21 @@ pub fn render_login(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, sty
 fn login_hints(form: &LoginForm) -> Vec<(&'static str, &'static str)> {
     if form.profiles.is_empty() {
         vec![
-            ("enter", "connect"),
+            (
+                "enter",
+                if form.focus == LoginField::Connect {
+                    "login"
+                } else {
+                    "next"
+                },
+            ),
             ("tab", "field"),
             ("space", "remember"),
             ("q", "quit"),
         ]
     } else if form.pane == LoginPane::List {
         vec![
-            ("enter", "connect"),
+            ("enter", "open"),
             ("→", "open"),
             ("n", "new"),
             ("x", "forget"),
@@ -362,7 +387,14 @@ fn login_hints(form: &LoginForm) -> Vec<(&'static str, &'static str)> {
         ]
     } else {
         vec![
-            ("enter", "connect"),
+            (
+                "enter",
+                if form.focus == LoginField::Connect {
+                    "login"
+                } else {
+                    "next"
+                },
+            ),
             ("tab", "field"),
             ("space", "remember"),
             ("esc", "list"),
@@ -475,7 +507,7 @@ fn render_form_column(
     stacked: bool,
 ) {
     let form_focus = form.pane == LoginPane::Form || form.profiles.is_empty();
-    let mut constraints = vec![Constraint::Length(3)];
+    let mut constraints = vec![Constraint::Length(2)];
     if stacked && !form.profiles.is_empty() {
         constraints.insert(0, Constraint::Length(7));
     }
@@ -486,6 +518,7 @@ fn render_form_column(
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(3),
+        Constraint::Length(1),
         Constraint::Min(1),
     ]);
     let chunks = Layout::default()
@@ -533,6 +566,13 @@ fn render_form_column(
         chunks[idx],
         form.remember_password,
         form_focus && form.focus == LoginField::Remember,
+        styles,
+    );
+    idx += 1;
+    render_connect_button(
+        frame,
+        chunks[idx],
+        form_focus && form.focus == LoginField::Connect,
         styles,
     );
     idx += 1;
@@ -627,6 +667,28 @@ fn render_remember_field(
         Span::styled("  space toggles", styles.muted),
     ]);
     frame.render_widget(Paragraph::new(line).block(block), area);
+}
+
+fn render_connect_button(frame: &mut Frame<'_>, area: Rect, focused: bool, styles: &Styles) {
+    if focused {
+        fill_rect(frame, area, styles.selection);
+    }
+    let bracket = if focused { styles.focus } else { styles.border };
+    let label = if focused {
+        styles.focus.add_modifier(Modifier::BOLD)
+    } else {
+        styles.text
+    };
+    let mut line = Line::from(vec![
+        Span::styled("[ ", bracket),
+        Span::styled("Login", label),
+        Span::styled(" ]", bracket),
+        Span::styled(" enter", styles.muted),
+    ]);
+    if focused {
+        line = line_on_bg(line, styles.selection);
+    }
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 /// Re-auth overlay copy while a live session is still on screen.
@@ -769,6 +831,8 @@ mod tests {
     fn url_next_is_still_username() {
         assert_eq!(LoginField::Url.next(), LoginField::Username);
         assert_eq!(LoginField::Password.prev(), LoginField::Username);
+        assert_eq!(LoginField::Remember.next(), LoginField::Connect);
+        assert_eq!(LoginField::Connect.prev(), LoginField::Remember);
     }
 
     fn sample_rows() -> Vec<SavedProfileRow> {
@@ -801,6 +865,8 @@ mod tests {
         form.tab_forward();
         assert_eq!(form.focus, LoginField::Remember);
         form.tab_forward();
+        assert_eq!(form.focus, LoginField::Connect);
+        form.tab_forward();
         assert_eq!(form.pane, LoginPane::List);
         form.tab_forward();
         assert_eq!(form.pane, LoginPane::Form);
@@ -809,7 +875,7 @@ mod tests {
         assert_eq!(form.pane, LoginPane::List);
         form.tab_back();
         assert_eq!(form.pane, LoginPane::Form);
-        assert_eq!(form.focus, LoginField::Remember);
+        assert_eq!(form.focus, LoginField::Connect);
     }
 
     #[test]
@@ -857,6 +923,48 @@ mod tests {
         }
         assert!(found_on, "remember On choice missing");
         assert!(found_off, "remember Off choice missing");
+    }
+
+    #[test]
+    fn connect_button_draws_login_label() {
+        let backend = TestBackend::new(90, 28);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let form = LoginForm {
+            pane: LoginPane::Form,
+            focus: LoginField::Connect,
+            profiles: sample_rows(),
+            ..LoginForm::default()
+        };
+        terminal
+            .draw(|frame| {
+                render_login(
+                    frame,
+                    frame.area(),
+                    &LoginView {
+                        form: &form,
+                        status: "ok",
+                        connecting: false,
+                        clock: "",
+                    },
+                    &styles,
+                );
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut found = false;
+        for y in 0..buf.area.height {
+            let mut row = String::new();
+            for x in 0..buf.area.width {
+                row.push_str(buf[(x, y)].symbol());
+            }
+            if row.contains("Login") {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "Login button missing from the form");
     }
 
     #[test]
