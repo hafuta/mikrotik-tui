@@ -42,6 +42,15 @@ fn default_remember_password() -> bool {
     true
 }
 
+fn default_use_tls() -> bool {
+    true
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
 /// A named `RouterOS` connection. Passwords and other secrets intentionally
 /// do not belong here; see [`crate::credentials`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,6 +62,15 @@ pub struct Profile {
     pub certificate_fingerprint: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub custom_ca: String,
+    /// Path to a PEM or DER CA file. Read at connect time. Prefer this over
+    /// embedding PEM in [`custom_ca`] so the file can live in an OS-typical
+    /// location.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ca_file: String,
+    /// When false, connect to the plaintext `api` service (default port 8728).
+    /// Existing profiles without this field stay on `api-ssl`.
+    #[serde(default = "default_use_tls", skip_serializing_if = "is_true")]
+    pub use_tls: bool,
     /// When true, a successful connect stores the password in the credential
     /// backend. Shared/kiosk machines can leave this off and type the
     /// password each time. Defaults to true so existing single-profile files
@@ -135,6 +153,8 @@ impl Default for Profile {
             username: String::new(),
             certificate_fingerprint: String::new(),
             custom_ca: String::new(),
+            ca_file: String::new(),
+            use_tls: true,
             remember_password: true,
             uses_totp: false,
             preferences: HashMap::new(),
@@ -513,6 +533,22 @@ mod tests {
         let loaded = store.load().unwrap();
         assert!(loaded[0].remember_password);
         assert!(!loaded[0].uses_totp);
+        assert!(loaded[0].use_tls);
+        assert!(loaded[0].ca_file.is_empty());
+    }
+
+    #[test]
+    fn missing_use_tls_defaults_to_true() {
+        let dir = TempDir::new("tls-default");
+        let path = dir.path().join(PROFILE_FILE_NAME);
+        fs::write(
+            &path,
+            br#"{"version":1,"profiles":{"core":{"name":"core","url":"192.168.88.1:8728","username":"admin","use_tls":false}}}"#,
+        )
+        .unwrap();
+        let store = ProfileStore::new(dir.path());
+        let loaded = store.load().unwrap();
+        assert!(!loaded[0].use_tls);
     }
 
     #[test]

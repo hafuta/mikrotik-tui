@@ -1,9 +1,10 @@
-//! TLS trust configuration: certificate pinning and custom CA support.
+//! TLS trust configuration: pinning, custom CA, and OS trust store.
 //!
-//! `RouterOS` devices commonly present self-signed certificates. This module
-//! lets callers either pin a known leaf certificate fingerprint (learned via
-//! [`probe_certificate`]) or trust a custom CA bundle, without disabling
-//! cryptographic signature verification of the TLS handshake itself.
+//! `RouterOS` devices commonly present self-signed certificates. Callers can
+//! pin a known leaf fingerprint (learned via [`probe_certificate`]), trust a
+//! custom CA file, or use the operating system trust store (Windows
+//! certificate store, macOS keychain, Linux CA bundle). Cryptographic
+//! signature verification of the TLS handshake stays enabled.
 
 use std::io::BufReader;
 use std::net::TcpStream;
@@ -62,33 +63,95 @@ pub fn normalize_certificate_pin(pin: &str) -> Result<String> {
     Ok(hex::encode(decoded))
 }
 
-/// Builds a [`RootCertStore`] from a PEM-encoded certificate bundle.
-pub(crate) fn root_store_from_pem(pem: &[u8]) -> Result<RootCertStore> {
+/// Builds a [`RootCertStore`] from a PEM bundle or a single DER certificate.
+/// Windows `.cer` exports are often DER; macOS and Linux CA files are usually
+/// PEM.
+pub(crate) fn root_store_from_bytes(bytes: &[u8]) -> Result<RootCertStore> {
     let mut store = RootCertStore::empty();
-    let mut reader = BufReader::new(pem);
+    let mut reader = BufReader::new(bytes);
     let mut added = 0usize;
+    let mut pem_error = None;
     for cert in rustls_pemfile::certs(&mut reader) {
-        let cert = cert
-            .map_err(|err| Error::tls("configure_tls", format!("invalid custom CA PEM: {err}")))?;
-        store.add(cert).map_err(|err| {
-            Error::tls(
-                "configure_tls",
-                format!("invalid custom CA certificate: {err}"),
-            )
-        })?;
-        added += 1;
+        match cert {
+            Ok(cert) => {
+                store.add(cert).map_err(|err| {
+                    Error::tls(
+                        "configure_tls",
+                        format!("invalid custom CA certificate: {err}"),
+                    )
+                })?;
+                added += 1;
+            }
+            Err(err) => pem_error = Some(err),
+        }
+    }
+    if added == 0 && looks_like_der(bytes) {
+        store
+            .add(CertificateDer::from(bytes.to_vec()))
+            .map_err(|err| {
+                Error::tls(
+                    "configure_tls",
+                    format!("invalid custom CA certificate: {err}"),
+                )
+            })?;
+        added = 1;
     }
     if added == 0 {
         return Err(Error::tls(
             "configure_tls",
-            "custom CA contains no valid certificates",
+            pem_error.map_or_else(
+                || "custom CA contains no valid certificates".to_string(),
+                |err| format!("invalid custom CA PEM: {err}"),
+            ),
         ));
     }
     Ok(store)
 }
 
+fn looks_like_der(bytes: &[u8]) -> bool {
+    bytes.first().is_some_and(|tag| *tag == 0x30)
+}
+
 pub(crate) fn client_config_with_ca(pem: &[u8]) -> Result<ClientConfig> {
-    let roots = root_store_from_pem(pem)?;
+    let roots = root_store_from_bytes(pem)?;
+    config_with_roots(roots)
+}
+
+pub(crate) fn client_config_with_native_roots() -> Result<ClientConfig> {
+    let loaded = rustls_native_certs::load_native_certs();
+    if loaded.certs.is_empty() {
+        let detail = loaded
+            .errors
+            .into_iter()
+            .map(|err| err.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(Error::tls(
+            "configure_tls",
+            if detail.is_empty() {
+                "OS trust store contains no certificates".to_string()
+            } else {
+                format!("failed to load OS trust store: {detail}")
+            },
+        ));
+    }
+    let mut roots = RootCertStore::empty();
+    let mut added = 0usize;
+    for cert in loaded.certs {
+        if roots.add(cert).is_ok() {
+            added += 1;
+        }
+    }
+    if added == 0 {
+        return Err(Error::tls(
+            "configure_tls",
+            "OS trust store contains no usable certificates",
+        ));
+    }
+    config_with_roots(roots)
+}
+
+fn config_with_roots(roots: RootCertStore) -> Result<ClientConfig> {
     ClientConfig::builder_with_provider(crypto_provider())
         .with_safe_default_protocol_versions()
         .map_err(|err| Error::tls("configure_tls", err.to_string()))
@@ -325,5 +388,11 @@ mod tests {
         assert!(normalize_certificate_pin("not-hex").is_err());
         assert!(normalize_certificate_pin("ab").is_err());
         assert!(normalize_certificate_pin(&"a".repeat(63)).is_err());
+    }
+
+    #[test]
+    fn custom_ca_rejects_empty_and_garbage() {
+        assert!(root_store_from_bytes(b"").is_err());
+        assert!(root_store_from_bytes(b"not-a-certificate").is_err());
     }
 }

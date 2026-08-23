@@ -198,10 +198,13 @@ fn dispatch_commands(
                 password,
                 pin,
                 ca_pem,
+                use_tls,
             } => {
                 let tx = tx.clone();
                 rt.spawn(async move {
-                    let msg = connect_worker(session, url, username, password, pin, ca_pem).await;
+                    let msg =
+                        connect_worker(session, url, username, password, pin, ca_pem, use_tls)
+                            .await;
                     let _ = tx.send(msg);
                 });
             }
@@ -561,14 +564,17 @@ async fn connect_worker(
     password: String,
     pin: Option<String>,
     ca_pem: Option<Vec<u8>>,
+    use_tls: bool,
 ) -> WorkerMsg {
     let had_pin = pin.is_some();
-    let mut options = ClientOptions::new(url.clone(), username, password);
-    if let Some(pin) = pin {
-        options = options.with_certificate_pin(pin);
-    }
-    if let Some(pem) = ca_pem {
-        options = options.with_ca_pem(pem);
+    let mut options = ClientOptions::new(url.clone(), username, password).with_tls(use_tls);
+    if use_tls {
+        if let Some(pin) = pin {
+            options = options.with_certificate_pin(pin);
+        }
+        if let Some(pem) = ca_pem {
+            options = options.with_ca_pem(pem);
+        }
     }
     match Client::connect(options).await {
         Ok(client) => match client.system("/rest/system/resource").await {

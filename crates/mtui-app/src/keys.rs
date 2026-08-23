@@ -106,6 +106,16 @@ impl App {
                 self.login.set_remember(true);
             }
             KeyCode::Left
+                if self.login.pane == LoginPane::Form && self.login.focus == LoginField::Tls =>
+            {
+                self.login.set_tls(false);
+            }
+            KeyCode::Right
+                if self.login.pane == LoginPane::Form && self.login.focus == LoginField::Tls =>
+            {
+                self.login.set_tls(true);
+            }
+            KeyCode::Left
                 if self.login.pane == LoginPane::Form && !self.login.profiles.is_empty() =>
             {
                 self.login.pane = LoginPane::List;
@@ -131,6 +141,11 @@ impl App {
             {
                 self.login.toggle_remember();
             }
+            KeyCode::Char(' ')
+                if self.login.pane == LoginPane::Form && self.login.focus == LoginField::Tls =>
+            {
+                self.login.toggle_tls();
+            }
             KeyCode::Char('n') if self.login.pane == LoginPane::List => self.start_new_profile(),
             KeyCode::Char('x' | 'd') if self.login.pane == LoginPane::List => {
                 if let Some(row) = self.login.selected_row().cloned() {
@@ -155,6 +170,8 @@ impl App {
             KeyCode::Char(ch) if self.login.pane == LoginPane::Form => {
                 if ch == ' ' && self.login.focus == LoginField::Remember {
                     self.login.toggle_remember();
+                } else if ch == ' ' && self.login.focus == LoginField::Tls {
+                    self.login.toggle_tls();
                 } else {
                     self.login.insert_char(ch);
                 }
@@ -174,7 +191,11 @@ impl App {
             LoginField::Password if self.login.uses_totp && self.login.totp.is_empty() => {
                 self.login.focus = LoginField::Totp;
             }
-            LoginField::Password | LoginField::Totp | LoginField::Remember => {
+            LoginField::Password
+            | LoginField::Totp
+            | LoginField::Tls
+            | LoginField::CaFile
+            | LoginField::Remember => {
                 self.login.focus = LoginField::Connect;
             }
             LoginField::Name | LoginField::Url | LoginField::Username => {
@@ -193,6 +214,8 @@ impl App {
         self.login.totp.clear();
         self.login.remember_password = true;
         self.login.uses_totp = false;
+        self.login.use_tls = true;
+        self.login.ca_file.clear();
         self.login.error = None;
         self.login.pane = LoginPane::Form;
         self.login.focus = LoginField::Name;
@@ -217,6 +240,8 @@ impl App {
             self.login.password.clear();
             self.login.totp.clear();
             self.login.uses_totp = false;
+            self.login.use_tls = true;
+            self.login.ca_file.clear();
             self.login.remember_password = false;
             self.current_profile = crate::demo::DEMO_PROFILE_NAME.into();
             return;
@@ -1386,6 +1411,26 @@ mod login_edit_tests {
     }
 
     #[test]
+    fn enter_on_login_button_starts_a_plaintext_api_connection() {
+        let mut app = login_app();
+        app.login.url = "192.168.88.1".into();
+        app.login.username = "reader".into();
+        app.login.password = "secret".into();
+        app.login.use_tls = false;
+        app.login.focus = LoginField::Connect;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert_eq!(app.screen, crate::app::Screen::Connecting);
+        assert!(
+            cmds.iter().any(|cmd| matches!(
+                cmd,
+                crate::app::AppCommand::Connect { url, use_tls, pin, ca_pem, .. }
+                    if url == "192.168.88.1:8728" && !*use_tls && pin.is_none() && ca_pem.is_none()
+            )),
+            "expected plaintext connect on 8728, got {cmds:?}"
+        );
+    }
+
+    #[test]
     fn enter_on_login_button_starts_a_secure_connection() {
         let mut app = login_app();
         app.login.url = "192.168.88.1:8729".into();
@@ -1444,6 +1489,8 @@ mod login_edit_tests {
                 username: "admin".into(),
                 remember_password: true,
                 uses_totp: false,
+                use_tls: true,
+                ca_file: String::new(),
             },
             mtui_ui::SavedProfileRow {
                 name: "bravo".into(),
@@ -1451,6 +1498,8 @@ mod login_edit_tests {
                 username: "reader".into(),
                 remember_password: false,
                 uses_totp: true,
+                use_tls: true,
+                ca_file: String::new(),
             },
         ];
         app.login.pane = LoginPane::List;
@@ -1470,13 +1519,15 @@ mod login_edit_tests {
             username: "admin".into(),
             remember_password: true,
             uses_totp: false,
+            use_tls: true,
+            ca_file: String::new(),
         }];
         app.login.pane = LoginPane::Form;
         app.login.focus = LoginField::Name;
         let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
         assert_eq!(app.login.pane, LoginPane::Form);
         assert_eq!(app.login.focus, LoginField::Url);
-        for _ in 0..4 {
+        for _ in 0..6 {
             let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
         }
         assert_eq!(app.login.focus, LoginField::Remember);
@@ -1496,6 +1547,8 @@ mod login_edit_tests {
                 username: "admin".into(),
                 remember_password: true,
                 uses_totp: false,
+                use_tls: true,
+                ca_file: String::new(),
             },
             mtui_ui::SavedProfileRow {
                 name: "bravo".into(),
@@ -1503,6 +1556,8 @@ mod login_edit_tests {
                 username: "reader".into(),
                 remember_password: false,
                 uses_totp: true,
+                use_tls: true,
+                ca_file: String::new(),
             },
         ];
         app.login.pane = LoginPane::List;

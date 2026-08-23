@@ -58,7 +58,7 @@ live `●`. It does not open sockets or interpret tab ids.
   keyed by profile name. Sessions read and write those stores; they do not
   share in-memory maps of each other's UI.
 - **New tab.** Open at Login via `Session::new(id)`. Do not clone a
-  session. Cap open tabs at 8 (each connected tab uses two TLS sockets).
+  session. Cap open tabs at 8 (each connected tab uses two API sockets).
 
 ## Client handles
 

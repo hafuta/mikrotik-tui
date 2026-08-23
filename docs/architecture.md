@@ -21,9 +21,10 @@ carry `SessionId`. See [multi-device sessions](multi-device-sessions.md).
 
 ## Security boundaries
 
-- TLS verification is mandatory on `api-ssl` (default 8729). Self-signed
-  devices use custom roots or an
-  explicitly approved SHA-256 leaf certificate pin.
+- `api-ssl` (default 8729) verifies TLS against a pin, a custom CA file,
+  or the OS trust store. Self-signed devices use an explicitly approved
+  SHA-256 leaf certificate pin. Plain `api` (default 8728) is optional and
+  unencrypted.
 - Profile files exclude passwords. Remembered passwords use the OS keychain
   when available, with an owner-only file as fallback. TOTP is never stored.
 - Application logging writes JSON to a file and a redacted in-memory buffer

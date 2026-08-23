@@ -33,6 +33,8 @@ pub enum LoginField {
     Username,
     Password,
     Totp,
+    Tls,
+    CaFile,
     Remember,
     Connect,
 }
@@ -45,7 +47,9 @@ impl LoginField {
             Self::Url => Self::Username,
             Self::Username => Self::Password,
             Self::Password => Self::Totp,
-            Self::Totp => Self::Remember,
+            Self::Totp => Self::Tls,
+            Self::Tls => Self::CaFile,
+            Self::CaFile => Self::Remember,
             Self::Remember => Self::Connect,
             Self::Connect => Self::Name,
         }
@@ -59,7 +63,9 @@ impl LoginField {
             Self::Username => Self::Url,
             Self::Password => Self::Username,
             Self::Totp => Self::Password,
-            Self::Remember => Self::Totp,
+            Self::Tls => Self::Totp,
+            Self::CaFile => Self::Tls,
+            Self::Remember => Self::CaFile,
             Self::Connect => Self::Remember,
         }
     }
@@ -73,7 +79,7 @@ impl LoginField {
     pub fn is_text(self) -> bool {
         matches!(
             self,
-            Self::Name | Self::Url | Self::Username | Self::Password | Self::Totp
+            Self::Name | Self::Url | Self::Username | Self::Password | Self::Totp | Self::CaFile
         )
     }
 
@@ -84,7 +90,9 @@ impl LoginField {
             Self::Url => Some(Self::Username),
             Self::Username => Some(Self::Password),
             Self::Password => Some(Self::Totp),
-            Self::Totp => Some(Self::Remember),
+            Self::Totp => Some(Self::Tls),
+            Self::Tls => Some(Self::CaFile),
+            Self::CaFile => Some(Self::Remember),
             Self::Remember => Some(Self::Connect),
             Self::Connect => None,
         }
@@ -98,7 +106,9 @@ impl LoginField {
             Self::Username => Some(Self::Url),
             Self::Password => Some(Self::Username),
             Self::Totp => Some(Self::Password),
-            Self::Remember => Some(Self::Totp),
+            Self::Tls => Some(Self::Totp),
+            Self::CaFile => Some(Self::Tls),
+            Self::Remember => Some(Self::CaFile),
             Self::Connect => Some(Self::Remember),
         }
     }
@@ -112,6 +122,8 @@ pub struct SavedProfileRow {
     pub username: String,
     pub remember_password: bool,
     pub uses_totp: bool,
+    pub use_tls: bool,
+    pub ca_file: String,
 }
 
 #[derive(Debug, Clone)]
@@ -123,6 +135,8 @@ pub struct LoginForm {
     pub totp: String,
     pub remember_password: bool,
     pub uses_totp: bool,
+    pub use_tls: bool,
+    pub ca_file: String,
     pub focus: LoginField,
     pub pane: LoginPane,
     pub error: Option<String>,
@@ -141,6 +155,8 @@ impl Default for LoginForm {
             totp: String::new(),
             remember_password: true,
             uses_totp: false,
+            use_tls: true,
+            ca_file: String::new(),
             focus: LoginField::Url,
             pane: LoginPane::Form,
             error: None,
@@ -159,7 +175,8 @@ impl LoginForm {
             LoginField::Username => Some(&mut self.username),
             LoginField::Password => Some(&mut self.password),
             LoginField::Totp => Some(&mut self.totp),
-            LoginField::Remember | LoginField::Connect => None,
+            LoginField::CaFile => Some(&mut self.ca_file),
+            LoginField::Tls | LoginField::Remember | LoginField::Connect => None,
         }
     }
 
@@ -190,6 +207,14 @@ impl LoginForm {
 
     pub fn set_remember(&mut self, value: bool) {
         self.remember_password = value;
+    }
+
+    pub fn toggle_tls(&mut self) {
+        self.use_tls = !self.use_tls;
+    }
+
+    pub fn set_tls(&mut self, value: bool) {
+        self.use_tls = value;
     }
 
     /// Tab from the form walks fields; the last step jumps to the router list.
@@ -269,6 +294,8 @@ impl LoginForm {
         self.username.clone_from(&row.username);
         self.remember_password = row.remember_password;
         self.uses_totp = row.uses_totp;
+        self.use_tls = row.use_tls;
+        self.ca_file.clone_from(&row.ca_file);
         self.totp.clear();
         self.focus = self.open_focus();
         self.pane = LoginPane::Form;
@@ -357,15 +384,19 @@ pub fn render_login(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, sty
         } else {
             view.form.name.as_str()
         };
-        let body =
-            format!("Negotiating api-ssl with {name}\nEsc cancels without deleting the profile.");
+        let (kicker, verb) = if view.form.use_tls {
+            ("Secure session", "Negotiating api-ssl")
+        } else {
+            ("Unencrypted session", "Negotiating API")
+        };
+        let body = format!("{verb} with {name}\nEsc cancels without deleting the profile.");
         let buttons = [ModalButton {
             label: "Cancel",
             keys: "esc",
             kind: ModalButtonKind::Secondary,
         }];
         let modal = Modal::new("Connecting", &body)
-            .kicker("Secure session")
+            .kicker(kicker)
             .hint("In-flight polls stop when you switch devices.")
             .buttons(&buttons);
         render_modal(frame, area, &modal, styles);
@@ -384,7 +415,14 @@ fn login_hints(form: &LoginForm) -> Vec<(&'static str, &'static str)> {
                 },
             ),
             ("tab", "field"),
-            ("space", "remember"),
+            (
+                "space",
+                if form.focus == LoginField::Tls {
+                    "tls"
+                } else {
+                    "remember"
+                },
+            ),
             ("q", "quit"),
         ]
     } else if form.pane == LoginPane::List {
@@ -407,7 +445,14 @@ fn login_hints(form: &LoginForm) -> Vec<(&'static str, &'static str)> {
                 },
             ),
             ("tab", "field"),
-            ("space", "remember"),
+            (
+                "space",
+                if form.focus == LoginField::Tls {
+                    "tls"
+                } else {
+                    "remember"
+                },
+            ),
             ("esc", "list"),
             ("q", "quit"),
         ]
@@ -529,6 +574,8 @@ fn render_form_column(
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(3),
         Constraint::Length(1),
         Constraint::Min(1),
     ]);
@@ -572,9 +619,29 @@ fn render_form_column(
         render_field(frame, chunks[idx], label, value, focused, field, styles);
         idx += 1;
     }
-    render_remember_field(
+    render_toggle_field(
         frame,
         chunks[idx],
+        " TLS (api-ssl) ",
+        form.use_tls,
+        form_focus && form.focus == LoginField::Tls,
+        styles,
+    );
+    idx += 1;
+    render_field(
+        frame,
+        chunks[idx],
+        "CA file",
+        form.ca_file.as_str(),
+        form_focus && form.focus == LoginField::CaFile,
+        LoginField::CaFile,
+        styles,
+    );
+    idx += 1;
+    render_toggle_field(
+        frame,
+        chunks[idx],
+        " Remember password ",
         form.remember_password,
         form_focus && form.focus == LoginField::Remember,
         styles,
@@ -614,6 +681,7 @@ fn render_field(
 ) {
     let hint = match field {
         LoginField::Totp => " optional · 6 digits · never saved",
+        LoginField::CaFile => " optional · PEM or DER · TLS only",
         _ => "",
     };
     let title = if hint.is_empty() {
@@ -639,16 +707,17 @@ fn render_field(
     frame.render_widget(Paragraph::new(shown).style(style).block(block), area);
 }
 
-fn render_remember_field(
+fn render_toggle_field(
     frame: &mut Frame<'_>,
     area: Rect,
+    title: &str,
     on: bool,
     focused: bool,
     styles: &Styles,
 ) {
     let block = Block::default()
         .title(Span::styled(
-            " Remember password ",
+            title,
             if focused { styles.focus } else { styles.muted },
         ))
         .borders(Borders::ALL)
@@ -842,6 +911,8 @@ mod tests {
     fn url_next_is_still_username() {
         assert_eq!(LoginField::Url.next(), LoginField::Username);
         assert_eq!(LoginField::Password.prev(), LoginField::Username);
+        assert_eq!(LoginField::Totp.next(), LoginField::Tls);
+        assert_eq!(LoginField::Tls.next(), LoginField::CaFile);
         assert_eq!(LoginField::Remember.next(), LoginField::Connect);
         assert_eq!(LoginField::Connect.prev(), LoginField::Remember);
     }
@@ -853,6 +924,8 @@ mod tests {
             username: "admin".into(),
             remember_password: true,
             uses_totp: false,
+            use_tls: true,
+            ca_file: String::new(),
         }]
     }
 
@@ -874,6 +947,10 @@ mod tests {
         form.tab_forward();
         assert_eq!(form.focus, LoginField::Totp);
         form.tab_forward();
+        assert_eq!(form.focus, LoginField::Tls);
+        form.tab_forward();
+        assert_eq!(form.focus, LoginField::CaFile);
+        form.tab_forward();
         assert_eq!(form.focus, LoginField::Remember);
         form.tab_forward();
         assert_eq!(form.focus, LoginField::Connect);
@@ -891,7 +968,7 @@ mod tests {
 
     #[test]
     fn remember_field_draws_on_and_off_choices() {
-        let backend = TestBackend::new(90, 28);
+        let backend = TestBackend::new(90, 36);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let theme = DefaultTheme::new();
         let styles = Styles::from_palette(theme.palette());
@@ -938,7 +1015,7 @@ mod tests {
 
     #[test]
     fn connect_button_draws_login_label() {
-        let backend = TestBackend::new(90, 28);
+        let backend = TestBackend::new(90, 36);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let theme = DefaultTheme::new();
         let styles = Styles::from_palette(theme.palette());
@@ -994,6 +1071,8 @@ mod tests {
                 username: "admin".into(),
                 remember_password: true,
                 uses_totp: false,
+                use_tls: true,
+                ca_file: String::new(),
             }],
             pane: LoginPane::List,
             ..LoginForm::default()
@@ -1039,7 +1118,7 @@ mod tests {
 
     #[test]
     fn selected_profile_row_fill_stays_inside_the_list() {
-        let backend = TestBackend::new(90, 28);
+        let backend = TestBackend::new(90, 36);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let theme = DefaultTheme::new();
         let styles = Styles::from_palette(theme.palette());
@@ -1051,6 +1130,8 @@ mod tests {
                     username: "admin".into(),
                     remember_password: true,
                     uses_totp: false,
+                    use_tls: true,
+                    ca_file: String::new(),
                 },
                 SavedProfileRow {
                     name: "bravo".into(),
@@ -1058,6 +1139,8 @@ mod tests {
                     username: "reader".into(),
                     remember_password: false,
                     uses_totp: true,
+                    use_tls: false,
+                    ca_file: String::new(),
                 },
             ],
             selected_profile: 0,

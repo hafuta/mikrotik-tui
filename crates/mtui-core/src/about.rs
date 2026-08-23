@@ -808,7 +808,7 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "ip-services",
         "Management services and their ports/addresses: www, www-ssl, api, api-ssl, ssh, \
          telnet, ftp, winbox.",
-        "Disable what you do not use; restrict available-from. This client uses api-ssl.",
+        "Disable what you do not use; restrict available-from. This client uses api-ssl or api.",
         "name, port, address, certificate (for TLS), disabled."
     ),
     guide!(

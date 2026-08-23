@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use mtui_config::{
     Credential, CredentialStore, EnvOverrides, LogLevel, LogRecord, LogStore,
-    PlatformCredentialStore, Profile, ProfileStore, shared_log_store,
+    PlatformCredentialStore, Profile, ProfileStore, read_ca_file, shared_log_store,
 };
 use mtui_core::{
     ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet, installed_package_names,
@@ -15,7 +15,7 @@ use mtui_core::{
 };
 
 use mtui_routeros::{
-    ErrorKind, Resource, header_host, merge_listen_record, migrate_connection_target,
+    ErrorKind, Resource, header_host, merge_listen_record, migrate_connection_target_for,
     parse_connection_target,
 };
 use mtui_ui::{
@@ -99,6 +99,7 @@ pub enum AppCommand {
         password: String,
         pin: Option<String>,
         ca_pem: Option<Vec<u8>>,
+        use_tls: bool,
     },
     FetchResource {
         session: SessionId,
@@ -463,7 +464,9 @@ impl App {
 
         if profile.name.is_empty() {
             if !profile.url.is_empty() {
-                self.login.url = migrate_connection_target(&profile.url);
+                self.login.url = migrate_connection_target_for(&profile.url, profile.use_tls);
+                self.login.use_tls = profile.use_tls;
+                self.login.ca_file.clone_from(&profile.ca_file);
             }
             if !profile.username.is_empty() {
                 self.login.username.clone_from(&profile.username);
@@ -520,10 +523,12 @@ impl App {
             .into_iter()
             .map(|profile| SavedProfileRow {
                 name: profile.name,
-                url: migrate_connection_target(&profile.url),
+                url: migrate_connection_target_for(&profile.url, profile.use_tls),
                 username: profile.username,
                 remember_password: profile.remember_password,
                 uses_totp: profile.uses_totp,
+                use_tls: profile.use_tls,
+                ca_file: profile.ca_file,
             })
             .collect::<Vec<_>>();
         let mut rows = rows;
@@ -535,6 +540,8 @@ impl App {
                 username: "demo".into(),
                 remember_password: false,
                 uses_totp: false,
+                use_tls: true,
+                ca_file: String::new(),
             },
         );
         self.login.profiles = rows;
@@ -547,10 +554,12 @@ impl App {
         let same_profile = self.current_profile == profile.name || self.login.name == profile.name;
         self.current_profile.clone_from(&profile.name);
         self.login.name.clone_from(&profile.name);
-        self.login.url = migrate_connection_target(&profile.url);
+        self.login.url = migrate_connection_target_for(&profile.url, profile.use_tls);
         self.login.username.clone_from(&profile.username);
         self.login.remember_password = profile.remember_password;
         self.login.uses_totp = profile.uses_totp;
+        self.login.use_tls = profile.use_tls;
+        self.login.ca_file.clone_from(&profile.ca_file);
         self.login.totp.clear();
         if let Some(idx) = self
             .login
@@ -571,7 +580,7 @@ impl App {
             self.saved_url = None;
         } else {
             self.saved_fingerprint = Some(profile.certificate_fingerprint.clone());
-            self.saved_url = Some(normalize_router_url(&profile.url));
+            self.saved_url = Some(normalize_router_url(&profile.url, profile.use_tls));
         }
         if profile.custom_ca.is_empty() {
             self.custom_ca = None;
@@ -623,11 +632,12 @@ impl App {
     }
 
     pub(crate) fn connect_command(&self) -> AppCommand {
-        let url = normalize_router_url(&self.login.url);
+        let url = normalize_router_url(&self.login.url, self.login.use_tls);
         tracing::info!(
             url = url.as_str(),
             username = self.login.username.trim(),
             profile = self.current_profile.as_str(),
+            use_tls = self.login.use_tls,
             "connecting"
         );
         AppCommand::Connect {
@@ -635,8 +645,17 @@ impl App {
             url: url.clone(),
             username: self.login.username.trim().to_string(),
             password: self.pending_password.clone().unwrap_or_default(),
-            pin: self.pin_for_url(&url),
-            ca_pem: self.custom_ca.clone(),
+            pin: if self.login.use_tls {
+                self.pin_for_url(&url)
+            } else {
+                None
+            },
+            ca_pem: if self.login.use_tls {
+                self.custom_ca.clone()
+            } else {
+                None
+            },
+            use_tls: self.login.use_tls,
         }
     }
 
@@ -651,8 +670,8 @@ impl App {
             return self.enter_demo();
         }
         if !is_router_target(&self.login.url) {
-            self.login.error = Some("Enter a router host (host or host:8729)".into());
-            self.status = "Enter a router host (host or host:8729)".into();
+            self.login.error = Some("Enter a router host (host or host:port)".into());
+            self.status = "Enter a router host (host or host:port)".into();
             return Vec::new();
         }
         if self.login.username.trim().is_empty() {
@@ -672,6 +691,11 @@ impl App {
                     .collect::<Vec<_>>(),
             );
         }
+        if let Err(err) = self.load_ca_file_if_needed() {
+            self.login.error = Some(err.clone());
+            self.status = err;
+            return Vec::new();
+        }
         self.current_profile = self.login.name.trim().to_string();
         self.login.error = None;
         self.connect_intent = ConnectIntent::Login;
@@ -679,6 +703,24 @@ impl App {
         self.screen = Screen::Connecting;
         self.status = format!("Connecting to {}…", self.profile_label());
         vec![self.connect_command()]
+    }
+
+    fn load_ca_file_if_needed(&mut self) -> std::result::Result<(), String> {
+        if !self.login.use_tls {
+            return Ok(());
+        }
+        let path = self.login.ca_file.trim();
+        if path.is_empty() {
+            return Ok(());
+        }
+        match read_ca_file(path) {
+            Ok(bytes) if bytes.is_empty() => Err("CA file is empty".into()),
+            Ok(bytes) => {
+                self.custom_ca = Some(bytes);
+                Ok(())
+            }
+            Err(err) => Err(format!("Cannot read CA file: {err}")),
+        }
     }
 
     fn pin_for_url(&self, url: &str) -> Option<String> {
@@ -743,7 +785,7 @@ impl App {
         if !self.login.remember_password && self.login.password.is_empty() {
             return;
         }
-        let url = normalize_router_url(&self.login.url);
+        let url = normalize_router_url(&self.login.url, self.login.use_tls);
         let name = if !self.login.name.trim().is_empty() {
             self.login.name.trim().to_string()
         } else if !self.current_profile.trim().is_empty() {
@@ -773,6 +815,8 @@ impl App {
         profile.url.clone_from(&url);
         profile.username = self.login.username.trim().to_string();
         profile.remember_password = self.login.remember_password;
+        profile.use_tls = self.login.use_tls;
+        profile.ca_file.clone_from(&self.login.ca_file);
         if self.profiles.upsert(profile).is_err() {
             return;
         }
@@ -794,8 +838,12 @@ impl App {
         if cfg!(test) && self.current_profile.is_empty() {
             return;
         }
-        let url = normalize_router_url(&self.login.url);
-        let fingerprint = self.pin_for_url(&url).unwrap_or_default();
+        let url = normalize_router_url(&self.login.url, self.login.use_tls);
+        let fingerprint = if self.login.use_tls {
+            self.pin_for_url(&url).unwrap_or_default()
+        } else {
+            String::new()
+        };
         let name = if self.current_profile.trim().is_empty() {
             suggested_profile_name(
                 &url,
@@ -820,8 +868,17 @@ impl App {
         profile.url.clone_from(&url);
         profile.username = self.login.username.trim().to_string();
         profile.certificate_fingerprint.clone_from(&fingerprint);
-        if let Some(pem) = &self.custom_ca {
+        profile.use_tls = self.login.use_tls;
+        profile.ca_file.clone_from(&self.login.ca_file);
+        if self.login.use_tls
+            && profile.ca_file.trim().is_empty()
+            && let Some(pem) = &self.custom_ca
+        {
             profile.custom_ca = String::from_utf8_lossy(pem).into_owned();
+        }
+        if !self.login.use_tls {
+            profile.custom_ca.clear();
+            profile.certificate_fingerprint.clear();
         }
         profile.remember_password = self.login.remember_password;
         profile.uses_totp = self.login.uses_totp || !self.login.totp.trim().is_empty();
@@ -2065,8 +2122,8 @@ fn nonempty_field<'src>(resource: &'src Resource, key: &str) -> Option<&'src str
         .filter(|value| !value.is_empty())
 }
 
-fn normalize_router_url(url: &str) -> String {
-    migrate_connection_target(url)
+fn normalize_router_url(url: &str, use_tls: bool) -> String {
+    migrate_connection_target_for(url, use_tls)
 }
 
 pub(crate) fn is_router_target(url: &str) -> bool {
@@ -2079,10 +2136,11 @@ pub(crate) fn classify_connect_error(kind: ErrorKind, message: &str) -> String {
             "Wrong username, password, or TOTP. The router rejected this login.".into()
         }
         ErrorKind::Tls => {
-            "TLS or certificate pin mismatch. Confirm the fingerprint or custom CA.".into()
+            "TLS or certificate mismatch. Confirm the fingerprint, CA file, or OS-trusted CA."
+                .into()
         }
         ErrorKind::Transport | ErrorKind::Timeout => {
-            "Cannot reach api-ssl. Check the host, port 8729, and that api-ssl is enabled.".into()
+            "Cannot reach the API. Check the host, port (8729 for api-ssl, 8728 for api), and that the service is enabled.".into()
         }
         ErrorKind::Canceled => "Connection canceled.".into(),
         _ => {
@@ -2791,6 +2849,29 @@ mod session_profile_tests {
         assert_eq!(store.last_used().unwrap().as_deref(), Some("core"));
         let creds = FileCredentialStore::new(&dir.0);
         assert_eq!(creds.get("core").unwrap().password, "pw");
+    }
+
+    #[test]
+    fn persist_keeps_plaintext_api_and_ca_file() {
+        let (mut app, dir) = isolated_app("plain-api");
+        let store = ProfileStore::new(&dir.0);
+        app.login.url = "192.168.88.1".into();
+        app.login.username = "admin".into();
+        app.login.password = "pw".into();
+        app.login.name = "lab".into();
+        app.login.use_tls = false;
+        app.login.ca_file = "/tmp/router-ca.pem".into();
+        app.login.remember_password = true;
+        app.current_profile = "lab".into();
+        app.pending_password = Some("pw".into());
+        app.persist_connected_session();
+        let loaded = store.load().unwrap();
+        let lab = loaded.iter().find(|p| p.name == "lab").expect("lab");
+        assert!(!lab.use_tls);
+        assert_eq!(lab.url, "192.168.88.1:8728");
+        assert_eq!(lab.ca_file, "/tmp/router-ca.pem");
+        assert!(lab.certificate_fingerprint.is_empty());
+        assert!(lab.custom_ca.is_empty());
     }
 
     #[test]

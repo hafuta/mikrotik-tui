@@ -27,10 +27,11 @@ pub use credentials::{
     CREDENTIALS_FILE_NAME, Credential, CredentialStore, FileCredentialStore,
     PlatformCredentialStore,
 };
-pub use env::{ENV_PREFIX, EnvOverrides};
+pub use env::{ENV_PREFIX, EnvOverrides, read_ca_file};
 pub use error::{ConfigError, Result};
 pub use log_store::{DEFAULT_LOG_CAPACITY, LogLevel, LogRecord, LogStore};
 pub use logging::{LOG_FILE_NAME, init_file_logging, shared_log_store};
+pub use paths::expand_user_path;
 pub use paths::{APPLICATION, config_dir, state_dir};
 pub use profile::{
     HIDDEN_NAV_PREFERENCE_KEY, PROFILE_FILE_NAME, Preferences, Profile, ProfileStore,

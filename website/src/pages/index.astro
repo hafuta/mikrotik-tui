@@ -129,7 +129,7 @@ const releases = `${repo}/releases`;
               On macOS, install with Homebrew. On Linux (amd64 / arm64), run
               the install script. Windows: download a GitHub Release. First
               launch asks for host (<code>192.168.88.1</code> or
-              <code>host:8729</code>), username, and password.
+              <code>host:port</code>), username, and password.
             </p>
             <pre class="term"><code><span class="cmt"># macOS</span>
 brew tap hafuta/mikrotik-tui
@@ -139,11 +139,12 @@ brew install mikrotik-tui
 curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh</code></pre>
           </div>
           <p class="note">
-            Needs RouterOS v7 and the <code>api-ssl</code> service (RouterOS API
-            over TLS, default port 8729). The client does not use the plain
-            <code>api</code> service. Saved files live under your OS config
-            directory (<code>~/.config/mikrotik-tui</code> on Linux). See
-            <a href={`${repo}#install`}>install</a> for certificate pinning.
+            Needs RouterOS v7 and <code>api-ssl</code> (TLS, default port 8729)
+            or the plaintext <code>api</code> service (default port 8728).
+            Prefer TLS. Certificates are checked against the OS trust store, a
+            CA file, or a pinned fingerprint. Saved files live under your OS
+            config directory (<code>~/.config/mikrotik-tui</code> on Linux).
+            See <a href={`${repo}#install`}>install</a> for first-run setup.
           </p>
         </div>
         <div class="btn-row btn-row--start">

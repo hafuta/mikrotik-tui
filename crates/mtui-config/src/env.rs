@@ -3,7 +3,7 @@
 //! Mirrors the `OverrideStore` behavior in `internal/credentials/credentials.go`,
 //! scoped to the generic (non-profile-prefixed) `MIKROTIK_TUI_*` variables:
 //! `HOST` (or deprecated `URL`), `USERNAME`, `PASSWORD`, `PASSWORD_FILE`,
-//! `CA_FILE`, and `CERT_FINGERPRINT`.
+//! `CA_FILE`, `CERT_FINGERPRINT`, and `TLS`.
 
 use std::path::PathBuf;
 
@@ -31,6 +31,8 @@ pub struct EnvOverrides {
     pub ca_file: Option<String>,
     /// `MIKROTIK_TUI_CERT_FINGERPRINT`
     pub cert_fingerprint: Option<String>,
+    /// `MIKROTIK_TUI_TLS` (`1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`).
+    pub use_tls: Option<bool>,
 }
 
 impl EnvOverrides {
@@ -51,6 +53,7 @@ impl EnvOverrides {
             password_file: get("PASSWORD_FILE"),
             ca_file: get("CA_FILE"),
             cert_fingerprint: get("CERT_FINGERPRINT"),
+            use_tls: get("TLS").as_deref().and_then(parse_env_bool),
         }
     }
 
@@ -67,11 +70,17 @@ impl EnvOverrides {
         if let Some(fingerprint) = &self.cert_fingerprint {
             profile.certificate_fingerprint.clone_from(fingerprint);
         }
+        if let Some(use_tls) = self.use_tls {
+            profile.use_tls = use_tls;
+        }
         if let Some(path) = &self.ca_file {
-            let data = std::fs::read_to_string(path).map_err(|source| ConfigError::SecretFile {
-                path: PathBuf::from(path),
-                source,
-            })?;
+            let expanded = crate::paths::expand_user_path(path);
+            let data =
+                std::fs::read_to_string(&expanded).map_err(|source| ConfigError::SecretFile {
+                    path: expanded.clone(),
+                    source,
+                })?;
+            profile.ca_file = expanded.to_string_lossy().into_owned();
             profile.custom_ca = data;
         }
         Ok(())
@@ -112,6 +121,23 @@ impl EnvOverrides {
     }
 }
 
+fn parse_env_bool(raw: &str) -> Option<bool> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+/// Reads a CA file as bytes. `~` expands to `HOME` or `USERPROFILE`.
+pub fn read_ca_file(path: &str) -> Result<Vec<u8>> {
+    let expanded = crate::paths::expand_user_path(path);
+    std::fs::read(&expanded).map_err(|source| ConfigError::SecretFile {
+        path: expanded,
+        source,
+    })
+}
+
 fn trim_secret_newline(value: &str) -> String {
     let value = value.strip_suffix('\n').unwrap_or(value);
     let value = value.strip_suffix('\r').unwrap_or(value);
@@ -137,12 +163,14 @@ mod tests {
         map.insert("MIKROTIK_TUI_USERNAME", "admin");
         map.insert("MIKROTIK_TUI_PASSWORD", "hunter2");
         map.insert("MIKROTIK_TUI_CERT_FINGERPRINT", "aa:bb");
+        map.insert("MIKROTIK_TUI_TLS", "off");
         let overrides = EnvOverrides::from_lookup(lookup_from(map));
 
         assert_eq!(overrides.url, Some("10.0.0.1:8729".to_string()));
         assert_eq!(overrides.username, Some("admin".to_string()));
         assert_eq!(overrides.password, Some("hunter2".to_string()));
         assert_eq!(overrides.cert_fingerprint, Some("aa:bb".to_string()));
+        assert_eq!(overrides.use_tls, Some(false));
         assert_eq!(overrides.password_file, None);
         assert_eq!(overrides.ca_file, None);
     }
@@ -181,6 +209,38 @@ mod tests {
 
         assert_eq!(profile.url, "override.lan:8729");
         assert_eq!(profile.username, "override-user");
+    }
+
+    #[test]
+    fn tls_env_overrides_profile() {
+        let mut map = HashMap::new();
+        map.insert("MIKROTIK_TUI_TLS", "0");
+        let overrides = EnvOverrides::from_lookup(lookup_from(map));
+        let mut profile = Profile {
+            name: "r1".to_string(),
+            url: "192.168.88.1".to_string(),
+            username: "admin".to_string(),
+            ..Profile::default()
+        };
+        overrides.apply_to_profile(&mut profile).unwrap();
+        assert!(!profile.use_tls);
+    }
+
+    #[test]
+    fn expand_user_path_leaves_absolute_paths() {
+        #[cfg(windows)]
+        {
+            let path = crate::paths::expand_user_path(r"C:\certs\ca.pem");
+            assert_eq!(path, std::path::PathBuf::from(r"C:\certs\ca.pem"));
+        }
+        #[cfg(not(windows))]
+        {
+            let path = crate::paths::expand_user_path("/etc/ssl/certs/ca-certificates.crt");
+            assert_eq!(
+                path,
+                std::path::PathBuf::from("/etc/ssl/certs/ca-certificates.crt")
+            );
+        }
     }
 
     struct StubStore(Mutex<HashMap<String, Credential>>);
