@@ -1,33 +1,31 @@
-//! `RouterOS` REST client.
+//! `RouterOS` classic TCP API client (`api-ssl`).
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
-use serde::Deserialize;
-use serde_json::Value;
+use rustls::pki_types::ServerName;
+use serde_json::{Map, Value};
+use tokio::net::TcpStream;
+use tokio_rustls::TlsConnector;
 
-use crate::error::{Error, ErrorKind, Result};
-use crate::mutate::{encode_fields, is_command_name};
+use crate::error::{Error, Result};
+use crate::mutate::is_command_name;
 use crate::resource::Resource;
+use crate::sentence::Sentence;
+use crate::session::Session;
+use crate::target::{ConnectionTarget, parse_connection_target};
 use crate::tls;
 
 /// Default request timeout applied when [`ClientOptions::request_timeout`]
 /// is left unset.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Upper bound on the number of response bytes read for a single request.
-const MAX_RESPONSE_BYTES: usize = 8 << 20;
-
-/// Upper bound on error-response body text written to logs.
-const MAX_ERROR_BODY_LOG_BYTES: usize = 8 << 10;
-
-/// Configuration accepted by [`Client::new`].
+/// Configuration accepted by [`Client::connect`].
 #[derive(Clone, Debug)]
 pub struct ClientOptions {
-    /// Router REST base URL, e.g. `https://192.0.2.1`. Must be `https`, and
-    /// must not contain userinfo, a query string, or a fragment.
-    pub base_url: String,
+    /// Router host or `host:port` (default port [`DEFAULT_API_SSL_PORT`]).
+    pub target: String,
     pub username: String,
     pub password: String,
     /// Per-request timeout. Defaults to [`DEFAULT_REQUEST_TIMEOUT`] when
@@ -47,12 +45,12 @@ pub struct ClientOptions {
 impl ClientOptions {
     #[must_use]
     pub fn new(
-        base_url: impl Into<String>,
+        target: impl Into<String>,
         username: impl Into<String>,
         password: impl Into<String>,
     ) -> Self {
         Self {
-            base_url: base_url.into(),
+            target: target.into(),
             username: username.into(),
             password: password.into(),
             request_timeout: None,
@@ -80,64 +78,90 @@ impl ClientOptions {
     }
 }
 
-/// `RouterOS` REST client (read and write).
+/// `RouterOS` classic API client (read, write, and streams).
 ///
-/// Cloning a [`Client`] is cheap (it shares the underlying `reqwest::Client`
-/// connection pool).
+/// Cloning a [`Client`] is cheap (it shares the control and stream sessions).
 #[derive(Clone)]
 pub struct Client {
-    base_url: String,
-    username: String,
-    password: String,
-    http: reqwest::Client,
+    inner: Arc<ClientInner>,
+}
+
+struct ClientInner {
+    control: Session,
+    stream: Session,
+    target: ConnectionTarget,
 }
 
 impl Client {
-    /// Builds a client from `options`, validating the base URL and TLS
-    /// configuration eagerly.
-    pub fn new(options: ClientOptions) -> Result<Self> {
-        let parsed = parse_base_url(&options.base_url, "new_client")?;
-        let base_url = parsed.as_str().trim_end_matches('/').to_string();
-
+    /// Opens two `api-ssl` sessions (control + stream) and logs in.
+    pub async fn connect(options: ClientOptions) -> Result<Self> {
         let timeout = options.request_timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT);
-        let mut builder = reqwest::Client::builder().timeout(timeout);
-
-        if let Some(raw_pin) = &options.certificate_pin {
-            let pin = tls::normalize_certificate_pin(raw_pin)?;
-            builder = builder.use_preconfigured_tls(tls::client_config_with_pin(&pin)?);
-        } else if let Some(pem) = &options.ca_pem {
-            builder = builder.use_preconfigured_tls(tls::client_config_with_ca(pem)?);
-        }
-
-        let http = builder
-            .build()
-            .map_err(|err| Error::transport("new_client", err.to_string()))?;
-
+        let target = parse_connection_target(&options.target, "new_client")?;
+        let control = connect_session(&options, &target, timeout).await?;
+        let stream = connect_session(&options, &target, timeout).await?;
         Ok(Self {
-            base_url,
-            username: options.username,
-            password: options.password,
-            http,
+            inner: Arc::new(ClientInner {
+                control,
+                stream,
+                target,
+            }),
         })
     }
 
-    /// Fetches a list-like `/rest/...` collection.
+    #[must_use]
+    pub fn target(&self) -> &ConnectionTarget {
+        &self.inner.target
+    }
+
+    /// Fetches a list-like collection (`/path/print`).
     pub async fn list(&self, endpoint: &str) -> Result<Vec<Resource>> {
-        self.get_json(endpoint, "list").await
+        let replies = self
+            .inner
+            .control
+            .request("list", vec![command_path(endpoint, "print")?])
+            .await?;
+        Ok(replies
+            .into_iter()
+            .filter(Sentence::is_re)
+            .map(Sentence::into_resource)
+            .collect())
     }
 
     /// Fetches a single record by opaque `RouterOS` id.
     pub async fn get(&self, endpoint: &str, id: &str) -> Result<Resource> {
-        let path = record_endpoint(endpoint, id);
-        self.get_json(&path, "get").await
+        if id.trim().is_empty() {
+            return Err(Error::api("get", "record id is required"));
+        }
+        let replies = self
+            .inner
+            .control
+            .request(
+                "get",
+                vec![command_path(endpoint, "print")?, format!("=.id={id}")],
+            )
+            .await?;
+        replies
+            .into_iter()
+            .find(Sentence::is_re)
+            .map(Sentence::into_resource)
+            .ok_or_else(|| Error::new(crate::error::ErrorKind::NotFound, "get", "no such item"))
     }
 
     /// Fetches a singleton/system-scoped resource.
     pub async fn system(&self, endpoint: &str) -> Result<Resource> {
-        self.get_json(endpoint, "system").await
+        let replies = self
+            .inner
+            .control
+            .request("system", vec![command_path(endpoint, "print")?])
+            .await?;
+        Ok(replies
+            .into_iter()
+            .find(Sentence::is_re)
+            .map(Sentence::into_resource)
+            .unwrap_or_default())
     }
 
-    /// Updates a single record (`PATCH` / `set`).
+    /// Updates a single record (`set`).
     pub async fn patch(
         &self,
         endpoint: &str,
@@ -150,13 +174,13 @@ impl Client {
         if fields.is_empty() {
             return Err(Error::api("patch", "no fields to update"));
         }
-        let path = record_endpoint(endpoint, id);
-        self.send_body(reqwest::Method::PATCH, &path, "patch", fields)
-            .await
-            .map(|_| ())
+        let mut words = vec![command_path(endpoint, "set")?, format!("=.id={id}")];
+        push_fields(&mut words, fields);
+        self.inner.control.request("patch", words).await?;
+        Ok(())
     }
 
-    /// Updates a singleton resource (`PATCH` / `set` without a record id).
+    /// Updates a singleton resource (`set` without a record id).
     pub async fn patch_system(
         &self,
         endpoint: &str,
@@ -165,30 +189,36 @@ impl Client {
         if fields.is_empty() {
             return Err(Error::api("patch", "no fields to update"));
         }
-        self.send_body(reqwest::Method::PATCH, endpoint, "patch", fields)
-            .await
-            .map(|_| ())
+        let mut words = vec![command_path(endpoint, "set")?];
+        push_fields(&mut words, fields);
+        self.inner.control.request("patch", words).await?;
+        Ok(())
     }
 
-    /// Creates a record (`PUT` / `add`).
+    /// Creates a record (`add`).
     pub async fn put(&self, endpoint: &str, fields: &BTreeMap<String, String>) -> Result<()> {
-        self.send_body(reqwest::Method::PUT, endpoint, "put", fields)
-            .await
-            .map(|_| ())
+        let mut words = vec![command_path(endpoint, "add")?];
+        push_fields(&mut words, fields);
+        self.inner.control.request("put", words).await?;
+        Ok(())
     }
 
-    /// Removes a record (`DELETE` / `remove`).
+    /// Removes a record (`remove`).
     pub async fn delete(&self, endpoint: &str, id: &str) -> Result<()> {
         if id.trim().is_empty() {
             return Err(Error::api("delete", "record id is required"));
         }
-        let path = record_endpoint(endpoint, id);
-        self.send(reqwest::Method::DELETE, &path, "delete", None)
-            .await
-            .map(|_| ())
+        self.inner
+            .control
+            .request(
+                "delete",
+                vec![command_path(endpoint, "remove")?, format!("=.id={id}")],
+            )
+            .await?;
+        Ok(())
     }
 
-    /// Runs a console command through `POST` (`enable`, `copy`, `torch`, ...).
+    /// Runs a console command (`enable`, `copy`, `fetch`, ...).
     pub async fn command(
         &self,
         endpoint: &str,
@@ -198,409 +228,253 @@ impl Client {
         if !is_command_name(command) {
             return Err(Error::api("command", "invalid command name"));
         }
-        validate_endpoint(endpoint, "command")?;
-        let path = format!("{}/{command}", endpoint.trim_end_matches('/'));
-        let bytes = self
-            .send_body(reqwest::Method::POST, &path, "command", fields)
-            .await?;
-        if bytes.is_empty() {
-            return Ok(Value::Null);
-        }
-        serde_json::from_slice(&bytes)
-            .map_err(|err| Error::decode("command", format!("invalid API response: {err}")))
+        let mut words = vec![command_path(endpoint, command)?];
+        push_fields(&mut words, fields);
+        let replies = self.inner.control.request("command", words).await?;
+        Ok(replies_to_json(replies))
     }
 
-    async fn get_json<T>(&self, endpoint: &str, operation: &'static str) -> Result<T>
-    where
-        T: for<'de> Deserialize<'de>,
-    {
-        let bytes = self
-            .send(reqwest::Method::GET, endpoint, operation, None)
-            .await?;
-        serde_json::from_slice(&bytes)
-            .map_err(|err| Error::decode(operation, format!("invalid API response: {err}")))
-    }
-
-    async fn send_body(
-        &self,
-        method: reqwest::Method,
-        endpoint: &str,
-        operation: &'static str,
-        fields: &BTreeMap<String, String>,
-    ) -> Result<Vec<u8>> {
-        self.send(method, endpoint, operation, Some(encode_fields(fields)))
+    /// Print once then `.listen` on the stream session.
+    pub async fn listen(&self, endpoint: &str) -> Result<ApiStream> {
+        self.open_stream("listen", vec![command_path(endpoint, "listen")?])
             .await
     }
 
-    async fn send(
+    /// `/log/print` with `follow`.
+    pub async fn follow_log(&self) -> Result<ApiStream> {
+        self.open_stream("follow", vec!["/log/print".into(), "=follow=".into()])
+            .await
+    }
+
+    /// `/interface/monitor-traffic` for one interface.
+    pub async fn monitor_traffic(&self, interface: &str) -> Result<ApiStream> {
+        if interface.trim().is_empty() {
+            return Err(Error::api("monitor-traffic", "interface is required"));
+        }
+        self.open_stream(
+            "monitor-traffic",
+            vec![
+                "/interface/monitor-traffic".into(),
+                format!("=interface={interface}"),
+            ],
+        )
+        .await
+    }
+
+    /// Unterminated tool command (`torch`, `ping`, `traceroute`).
+    pub async fn stream_command(
         &self,
-        method: reqwest::Method,
         endpoint: &str,
-        operation: &'static str,
-        body: Option<Value>,
-    ) -> Result<Vec<u8>> {
-        validate_endpoint(endpoint, operation)?;
-        let method_name = method.as_str().to_owned();
-        let outbound = format!("outbound {method_name} {endpoint}");
-        tracing::info!(
-            method = method_name.as_str(),
-            endpoint,
-            operation,
-            "{}",
-            outbound
-        );
-        let started = Instant::now();
-        let url = format!("{}{endpoint}", self.base_url);
-        let mut request = self
-            .http
-            .request(method, &url)
-            .header(reqwest::header::ACCEPT, "application/json")
-            .basic_auth(&self.username, Some(&self.password));
-        if let Some(body) = body {
-            request = request.json(&body);
+        command: &str,
+        fields: &BTreeMap<String, String>,
+    ) -> Result<ApiStream> {
+        if !is_command_name(command) {
+            return Err(Error::api("command", "invalid command name"));
         }
-
-        let response = match request.send().await {
-            Ok(response) => response,
-            Err(err) => {
-                let classified = self.classify_request_error(operation, &err);
-                tracing::error!(
-                    method = method_name.as_str(),
-                    endpoint,
-                    operation,
-                    error = %classified,
-                    "request failed"
-                );
-                return Err(classified);
-            }
-        };
-
-        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.bytes().await.unwrap_or_default();
-            let body_log = response_body_for_log(&body, |text| self.redact(text));
-            let inbound = format!("response {method_name} {endpoint}");
-            tracing::error!(
-                method = method_name.as_str(),
-                endpoint,
-                operation,
-                status = status.as_u16(),
-                bytes = body.len(),
-                elapsed_ms,
-                body = body_log.as_str(),
-                "{}",
-                inbound
-            );
-            return Err(status_error_from_body(
-                operation,
-                status.as_u16(),
-                &body,
-                |text| self.redact(text),
-            ));
-        }
-
-        let bytes = match response.bytes().await {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                let classified = self.classify_request_error(operation, &err);
-                tracing::error!(
-                    method = method_name.as_str(),
-                    endpoint,
-                    operation,
-                    error = %classified,
-                    "response body failed"
-                );
-                return Err(classified);
-            }
-        };
-        if bytes.len() > MAX_RESPONSE_BYTES {
-            tracing::error!(
-                method = method_name.as_str(),
-                endpoint,
-                operation,
-                "response body too large"
-            );
-            return Err(Error::decode(operation, "response body too large"));
-        }
-        tracing::debug!(
-            method = method_name.as_str(),
-            endpoint,
-            operation,
-            status = status.as_u16(),
-            bytes = bytes.len(),
-            elapsed_ms,
-            "response ok"
-        );
-        Ok(bytes.to_vec())
+        let mut words = vec![command_path(endpoint, command)?];
+        push_fields(&mut words, fields);
+        self.open_stream("stream", words).await
     }
 
-    fn classify_request_error(&self, operation: &'static str, err: &reqwest::Error) -> Error {
-        let chain = self.redact(&error_chain_text(err)).to_lowercase();
-        let kind = if err.is_timeout() {
-            ErrorKind::Timeout
-        } else if chain.contains(&tls::PIN_MISMATCH_MARKER.to_lowercase())
-            || chain.contains("certificate")
-            || chain.contains("invalid peer certificate")
-            || chain.contains("unknownissuer")
-            || (err.is_connect() && (chain.contains("tls") || chain.contains("ssl")))
-        {
-            ErrorKind::Tls
-        } else if chain.contains("operation canceled") || chain.contains("operation cancelled") {
-            ErrorKind::Canceled
-        } else if err.is_decode() {
-            ErrorKind::Decode
-        } else {
-            ErrorKind::Transport
-        };
-        Error::new(kind, operation, self.redact(&err.to_string()))
+    async fn open_stream(&self, operation: &'static str, words: Vec<String>) -> Result<ApiStream> {
+        let (tag, rx) = self.inner.stream.stream(operation, words).await?;
+        Ok(ApiStream {
+            tag,
+            rx,
+            session: self.inner.stream.clone(),
+        })
     }
+}
 
-    fn redact(&self, text: &str) -> String {
-        let mut redacted = text.to_string();
-        for secret in [self.password.as_str(), self.username.as_str()] {
-            if !secret.is_empty() {
-                redacted = redacted.replace(secret, "[redacted]");
+/// Streaming `!re` replies until cancel or `!done`.
+pub struct ApiStream {
+    tag: String,
+    rx: tokio::sync::mpsc::UnboundedReceiver<Sentence>,
+    session: Session,
+}
+
+impl ApiStream {
+    pub async fn recv(&mut self) -> Result<Option<Resource>> {
+        loop {
+            let Some(sentence) = self.rx.recv().await else {
+                return Ok(None);
+            };
+            if sentence.is_fatal() {
+                return Err(Error::new(
+                    crate::error::ErrorKind::Server,
+                    "stream",
+                    sentence.attr("message").unwrap_or("fatal API error"),
+                ));
+            }
+            if sentence.is_trap() {
+                return Err(sentence.trap_error("stream"));
+            }
+            if sentence.is_done() {
+                return Ok(None);
+            }
+            if sentence.is_re() {
+                return Ok(Some(sentence.into_resource()));
             }
         }
-        redacted
     }
-}
 
-fn status_error_from_body(
-    operation: &'static str,
-    status: u16,
-    body: &[u8],
-    redact: impl Fn(&str) -> String,
-) -> Error {
-    let wire: WireApiError = serde_json::from_slice(body).unwrap_or_default();
-
-    let mut message = wire
-        .message
-        .filter(|value| !value.trim().is_empty())
-        .or(wire.detail.filter(|value| !value.trim().is_empty()))
-        .unwrap_or_else(|| {
-            reqwest::StatusCode::from_u16(status)
-                .ok()
-                .and_then(|code| code.canonical_reason())
-                .unwrap_or("request failed")
-                .to_string()
-        });
-    message = redact(&message);
-
-    let api_code = wire.error.and_then(|value| match value {
-        serde_json::Value::String(text) => Some(text),
-        serde_json::Value::Number(number) => Some(number.to_string()),
-        _ => None,
-    });
-
-    Error::with_status(
-        kind_for_status(status),
-        operation,
-        status,
-        api_code,
-        message,
-    )
-}
-
-fn response_body_for_log(body: &[u8], redact: impl Fn(&str) -> String) -> String {
-    let truncated = body.len() > MAX_ERROR_BODY_LOG_BYTES;
-    let slice = if truncated {
-        &body[..MAX_ERROR_BODY_LOG_BYTES]
-    } else {
-        body
-    };
-    let mut text = String::from_utf8_lossy(slice).into_owned();
-    if truncated {
-        text.push_str("...[truncated]");
-    }
-    let redacted = redact(&text);
-    serde_json::from_str::<serde_json::Value>(&redacted)
-        .ok()
-        .and_then(|value| serde_json::to_string(&value).ok())
-        .unwrap_or(redacted)
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct WireApiError {
-    #[serde(default)]
-    error: Option<serde_json::Value>,
-    #[serde(default)]
-    message: Option<String>,
-    #[serde(default)]
-    detail: Option<String>,
-}
-
-fn kind_for_status(status: u16) -> ErrorKind {
-    match status {
-        401 | 403 => ErrorKind::Auth,
-        404 => ErrorKind::NotFound,
-        429 => ErrorKind::RateLimited,
-        500..=599 => ErrorKind::Server,
-        _ => ErrorKind::Api,
-    }
-}
-
-fn error_chain_text(err: &(dyn std::error::Error + 'static)) -> String {
-    let mut text = err.to_string();
-    let mut source = err.source();
-    while let Some(inner) = source {
-        text.push_str(": ");
-        text.push_str(&inner.to_string());
-        source = inner.source();
-    }
-    text
-}
-
-/// Validates that `raw` is an `https` URL with no userinfo, query, or
-/// fragment, returning the parsed form.
-pub(crate) fn parse_base_url(raw: &str, operation: &'static str) -> Result<reqwest::Url> {
-    let trimmed = raw.trim().trim_end_matches('/');
-    let parsed = reqwest::Url::parse(trimmed)
-        .map_err(|err| Error::api(operation, format!("base URL must be a valid URL: {err}")))?;
-
-    if parsed.scheme() != "https" {
-        return Err(Error::api(operation, "base URL must use https"));
-    }
-    if parsed.host_str().is_none_or(str::is_empty) {
-        return Err(Error::api(operation, "base URL must include a host"));
-    }
-    if !parsed.username().is_empty() || parsed.password().is_some() {
-        return Err(Error::api(
-            operation,
-            "base URL must not contain userinfo credentials",
-        ));
-    }
-    if parsed.query().is_some() {
-        return Err(Error::api(operation, "base URL must not contain a query"));
-    }
-    if parsed.fragment().is_some() {
-        return Err(Error::api(
-            operation,
-            "base URL must not contain a fragment",
-        ));
-    }
-    Ok(parsed)
-}
-
-/// Resolves the `(host, port)` pair used by [`crate::probe_certificate`],
-/// defaulting to port 443 when unspecified.
-pub(crate) fn probe_target(base_url: &str) -> Result<(String, u16)> {
-    let parsed = parse_base_url(base_url, "probe_certificate")?;
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| Error::api("probe_certificate", "base URL must include a host"))?
-        .to_string();
-    let port = parsed.port_or_known_default().unwrap_or(443);
-    Ok((host, port))
-}
-
-fn validate_endpoint(endpoint: &str, operation: &'static str) -> Result<()> {
-    if endpoint == "/rest" || endpoint.starts_with("/rest/") {
+    pub async fn cancel(self) -> Result<()> {
+        self.session.finish_stream(&self.tag).await;
         Ok(())
-    } else {
-        Err(Error::api(operation, "invalid REST endpoint"))
     }
 }
 
-fn record_endpoint(endpoint: &str, id: &str) -> String {
-    format!(
-        "{}/{}",
-        endpoint.trim_end_matches('/'),
-        escape_path_segment(id)
+async fn connect_session(
+    options: &ClientOptions,
+    target: &ConnectionTarget,
+    request_timeout: Duration,
+) -> Result<Session> {
+    let config = if let Some(raw_pin) = &options.certificate_pin {
+        let pin = tls::normalize_certificate_pin(raw_pin)?;
+        tls::client_config_with_pin(&pin)?
+    } else if let Some(pem) = &options.ca_pem {
+        tls::client_config_with_ca(pem)?
+    } else {
+        return Err(Error::tls(
+            "new_client",
+            "certificate pin or custom CA is required",
+        ));
+    };
+    let server_name = ServerName::try_from(target.host.clone())
+        .map_err(|err| Error::tls("new_client", format!("invalid host name: {err}")))?;
+    let connector = TlsConnector::from(Arc::new(config));
+    let tcp = tokio::time::timeout(
+        request_timeout,
+        TcpStream::connect((target.host.as_str(), target.port)),
     )
+    .await
+    .map_err(|_| {
+        Error::new(
+            crate::error::ErrorKind::Timeout,
+            "connect",
+            "connect timed out",
+        )
+    })?
+    .map_err(|err| classify_connect(&err.to_string()))?;
+    let tls = connector
+        .connect(server_name, tcp)
+        .await
+        .map_err(|err| classify_connect(&err.to_string()))?;
+    Session::from_stream(
+        tls,
+        options.username.clone(),
+        options.password.clone(),
+        request_timeout,
+    )
+    .await
 }
 
-/// Percent-encodes `value` for use as a single opaque URL path segment,
-/// escaping every byte outside the RFC 3986 "unreserved" set (including
-/// `/`), so a `RouterOS` id can never be split across path segments.
-fn escape_path_segment(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for byte in value.as_bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                out.push(*byte as char);
-            }
-            other => {
-                let _ = write!(out, "%{other:02X}");
-            }
+fn classify_connect(message: &str) -> Error {
+    let lower = message.to_lowercase();
+    if lower.contains(&tls::PIN_MISMATCH_MARKER.to_lowercase())
+        || lower.contains("certificate")
+        || lower.contains("invalid peer certificate")
+        || lower.contains("unknownissuer")
+        || lower.contains("tls")
+        || lower.contains("ssl")
+    {
+        Error::tls("connect", message)
+    } else {
+        Error::transport("connect", message)
+    }
+}
+
+fn command_path(endpoint: &str, command: &str) -> Result<String> {
+    let path = api_path(endpoint, "command")?;
+    Ok(format!("{path}/{command}"))
+}
+
+fn api_path(endpoint: &str, operation: &'static str) -> Result<String> {
+    let trimmed = endpoint.trim();
+    let path = trimmed.strip_prefix("/rest").unwrap_or(trimmed);
+    if !path.starts_with('/') || path.contains("..") || path.contains(' ') {
+        return Err(Error::api(operation, "invalid API path"));
+    }
+    Ok(path.trim_end_matches('/').to_string())
+}
+
+fn push_fields(words: &mut Vec<String>, fields: &BTreeMap<String, String>) {
+    for (key, value) in fields {
+        if key == ".id" {
+            words.push(format!("=.id={value}"));
+        } else {
+            words.push(format!("={key}={value}"));
         }
     }
-    out
+}
+
+fn replies_to_json(replies: Vec<Sentence>) -> Value {
+    let rows: Vec<Value> = replies
+        .into_iter()
+        .filter(Sentence::is_re)
+        .map(|sentence| {
+            let mut map = Map::new();
+            let resource = sentence.into_resource();
+            if !resource.id.is_empty() {
+                map.insert(".id".into(), Value::String(resource.id));
+            }
+            for (key, value) in resource.fields {
+                map.insert(key, Value::String(value));
+            }
+            Value::Object(map)
+        })
+        .collect();
+    Value::Array(rows)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sentence::{Sentence, merge_listen_record};
 
     #[test]
-    fn accepts_valid_https_base_url() {
-        let parsed = parse_base_url("https://192.0.2.1/", "test").unwrap();
-        assert_eq!(parsed.scheme(), "https");
+    fn strips_rest_prefix() {
+        assert_eq!(api_path("/rest/interface", "test").unwrap(), "/interface");
+        assert_eq!(api_path("/interface", "test").unwrap(), "/interface");
+        assert!(api_path("interface", "test").is_err());
+        assert!(api_path("/interface/../system", "test").is_err());
     }
 
     #[test]
-    fn rejects_non_https_base_url() {
-        assert!(parse_base_url("http://192.0.2.1", "test").is_err());
-    }
-
-    #[test]
-    fn rejects_userinfo_query_and_fragment() {
-        assert!(parse_base_url("https://user:pass@192.0.2.1", "test").is_err());
-        assert!(parse_base_url("https://192.0.2.1?x=1", "test").is_err());
-        assert!(parse_base_url("https://192.0.2.1#frag", "test").is_err());
-    }
-
-    #[test]
-    fn validates_rest_endpoint_prefix() {
-        assert!(validate_endpoint("/rest/interface", "test").is_ok());
-        assert!(validate_endpoint("/rest", "test").is_ok());
-        assert!(validate_endpoint("/interface", "test").is_err());
-        assert!(validate_endpoint("rest/interface", "test").is_err());
-    }
-
-    #[test]
-    fn escapes_reserved_characters_in_ids() {
-        assert_eq!(escape_path_segment("*1/unsafe id"), "%2A1%2Funsafe%20id");
+    fn print_path() {
         assert_eq!(
-            record_endpoint("/rest/interface", "*1/unsafe id"),
-            "/rest/interface/%2A1%2Funsafe%20id"
+            command_path("/rest/interface", "print").unwrap(),
+            "/interface/print"
         );
+        assert_eq!(command_path("/rest/tool", "fetch").unwrap(), "/tool/fetch");
     }
 
     #[test]
-    fn classifies_status_codes() {
-        assert_eq!(kind_for_status(401), ErrorKind::Auth);
-        assert_eq!(kind_for_status(403), ErrorKind::Auth);
-        assert_eq!(kind_for_status(404), ErrorKind::NotFound);
-        assert_eq!(kind_for_status(429), ErrorKind::RateLimited);
-        assert_eq!(kind_for_status(500), ErrorKind::Server);
-        assert_eq!(kind_for_status(400), ErrorKind::Api);
+    fn empty_print_is_empty_list() {
+        let rows: Vec<Resource> = Vec::new();
+        assert!(rows.is_empty());
     }
 
     #[test]
-    fn formats_error_response_body_for_logs() {
-        let body = br#"{"error":400,"message":"Bad Request","detail":"invalid value"}"#;
-        let logged = response_body_for_log(body, str::to_string);
-        let parsed: serde_json::Value = serde_json::from_str(&logged).unwrap();
-        assert_eq!(parsed["error"], 400);
-        assert_eq!(parsed["message"], "Bad Request");
-        assert_eq!(parsed["detail"], "invalid value");
-        assert_eq!(
-            response_body_for_log(b"secret-token", |text| text
-                .replace("secret-token", "[redacted]")),
-            "[redacted]"
-        );
+    fn malformed_words_without_value_are_ignored() {
+        let sentence = Sentence::new(vec!["!re".into(), "=broken".into(), "=name=ok".into()]);
+        let resource = sentence.into_resource();
+        assert_eq!(resource.field("name"), Some("ok"));
+        assert!(resource.field("broken").is_none());
     }
 
     #[test]
-    fn truncates_large_error_response_bodies_for_logs() {
-        let body = vec![b'x'; MAX_ERROR_BODY_LOG_BYTES + 8];
-        let logged = response_body_for_log(&body, str::to_string);
-        assert!(logged.ends_with("...[truncated]"));
-        assert_eq!(
-            logged.len(),
-            MAX_ERROR_BODY_LOG_BYTES + "...[truncated]".len()
+    fn merge_listen_is_available() {
+        let mut rows = Vec::new();
+        merge_listen_record(
+            &mut rows,
+            Resource {
+                id: "*1".into(),
+                fields: BTreeMap::from([("name".into(), "ether1".into())])
+                    .into_iter()
+                    .collect(),
+            },
         );
+        assert_eq!(rows.len(), 1);
     }
 }

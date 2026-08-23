@@ -59,6 +59,7 @@ pub enum WorkerMsg {
         generation: u64,
         rows: Vec<std::collections::HashMap<String, String>>,
         error: Option<String>,
+        done: bool,
     },
     ReadLocalFileResult {
         request_id: u64,
@@ -83,11 +84,22 @@ pub enum WorkerMsg {
         generation: u64,
         rows: Vec<std::collections::HashMap<String, String>>,
         error: Option<String>,
+        done: bool,
     },
     LookupResult {
         request_id: u64,
         generation: u64,
         options: Vec<String>,
         error: Option<String>,
+    },
+    ListenDelta {
+        generation: u64,
+        resource_id: String,
+        row: Resource,
+    },
+    WanSample {
+        generation: u64,
+        interface: String,
+        sample: Resource,
     },
 }

@@ -6,7 +6,7 @@ use mtui_core::{DASHBOARD_ID, about_copy, resource_by_id};
 use mtui_routeros::Resource;
 use mtui_ui::{FormSession, LoginField};
 
-use crate::app::{App, AppCommand, Overlay, Pane, Screen, is_https_router_url};
+use crate::app::{App, AppCommand, Overlay, Pane, Screen, is_router_target};
 
 impl App {
     pub(crate) fn on_key(&mut self, key: KeyEvent) -> Vec<AppCommand> {
@@ -38,9 +38,9 @@ impl App {
                     self.login.focus = self.login.focus.next();
                     return Vec::new();
                 }
-                if !is_https_router_url(&self.login.url) {
-                    self.login.error = Some("Router must be a valid HTTPS URL".into());
-                    self.status = "Router must be a valid HTTPS URL".into();
+                if !is_router_target(&self.login.url) {
+                    self.login.error = Some("Enter a router host (host or host:8729)".into());
+                    self.status = "Enter a router host (host or host:8729)".into();
                     return Vec::new();
                 }
                 if self.login.username.trim().is_empty() {
@@ -695,6 +695,8 @@ impl App {
                 if let Overlay::Torch(torch) = &mut self.overlay {
                     torch.running = !torch.running;
                     torch.error = None;
+                    self.torch_generation = self.torch_generation.wrapping_add(1);
+                    torch.generation = self.torch_generation;
                     if torch.running {
                         return self.torch_sample_command();
                     }
@@ -1003,10 +1005,10 @@ mod login_edit_tests {
     #[test]
     fn backspace_deletes_the_last_character_in_the_focused_field() {
         let mut app = login_app();
-        app.login.url = "https://router".into();
+        app.login.url = "192.168.88.1".into();
         let cmds = app.update(AppEvent::Input(press(KeyCode::Backspace)));
         assert!(cmds.is_empty());
-        assert_eq!(app.login.url, "https://route");
+        assert_eq!(app.login.url, "192.168.88.");
     }
 
     #[test]
@@ -1033,7 +1035,7 @@ mod login_edit_tests {
     #[test]
     fn enter_on_password_starts_a_secure_connection() {
         let mut app = login_app();
-        app.login.url = "https://192.168.88.1:8443".into();
+        app.login.url = "192.168.88.1:8729".into();
         app.login.username = "reader".into();
         app.login.password = "secret".into();
         app.login.focus = LoginField::Password;
@@ -1043,7 +1045,7 @@ mod login_edit_tests {
             cmds.iter().any(|cmd| matches!(
                 cmd,
                 crate::app::AppCommand::Connect { url, username, .. }
-                    if url == "https://192.168.88.1:8443" && username == "reader"
+                    if url == "192.168.88.1:8729" && username == "reader"
             )),
             "expected connect command, got {cmds:?}"
         );
@@ -1052,7 +1054,7 @@ mod login_edit_tests {
     #[test]
     fn enter_on_url_moves_focus_instead_of_submitting() {
         let mut app = login_app();
-        app.login.url = "https://192.168.88.1:8443".into();
+        app.login.url = "192.168.88.1:8729".into();
         app.login.username = "reader".into();
         app.login.focus = LoginField::Url;
         let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
@@ -1693,7 +1695,7 @@ mod console_tests {
             chrono::Local::now(),
             LogLevel::Info,
             "mtui_routeros::client".into(),
-            "outbound GET /rest/interface".into(),
+            "outbound /interface/print".into(),
             std::collections::BTreeMap::new(),
         );
         let mut app = App::new(false).expect("app");
@@ -1705,10 +1707,7 @@ mod console_tests {
         let _ = app.update(AppEvent::Tick);
         assert!(!app.console.visible);
         assert_eq!(app.console_entries.len(), 1);
-        assert_eq!(
-            app.console_entries[0].message,
-            "outbound GET /rest/interface"
-        );
+        assert_eq!(app.console_entries[0].message, "outbound /interface/print");
 
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
         assert!(app.console.visible);
@@ -1717,7 +1716,7 @@ mod console_tests {
             app.console
                 .selected_entry(&app.console_entries)
                 .map(|e| e.message.as_str()),
-            Some("outbound GET /rest/interface")
+            Some("outbound /interface/print")
         );
     }
 

@@ -777,12 +777,12 @@ impl App {
             if let Overlay::Form(session) = &mut self.overlay {
                 session.saving = false;
                 session.error = Some(
-                    "RouterOS REST did not return file contents; copy from the router another way."
+                    "Classic API did not return file contents; use Fetch URL or copy another way."
                         .into(),
                 );
             }
             self.status =
-                "RouterOS REST did not return file contents; copy from the router another way."
+                "Classic API did not return file contents; use Fetch URL or copy another way."
                     .into();
             return Vec::new();
         }
@@ -1060,7 +1060,7 @@ impl App {
         }
         let Some(contents) = contents.filter(|value| !value.is_empty()) else {
             let message =
-                "RouterOS REST did not return file contents; copy from the router another way.";
+                "Classic API did not return file contents; use Fetch URL or copy another way.";
             if let Overlay::Form(session) = &mut self.overlay {
                 session.saving = false;
                 session.error = Some(message.into());
@@ -1082,6 +1082,7 @@ impl App {
         generation: u64,
         rows: Vec<HashMap<String, String>>,
         error: Option<String>,
+        done: bool,
     ) -> Vec<AppCommand> {
         let Overlay::Torch(torch) = &mut self.overlay else {
             return Vec::new();
@@ -1096,11 +1097,10 @@ impl App {
         }
         torch.error = None;
         torch.push_samples(rows);
-        if torch.running {
-            self.torch_sample_command()
-        } else {
-            Vec::new()
+        if done {
+            torch.running = false;
         }
+        Vec::new()
     }
 
     pub(crate) fn apply_probe_result(
@@ -1108,6 +1108,7 @@ impl App {
         generation: u64,
         rows: Vec<HashMap<String, String>>,
         error: Option<String>,
+        done: bool,
     ) -> Vec<AppCommand> {
         let Overlay::Probe(probe) = &mut self.overlay else {
             return Vec::new();
@@ -1115,13 +1116,16 @@ impl App {
         if generation != probe.generation {
             return Vec::new();
         }
-        probe.running = false;
         if let Some(err) = error {
+            probe.running = false;
             probe.error = Some(err);
             return Vec::new();
         }
         probe.error = None;
         probe.push_samples(rows);
+        if done {
+            probe.running = false;
+        }
         Vec::new()
     }
 
@@ -1222,32 +1226,6 @@ impl App {
     pub(crate) fn row_to_display(rows: Vec<mtui_routeros::Resource>) -> Vec<Row> {
         rows.into_iter().map(|row| row.display_row()).collect()
     }
-}
-
-pub(crate) fn json_rows(value: serde_json::Value) -> Vec<HashMap<String, String>> {
-    match value {
-        serde_json::Value::Array(items) => items.into_iter().filter_map(object_row).collect(),
-        serde_json::Value::Object(_) => object_row(value).into_iter().collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn object_row(value: serde_json::Value) -> Option<HashMap<String, String>> {
-    let serde_json::Value::Object(map) = value else {
-        return None;
-    };
-    let mut row = HashMap::new();
-    for (key, value) in map {
-        let text = match value {
-            serde_json::Value::String(text) => text,
-            serde_json::Value::Number(number) => number.to_string(),
-            serde_json::Value::Bool(flag) => flag.to_string(),
-            serde_json::Value::Null => continue,
-            other => other.to_string(),
-        };
-        row.insert(key, text);
-    }
-    Some(row)
 }
 
 fn command_base_path(action_id: &str, resource_endpoint: &str) -> String {
@@ -2046,7 +2024,7 @@ mod tests {
     }
 
     #[test]
-    fn files_remove_and_transfer_keys_are_offered() {
+    fn files_remove_and_fetch_keys_are_offered() {
         let app = files_app(None);
         let ids: Vec<_> = app
             .current_actions()
@@ -2054,15 +2032,10 @@ mod tests {
             .map(|action| action.id)
             .collect();
         assert!(ids.contains(&"remove"));
-        assert!(ids.contains(&"upload"));
         assert!(ids.contains(&"fetch"));
-        assert!(ids.contains(&"download"));
+        assert!(!ids.contains(&"upload"));
+        assert!(!ids.contains(&"download"));
         let hints = app.footer_action_hints();
-        assert!(
-            hints
-                .iter()
-                .any(|(key, label)| key == "u" && label == "Upload")
-        );
         assert!(
             hints
                 .iter()
@@ -2071,54 +2044,8 @@ mod tests {
         assert!(
             hints
                 .iter()
-                .any(|(key, label)| key == "w" && label == "Download")
-        );
-        assert!(
-            hints
-                .iter()
                 .any(|(key, label)| key == "x" && label == "Remove")
         );
-    }
-
-    #[test]
-    fn upload_without_local_path_does_not_mutate() {
-        let mut app = files_app(None);
-        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
-        let cmds = app.update(AppEvent::Input(ctrl_s()));
-        assert!(cmds.iter().all(|cmd| !is_mutate(cmd)));
-        assert!(
-            !cmds
-                .iter()
-                .any(|cmd| matches!(cmd, AppCommand::ReadLocalFile { .. }))
-        );
-        let Overlay::Form(session) = &app.overlay else {
-            panic!("expected upload form");
-        };
-        assert_eq!(session.prompt_command, Some("upload"));
-        assert_eq!(session.error.as_deref(), Some("Local path is required"));
-    }
-
-    #[test]
-    fn upload_too_large_worker_result_does_not_put() {
-        let mut app = files_app(None);
-        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
-        let cmds = app.apply_read_local_file(WorkerMsg::ReadLocalFileResult {
-            request_id: 1,
-            generation: app.poll_generation,
-            remote_name: "script.rsc".into(),
-            contents: None,
-            error: Some("file too large for REST contents upload — use Fetch URL".into()),
-        });
-        assert!(cmds.is_empty());
-        assert!(
-            app.status.contains("file too large"),
-            "status: {}",
-            app.status
-        );
-        let Overlay::Form(session) = &app.overlay else {
-            panic!("expected form to stay open");
-        };
-        assert!(!session.saving);
     }
 
     #[test]
@@ -2135,40 +2062,6 @@ mod tests {
             panic!("expected fetch form");
         };
         assert_eq!(session.error.as_deref(), Some("URL is required"));
-    }
-
-    #[test]
-    fn download_without_contents_sets_status() {
-        let mut app = files_app(None);
-        let _ = app.update(AppEvent::Input(press(KeyCode::Char('w'))));
-        for ch in "out.txt".chars() {
-            let _ = app.update(AppEvent::Input(press(KeyCode::Char(ch))));
-        }
-        let cmds = app.update(AppEvent::Input(ctrl_s()));
-        assert!(
-            cmds.iter().any(|cmd| matches!(
-                cmd,
-                AppCommand::FetchRecord {
-                    id,
-                    local_path,
-                    ..
-                } if id == "*1" && local_path == "out.txt"
-            )),
-            "expected GET then write, got {cmds:?}"
-        );
-        let cmds = app.apply_record_result(WorkerMsg::RecordResult {
-            request_id: 1,
-            generation: app.poll_generation,
-            local_path: "out.txt".into(),
-            contents: None,
-            error: None,
-        });
-        assert!(cmds.is_empty());
-        assert!(
-            app.status.contains("did not return file contents"),
-            "status: {}",
-            app.status
-        );
     }
 
     fn ping_screen() -> App {
@@ -2276,6 +2169,7 @@ mod tests {
             generation: stale,
             rows: vec![HashMap::from([("host".into(), "stale".into())])],
             error: None,
+            done: false,
         }));
         assert!(cmds.is_empty());
         let Overlay::Probe(probe) = &app.overlay else {
@@ -2335,6 +2229,7 @@ mod tests {
             generation,
             rows: vec![HashMap::from([("host".into(), "192.0.2.1".into())])],
             error: None,
+            done: true,
         }));
         let Overlay::Probe(probe) = &app.overlay else {
             panic!("expected ping overlay");

@@ -1,4 +1,4 @@
-//! `RouterOS` REST record representation.
+//! `RouterOS` API record representation.
 
 use std::collections::HashMap;
 
@@ -8,9 +8,9 @@ use serde_json::Value;
 
 use crate::secret::mask_value;
 
-/// A single `RouterOS` REST record.
+/// A single `RouterOS` record.
 ///
-/// `RouterOS` represents every record value as a JSON string; [`Resource`]
+/// `RouterOS` represents every record value as a string; [`Resource`]
 /// preserves those raw string values unmodified rather than parsing them
 /// into booleans/integers, so callers can decide how to interpret each
 /// field. The record's `.id` value (when present) is split out into [`id`].
@@ -21,6 +21,13 @@ pub struct Resource {
 }
 
 impl Resource {
+    /// Builds a record from API `=name=value` attributes. `.id` is split out.
+    #[must_use]
+    pub fn from_attributes(mut fields: HashMap<String, String>) -> Self {
+        let id = fields.remove(".id").unwrap_or_default();
+        Self { id, fields }
+    }
+
     /// Returns the raw (unmasked) value for `key`, if present.
     #[must_use]
     pub fn field(&self, key: &str) -> Option<&str> {

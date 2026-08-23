@@ -9,10 +9,14 @@ use mtui_config::{
     Profile, ProfileStore, shared_log_store,
 };
 use mtui_core::{
-    ALL_RESOURCES, DASHBOARD_ID, ThemeRegistry, ThemeSet, navigation_tree, resource_by_id,
+    ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet, navigation_tree,
+    resource_by_id,
 };
 
-use mtui_routeros::{Client, Resource};
+use mtui_routeros::{
+    Client, Resource, header_host, merge_listen_record, migrate_connection_target,
+    parse_connection_target,
+};
 use mtui_ui::{
     ActionMenuState, Command, CommandPalette, ConsoleEntry, ConsoleLevel, ConsoleState,
     DashboardGeometry, FirewallHitChart, FormSession, InspectorState, LayoutMetrics, LoginForm,
@@ -244,7 +248,7 @@ impl App {
             palette: CommandPalette::new(palette_commands()),
             table: TableState::new(&[]),
             inspector: InspectorState::default(),
-            status: String::from("Enter RouterOS HTTPS URL and credentials"),
+            status: String::from("Enter RouterOS host and credentials"),
             trust_fingerprint: None,
             pending_password: None,
             saved_url: None,
@@ -301,7 +305,7 @@ impl App {
             self.status = format!("Saved session overrides failed: {err}");
         }
         if !profile.url.is_empty() {
-            self.login.url.clone_from(&profile.url);
+            self.login.url = migrate_connection_target(&profile.url);
         }
         if !profile.username.is_empty() {
             self.login.username.clone_from(&profile.username);
@@ -328,7 +332,7 @@ impl App {
             }
         }
         let has_router =
-            is_https_router_url(&self.login.url) && !self.login.username.trim().is_empty();
+            is_router_target(&self.login.url) && !self.login.username.trim().is_empty();
         if has_router {
             self.restore_on_start = true;
             self.status = if self.login.password.is_empty() {
@@ -345,7 +349,7 @@ impl App {
             return Vec::new();
         }
         self.restore_on_start = false;
-        if !is_https_router_url(&self.login.url) || self.login.username.trim().is_empty() {
+        if !is_router_target(&self.login.url) || self.login.username.trim().is_empty() {
             return Vec::new();
         }
         self.pending_password = Some(self.login.password.clone());
@@ -467,17 +471,38 @@ impl App {
         if self.screen != Screen::Main || self.client.is_none() {
             return Vec::new();
         }
-        let mut cmds = Vec::new();
         match &self.overlay {
             Overlay::None | Overlay::Form(_) | Overlay::Torch(_) | Overlay::Probe(_) => {
                 tracing::debug!(resource = self.current_resource.as_str(), "scheduled poll");
-                self.refreshing = true;
-                cmds.extend(self.poll_current());
+                self.poll_tick()
             }
-            _ => {}
+            _ => Vec::new(),
         }
-        if matches!(&self.overlay, Overlay::Torch(torch) if torch.running) {
-            cmds.extend(self.torch_sample_command());
+    }
+
+    fn poll_tick(&mut self) -> Vec<AppCommand> {
+        let generation = self.poll_generation;
+        if self.current_resource == DASHBOARD_ID {
+            self.refreshing = true;
+            return vec![AppCommand::FetchDashboard {
+                request_id: self.next_request(),
+                generation,
+            }];
+        }
+        let mut cmds = vec![AppCommand::FetchHeader {
+            request_id: self.next_request(),
+            generation,
+        }];
+        if resource_by_id(&self.current_resource).is_some_and(ResourceSpec::is_singleton) {
+            self.refreshing = true;
+            cmds.insert(
+                0,
+                AppCommand::FetchResource {
+                    request_id: self.next_request(),
+                    generation,
+                    resource_id: self.current_resource.clone(),
+                },
+            );
         }
         cmds
     }
@@ -621,7 +646,8 @@ impl App {
                 generation,
                 rows,
                 error,
-            } => self.apply_torch_result(generation, rows, error),
+                done,
+            } => self.apply_torch_result(generation, rows, error, done),
             WorkerMsg::ReadLocalFileResult { .. } => self.apply_read_local_file(msg),
             WorkerMsg::WriteLocalFileResult { .. } => self.apply_write_local_file(msg),
             WorkerMsg::RecordResult { .. } => self.apply_record_result(msg),
@@ -629,7 +655,8 @@ impl App {
                 generation,
                 rows,
                 error,
-            } => self.apply_probe_result(generation, rows, error),
+                done,
+            } => self.apply_probe_result(generation, rows, error, done),
             WorkerMsg::LookupResult {
                 request_id,
                 generation,
@@ -639,6 +666,56 @@ impl App {
                 if let Overlay::Form(session) = &mut self.overlay {
                     session.apply_lookup_result(request_id, generation, options, error);
                 }
+                Vec::new()
+            }
+            WorkerMsg::ListenDelta {
+                generation,
+                resource_id,
+                row,
+            } => {
+                if generation != self.poll_generation || resource_id != self.current_resource {
+                    return Vec::new();
+                }
+                if resource_id == "logs" {
+                    self.ingest_logs(vec![row]);
+                    return Vec::new();
+                }
+                let selected_id = self
+                    .table
+                    .selected_row()
+                    .and_then(|row| row.get(".id").cloned());
+                let offset = self.inspector.offset;
+                let inspector_selected = self.inspector.selected;
+                let mut resources: Vec<Resource> = self
+                    .table
+                    .rows
+                    .iter()
+                    .map(|display| {
+                        let mut fields = display.clone();
+                        let id = fields.remove(".id").unwrap_or_default();
+                        Resource { id, fields }
+                    })
+                    .collect();
+                merge_listen_record(&mut resources, row);
+                self.apply_table_rows(Self::row_to_display(resources));
+                if let Some(id) = selected_id {
+                    self.table.select_id(&id);
+                }
+                self.inspector.selected = inspector_selected;
+                self.inspector.offset = offset;
+                self.inspector
+                    .clamp_to_visible(self.inspector_visible_rows());
+                Vec::new()
+            }
+            WorkerMsg::WanSample {
+                generation,
+                interface,
+                sample,
+            } => {
+                if generation != self.poll_generation || self.screen != Screen::Main {
+                    return Vec::new();
+                }
+                self.dash.update_wan_monitor(&interface, &sample);
                 Vec::new()
             }
         }
@@ -1290,32 +1367,11 @@ fn nonempty_field<'src>(resource: &'src Resource, key: &str) -> Option<&'src str
 }
 
 fn normalize_router_url(url: &str) -> String {
-    url.trim().trim_end_matches('/').to_string()
+    migrate_connection_target(url)
 }
 
-/// Host or IP from a router URL, without scheme or port.
-fn header_host(url: &str) -> String {
-    let rest = url
-        .trim()
-        .split_once("://")
-        .map_or(url.trim(), |(_, rest)| rest);
-    let hostport = rest.split('/').next().unwrap_or(rest);
-    if let Some(inner) = hostport.strip_prefix('[') {
-        inner.split(']').next().unwrap_or(inner).to_string()
-    } else {
-        hostport.split(':').next().unwrap_or(hostport).to_string()
-    }
-}
-
-pub(crate) fn is_https_router_url(url: &str) -> bool {
-    let url = normalize_router_url(url);
-    match url.split_once("://") {
-        Some(("https", rest)) => {
-            let host = rest.split('/').next().unwrap_or("");
-            !host.is_empty() && host != "https:"
-        }
-        _ => false,
-    }
+pub(crate) fn is_router_target(url: &str) -> bool {
+    parse_connection_target(url, "login").is_ok()
 }
 
 fn loaded_entity_id(rows: &[Resource]) -> Option<&str> {
@@ -1580,6 +1636,30 @@ mod dashboard_tests {
         assert!(!app.router.fields.contains_key("cpu-load"));
         assert_eq!(app.dash.memory_total_bytes, 0);
         assert!(!app.dash.traffic_has_base);
+    }
+
+    #[test]
+    fn listen_delta_ignored_after_leaving_the_resource() {
+        let mut app = dashboard_app();
+        app.select_resource("interfaces");
+        let generation = app.poll_generation;
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: 1,
+            generation,
+            resource_id: "interfaces".into(),
+            rows: vec![wan_interface("1")],
+            error: None,
+        }));
+        assert_eq!(app.table.row_count(), 1);
+        app.select_resource("logs");
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ListenDelta {
+            generation,
+            resource_id: "interfaces".into(),
+            row: wan_interface("2"),
+        }));
+        assert!(cmds.is_empty());
+        assert_eq!(app.current_resource, "logs");
+        assert_eq!(app.table.row_count(), 0);
     }
 
     #[test]

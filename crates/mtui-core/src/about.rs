@@ -808,7 +808,7 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "ip-services",
         "Management services and their ports/addresses: www, www-ssl, api, api-ssl, ssh, \
          telnet, ftp, winbox.",
-        "Disable what you do not use; restrict available-from. REST uses www-ssl.",
+        "Disable what you do not use; restrict available-from. This client uses api-ssl.",
         "name, port, address, certificate (for TLS), disabled."
     ),
     guide!(
@@ -965,10 +965,9 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "files",
         "Router filesystem: backups, scripts, images, and uploaded files.",
         "Save a named backup or load a `.backup` file from the action menu (that replaces the \
-         running configuration and reboots). Upload a local UTF-8 file (`u`, 1 MiB REST cap), \
-         download the selected file (`w`), or fetch a URL onto the router with /tool/fetch (`f`). \
-         Larger or binary files should be fetched by URL. Removing a file here deletes it on the \
-         router.",
+         running configuration and reboots). Pull a file onto the router with /tool/fetch (`f`). \
+         Removing a file here deletes it on the router. Local contents upload/download is not \
+         available over the classic API.",
         "name, type, size, creation-time. Contents are not shown in the table."
     ),
     guide!(
@@ -987,16 +986,16 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "ping",
         "One-shot ICMP (or similar) reachability check from the router to an address.",
-        "Confirm a host is reachable from this router, not from your workstation. Default \
-         count is 4 so the REST command finishes within the client timeout.",
+        "Confirm a host is reachable from this router, not from your workstation. Replies stream \
+         until the count finishes or you close the overlay.",
         "address (required), count, src-address. Results appear in the Ping overlay; this \
          screen is not a live poll of /tool/ping."
     ),
     guide!(
         "traceroute",
         "Hop-by-hop path discovery from the router toward an address.",
-        "See where packets leave this device on the way to a destination. Default hop count \
-         is 8 so the REST command stays within the client timeout.",
+        "See where packets leave this device on the way to a destination. Hop replies stream \
+         until the probe finishes or you close the overlay.",
         "address (required), src-address, protocol (icmp by default), count/max hops. Open \
          the overlay with Enter; t is reserved for interface torch elsewhere."
     ),
@@ -1101,7 +1100,7 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "Local certificate store: CA, device certs, CSRs for www-ssl, SSTP, IPsec, OpenVPN. \
          Create an empty request, sign against a CA (or the same name for a root), import a \
          file already on the router, or export PEM/PKCS12.",
-        "Needed for HTTPS REST/WinBox TLS and several VPN types. Keys and passphrases stay \
+        "Needed for api-ssl/WinBox TLS and several VPN types. Keys and passphrases stay \
          secret. Sign with g, import with p, export with w.",
         "name, common-name, key-usage, ca, file-name, type, passphrase, export-passphrase."
     ),

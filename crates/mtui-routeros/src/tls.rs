@@ -20,7 +20,7 @@ use crate::error::{Error, Result};
 
 /// Marker embedded in the TLS error surfaced when a certificate pin does not
 /// match the presented leaf certificate. Used to classify transport errors
-/// that bubble up through reqwest/hyper/rustls as [`crate::ErrorKind::Tls`].
+/// that bubble up through rustls as [`crate::ErrorKind::Tls`].
 pub(crate) const PIN_MISMATCH_MARKER: &str = "routeros: certificate pin mismatch";
 
 const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -240,8 +240,10 @@ impl ServerCertVerifier for RecordingCertVerifier {
 /// data. The returned fingerprint is untrusted input: it must be reviewed
 /// and approved (e.g. by a human) before being passed to
 /// [`crate::ClientOptions`] as a certificate pin.
-pub async fn probe_certificate(base_url: &str) -> Result<String> {
-    let (host, port) = crate::client::probe_target(base_url)?;
+pub async fn probe_certificate(target: &str) -> Result<String> {
+    let parsed = crate::target::parse_connection_target(target, "probe_certificate")?;
+    let host = parsed.host;
+    let port = parsed.port;
     tokio::task::spawn_blocking(move || probe_certificate_blocking(&host, port))
         .await
         .map_err(|err| Error::transport("probe_certificate", err.to_string()))?
