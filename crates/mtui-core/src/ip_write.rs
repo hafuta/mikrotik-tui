@@ -1066,6 +1066,253 @@ pub static SERVICE_PORT_FORM: FormSchema = FormSchema {
     create_sections: &[],
 };
 
+pub static CLOUD_FORM: FormSchema = FormSchema {
+    title_key: "ddns-enabled",
+    subtitle_keys: &["dns-name"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                f!("ddns-enabled", "DDNS", FieldKind::Toggle),
+                f!("update-time", "Update time", FieldKind::Toggle),
+                f!("public-address", "Public address", FieldKind::Text),
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("dns-name", "DNS name", FieldKind::Readonly),
+                f!("status", "Status", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[],
+};
+
+pub static KID_CONTROL_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["rate-limit"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("mon-fri", "Mon-Fri", FieldKind::Text),
+            f!("sat", "Saturday", FieldKind::Text),
+            f!("sun", "Sunday", FieldKind::Text),
+            f!("rate-limit", "Rate limit", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
+pub static KID_CONTROL_DEVICE_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["mac-address"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            MAC,
+            f!("user", "User", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, MAC],
+    }],
+};
+
+pub static SOCKS_FORM: FormSchema = FormSchema {
+    title_key: "port",
+    subtitle_keys: &["enabled"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("enabled", "Enabled", FieldKind::Toggle),
+            f!("port", "Port", FieldKind::Number),
+            f!("connection-idle-timeout", "Idle timeout", FieldKind::Text),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static SMB_FORM: FormSchema = FormSchema {
+    title_key: "domain",
+    subtitle_keys: &["enabled"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("enabled", "Enabled", FieldKind::Toggle),
+            f!("domain", "Domain", FieldKind::Text),
+            f!("comment", "Comment", FieldKind::Text),
+            f!("allow-guests", "Allow guests", FieldKind::Toggle),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static UPNP_FORM: FormSchema = FormSchema {
+    title_key: "enabled",
+    subtitle_keys: &["allow-disable-external-interface"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("enabled", "Enabled", FieldKind::Toggle),
+            f!(
+                "allow-disable-external-interface",
+                "Allow disable WAN",
+                FieldKind::Toggle
+            ),
+            f!("show-dummy-rule", "Dummy rule", FieldKind::Toggle),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static UPNP_INTERFACE_FORM: FormSchema = FormSchema {
+    title_key: "interface",
+    subtitle_keys: &["type"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            INTERFACE,
+            f!("type", "Type", FieldKind::Text),
+            f!("forced-external-ip", "Forced external IP", FieldKind::Text),
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[INTERFACE],
+    }],
+};
+
+pub static DHCP_ALERT_FORM: FormSchema = FormSchema {
+    title_key: "interface",
+    subtitle_keys: &["valid-server"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            INTERFACE,
+            f!("valid-server", "Valid server", FieldKind::Text),
+            f!("alert-timeout", "Alert timeout", FieldKind::Text),
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[INTERFACE],
+    }],
+};
+
+pub static CONNECTION_TRACKING_FORM: FormSchema = FormSchema {
+    title_key: "enabled",
+    subtitle_keys: &["tcp-established-timeout"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                f!("enabled", "Enabled", FieldKind::Text),
+                f!(
+                    "tcp-established-timeout",
+                    "TCP established",
+                    FieldKind::Text
+                ),
+                f!("udp-timeout", "UDP timeout", FieldKind::Text),
+                f!("icmp-timeout", "ICMP timeout", FieldKind::Text),
+                f!("generic-timeout", "Generic timeout", FieldKind::Text),
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("total-entries", "Entries", FieldKind::Readonly),
+                f!("max-entries", "Max entries", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[],
+};
+
+pub static NEIGHBOR_DISCOVERY_FORM: FormSchema = FormSchema {
+    title_key: "discover-interface-list",
+    subtitle_keys: &["protocol"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!(
+                "discover-interface-list",
+                "Discover list",
+                LOOKUP_INTERFACE_LISTS
+            ),
+            f!("protocol", "Protocol", FieldKind::Text),
+            f!("lldp-med-net-policy-vlan", "LLDP-MED VLAN", FieldKind::Text),
+            f!("mode", "Mode", FieldKind::Text),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static IP_SSH_FORM: FormSchema = FormSchema {
+    title_key: "strong-crypto",
+    subtitle_keys: &["host-key-size"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("strong-crypto", "Strong crypto", FieldKind::Toggle),
+            f!("host-key-size", "Host key size", FieldKind::Number),
+            f!(
+                "always-allow-password-login",
+                "Password login",
+                FieldKind::Toggle
+            ),
+            f!("forwarding-enabled", "Forwarding", FieldKind::Text),
+        ],
+    }],
+    create_sections: &[],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

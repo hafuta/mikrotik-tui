@@ -278,6 +278,48 @@ pub static IPSEC_SETTINGS_FORM: FormSchema = FormSchema {
     create_sections: &[],
 };
 
+pub static IPSEC_MODE_CONFIG_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["address-pool"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("address-pool", "Address pool", FieldKind::Text),
+            f!("address-prefix-length", "Prefix length", FieldKind::Number),
+            f!("split-include", "Split include", FieldKind::Text),
+            f!("system-dns", "System DNS", FieldKind::Toggle),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
+pub static IPSEC_KEY_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["key-size"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("key-size", "Key size", FieldKind::Number), COMMENT],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

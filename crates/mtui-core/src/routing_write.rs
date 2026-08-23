@@ -232,6 +232,120 @@ pub static BGP_TEMPLATE_FORM: FormSchema = FormSchema {
     }],
 };
 
+pub static RIP_INSTANCE_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["vrf"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("vrf", "VRF", FieldKind::Text),
+            f!("originate-default", "Originate default", FieldKind::Toggle),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME],
+    }],
+};
+
+pub static RIP_INTERFACE_TEMPLATE_FORM: FormSchema = FormSchema {
+    title_key: "interfaces",
+    subtitle_keys: &["instance"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("instance", "Instance", FieldKind::Text),
+            f!("interfaces", "Interfaces", LOOKUP_IFACES),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("instance", "Instance", FieldKind::Text)],
+    }],
+};
+
+pub static BFD_CONFIGURATION_FORM: FormSchema = FormSchema {
+    title_key: "interfaces",
+    subtitle_keys: &["addresses"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("interfaces", "Interfaces", LOOKUP_IFACES),
+            f!("addresses", "Addresses", FieldKind::Text),
+            f!("min-tx-interval", "Min TX", FieldKind::Text),
+            f!("min-rx-interval", "Min RX", FieldKind::Text),
+            f!("multiplier", "Multiplier", FieldKind::Number),
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("interfaces", "Interfaces", LOOKUP_IFACES)],
+    }],
+};
+
+pub static ROUTING_FILTER_FORM: FormSchema = FormSchema {
+    title_key: "chain",
+    subtitle_keys: &["rule"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("chain", "Chain", FieldKind::Text),
+            f!("rule", "Rule", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("chain", "Chain", FieldKind::Text)],
+    }],
+};
+
+pub static ROUTING_ID_FORM: FormSchema = FormSchema {
+    title_key: "id",
+    subtitle_keys: &["name"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("id", "ID", FieldKind::Text),
+            f!("select", "Select", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("id", "ID", FieldKind::Text)],
+    }],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

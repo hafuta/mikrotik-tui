@@ -18,6 +18,12 @@ const SAMPLE_CAP: usize = 80;
 pub enum ProbeKind {
     Ping,
     Traceroute,
+    BandwidthTest,
+    FloodPing,
+    MacScan,
+    IpScan,
+    Profiler,
+    WifiScan,
 }
 
 impl ProbeKind {
@@ -26,6 +32,12 @@ impl ProbeKind {
         match self {
             Self::Ping => "Ping",
             Self::Traceroute => "Traceroute",
+            Self::BandwidthTest => "Bandwidth test",
+            Self::FloodPing => "Flood ping",
+            Self::MacScan => "MAC scan",
+            Self::IpScan => "IP scan",
+            Self::Profiler => "Profiler",
+            Self::WifiScan => "WiFi scan",
         }
     }
 
@@ -34,18 +46,63 @@ impl ProbeKind {
         match self {
             Self::Ping => "ping",
             Self::Traceroute => "traceroute",
+            Self::BandwidthTest => "bandwidth-test",
+            Self::FloodPing => "flood-ping",
+            Self::MacScan => "mac-scan",
+            Self::IpScan => "ip-scan",
+            Self::Profiler => "profile",
+            Self::WifiScan => "scan",
+        }
+    }
+
+    #[must_use]
+    pub fn endpoint(self) -> &'static str {
+        match self {
+            Self::WifiScan => "/rest/interface/wifi",
+            _ => "/rest/tool",
+        }
+    }
+
+    #[must_use]
+    pub fn requires_address(self) -> bool {
+        matches!(
+            self,
+            Self::Ping | Self::Traceroute | Self::BandwidthTest | Self::FloodPing | Self::IpScan
+        )
+    }
+
+    #[must_use]
+    pub fn requires_interface(self) -> bool {
+        matches!(self, Self::MacScan | Self::WifiScan)
+    }
+
+    #[must_use]
+    pub fn default_count(self) -> &'static str {
+        match self {
+            Self::Ping => "4",
+            Self::Traceroute => "8",
+            Self::BandwidthTest => "10",
+            Self::FloodPing => "100",
+            Self::Profiler => "5",
+            Self::MacScan | Self::IpScan | Self::WifiScan => "",
         }
     }
 
     fn fields(self) -> &'static [ProbeField] {
         match self {
-            Self::Ping => &[ProbeField::Address, ProbeField::Count, ProbeField::Src],
+            Self::Ping | Self::FloodPing => {
+                &[ProbeField::Address, ProbeField::Count, ProbeField::Src]
+            }
             Self::Traceroute => &[
                 ProbeField::Address,
                 ProbeField::Count,
                 ProbeField::Src,
                 ProbeField::Protocol,
             ],
+            Self::BandwidthTest => &[ProbeField::Address, ProbeField::Count, ProbeField::Protocol],
+            Self::MacScan | Self::WifiScan => &[ProbeField::Src],
+            Self::IpScan => &[ProbeField::Address, ProbeField::Src],
+            Self::Profiler => &[ProbeField::Count],
         }
     }
 
@@ -53,6 +110,18 @@ impl ProbeKind {
         match self {
             Self::Ping => &["seq", "host", "time", "ttl", "size", "status"],
             Self::Traceroute => &["hop", "address", "status", "time", "loss"],
+            Self::BandwidthTest => &[
+                "status",
+                "tx-current",
+                "rx-current",
+                "tx-10-second-average",
+                "rx-10-second-average",
+            ],
+            Self::FloodPing => &["sent", "received", "min-rtt", "avg-rtt", "max-rtt"],
+            Self::MacScan => &["address", "mac-address", "age"],
+            Self::IpScan => &["address", "mac-address", "time"],
+            Self::Profiler => &["name", "usage", "load"],
+            Self::WifiScan => &["ssid", "bssid", "channel", "signal", "security"],
         }
     }
 }
@@ -97,16 +166,18 @@ impl ProbeState {
         Self {
             kind,
             address: String::new(),
-            count: match kind {
-                ProbeKind::Ping => "4".into(),
-                ProbeKind::Traceroute => "8".into(),
-            },
+            count: kind.default_count().to_string(),
             src: String::new(),
             protocol: match kind {
-                ProbeKind::Ping => String::new(),
                 ProbeKind::Traceroute => "icmp".into(),
+                ProbeKind::BandwidthTest => "tcp".into(),
+                _ => String::new(),
             },
-            focus: ProbeField::Address,
+            focus: kind
+                .fields()
+                .first()
+                .copied()
+                .unwrap_or(ProbeField::Address),
             running: false,
             samples: VecDeque::new(),
             offset: 0,

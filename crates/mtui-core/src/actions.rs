@@ -39,6 +39,21 @@ pub enum ActionCommand {
     Sign,
     Import,
     ExportCertificate,
+    Flush,
+    Run,
+    Release,
+    Login,
+    Bypass,
+    Upgrade,
+    Install,
+    ResetConfiguration,
+    Export,
+    CheckForUpdates,
+    Start,
+    Stop,
+    WakeOnLan,
+    SendSms,
+    AtChat,
 }
 
 impl ActionCommand {
@@ -62,6 +77,21 @@ impl ActionCommand {
             Self::Sign => "sign",
             Self::Import => "import",
             Self::ExportCertificate => "export-certificate",
+            Self::Flush => "flush",
+            Self::Run => "run",
+            Self::Release => "release",
+            Self::Login => "login",
+            Self::Bypass => "bypass",
+            Self::Upgrade => "upgrade",
+            Self::Install => "install",
+            Self::ResetConfiguration => "reset-configuration",
+            Self::Export => "export",
+            Self::CheckForUpdates => "check-for-updates",
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::WakeOnLan => "wol",
+            Self::SendSms => "send",
+            Self::AtChat => "at-chat",
         }
     }
 }
@@ -505,6 +535,17 @@ pub const MEMBER_ACTIONS: &[ActionSpec] = &[
     ACTION_REMOVE,
 ];
 
+pub const ACTION_SCAN: ActionSpec = ActionSpec {
+    id: "scan",
+    label: "Scan",
+    key: Some('s'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Overlay { id: "wifi-scan" },
+    when: ActionWhen::HasSelection,
+};
+
 pub const RADIO_ACTIONS: &[ActionSpec] = &[
     ACTION_ADD,
     ACTION_EDIT,
@@ -512,9 +553,23 @@ pub const RADIO_ACTIONS: &[ActionSpec] = &[
     ACTION_COPY,
     ACTION_REMOVE,
     ACTION_RESET,
+    ACTION_SCAN,
 ];
 
-pub const LTE_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_TOGGLE, ACTION_RESET];
+pub const ACTION_AT_CHAT: ActionSpec = ActionSpec {
+    id: "at-chat",
+    label: "AT chat",
+    key: Some('t'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::AtChat,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const LTE_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_TOGGLE, ACTION_RESET, ACTION_AT_CHAT];
 
 pub const SINGLETON_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT];
 
@@ -550,6 +605,8 @@ pub const FILE_ACTIONS: &[ActionSpec] = &[
     ACTION_BACKUP_SAVE,
     ACTION_BACKUP_LOAD,
     ACTION_FILE_FETCH,
+    ACTION_EXPORT_CONFIG,
+    ACTION_IMPORT_CONFIG,
     ACTION_REMOVE_SELECTED,
 ];
 
@@ -562,8 +619,327 @@ pub const HARDWARE_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT];
 /// Enable/disable without add (packages, some system lists).
 pub const TOGGLE_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_TOGGLE];
 
-/// DHCP leases: edit, convert dynamic → static, and remove; no copy.
-pub const LEASE_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_MAKE_STATIC, ACTION_REMOVE_SELECTED];
+pub const ACTION_RELEASE: ActionSpec = ActionSpec {
+    id: "release",
+    label: "Release",
+    key: Some('r'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Release,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+/// DHCP leases: edit, convert dynamic → static, release, and remove; no copy.
+pub const LEASE_ACTIONS: &[ActionSpec] = &[
+    ACTION_EDIT,
+    ACTION_MAKE_STATIC,
+    ACTION_RELEASE,
+    ACTION_REMOVE_SELECTED,
+];
+
+pub const ACTION_RUN: ActionSpec = ActionSpec {
+    id: "run",
+    label: "Run",
+    key: Some('r'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Run,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const SCRIPT_ACTIONS: &[ActionSpec] = &[
+    ACTION_ADD,
+    ACTION_EDIT,
+    ACTION_COPY,
+    ACTION_REMOVE,
+    ACTION_RUN,
+];
+
+pub const SCHEDULER_ACTIONS: &[ActionSpec] = &[
+    ACTION_ADD,
+    ACTION_EDIT,
+    ACTION_TOGGLE,
+    ACTION_COPY,
+    ACTION_REMOVE,
+    ACTION_RUN,
+];
+
+pub const ACTION_FLUSH: ActionSpec = ActionSpec {
+    id: "flush",
+    label: "Flush",
+    key: Some('f'),
+    enter: false,
+    needs_selection: false,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Flush,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_FLUSH_SELECTED: ActionSpec = ActionSpec {
+    id: "flush",
+    label: "Flush",
+    key: Some('f'),
+    enter: false,
+    needs_selection: true,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Flush,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const DNS_CACHE_ACTIONS: &[ActionSpec] = &[ACTION_FLUSH, ACTION_REMOVE_SELECTED];
+
+pub const HOST_TABLE_ACTIONS: &[ActionSpec] = &[ACTION_FLUSH, ACTION_REMOVE_SELECTED];
+
+pub const IPSEC_SA_ACTIONS: &[ActionSpec] = &[ACTION_FLUSH_SELECTED, ACTION_REMOVE_SELECTED];
+
+pub const ACTION_LOGIN: ActionSpec = ActionSpec {
+    id: "login",
+    label: "Authenticate",
+    key: Some('u'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Login,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_BYPASS: ActionSpec = ActionSpec {
+    id: "bypass",
+    label: "Bypass",
+    key: Some('y'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Bypass,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const HOTSPOT_HOST_ACTIONS: &[ActionSpec] = &[
+    ACTION_EDIT,
+    ACTION_LOGIN,
+    ACTION_BYPASS,
+    ACTION_REMOVE_SELECTED,
+];
+
+pub const ACTION_UPGRADE: ActionSpec = ActionSpec {
+    id: "upgrade",
+    label: "Upgrade firmware",
+    key: Some('u'),
+    enter: false,
+    needs_selection: false,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Upgrade,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ROUTERBOARD_ACTIONS: &[ActionSpec] = &[ACTION_UPGRADE];
+
+pub const ACTION_INSTALL: ActionSpec = ActionSpec {
+    id: "install",
+    label: "Install from file",
+    key: Some('i'),
+    enter: false,
+    needs_selection: false,
+    danger: true,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Install,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const PACKAGE_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_TOGGLE, ACTION_INSTALL];
+
+pub const ACTION_CHECK_UPDATES: ActionSpec = ActionSpec {
+    id: "check-for-updates",
+    label: "Check for updates",
+    key: Some('c'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::CheckForUpdates,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const PACKAGE_UPDATE_ACTIONS: &[ActionSpec] =
+    &[ACTION_EDIT, ACTION_CHECK_UPDATES, ACTION_INSTALL];
+
+pub const ACTION_RESET_CONFIG: ActionSpec = ActionSpec {
+    id: "reset-configuration",
+    label: "Reset configuration",
+    key: Some('r'),
+    enter: false,
+    needs_selection: false,
+    danger: true,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::ResetConfiguration,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const RESET_CONFIG_ACTIONS: &[ActionSpec] = &[ACTION_RESET_CONFIG];
+
+pub const ACTION_EXPORT_CONFIG: ActionSpec = ActionSpec {
+    id: "export-config",
+    label: "Export config",
+    key: Some('e'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Export,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_IMPORT_CONFIG: ActionSpec = ActionSpec {
+    id: "import-config",
+    label: "Import config",
+    key: Some('i'),
+    enter: false,
+    needs_selection: false,
+    danger: true,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Import,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_START: ActionSpec = ActionSpec {
+    id: "start",
+    label: "Start",
+    key: Some('s'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Start,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_STOP: ActionSpec = ActionSpec {
+    id: "stop",
+    label: "Stop",
+    key: Some('p'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Stop,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const SNIFFER_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_START, ACTION_STOP];
+
+pub const ACTION_BANDWIDTH: ActionSpec = ActionSpec {
+    id: "bandwidth-test",
+    label: "Bandwidth test",
+    key: Some('p'),
+    enter: true,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Overlay {
+        id: "bandwidth-test",
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_FLOOD_PING: ActionSpec = ActionSpec {
+    id: "flood-ping",
+    label: "Flood ping",
+    key: Some('p'),
+    enter: true,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Overlay { id: "flood-ping" },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_MAC_SCAN: ActionSpec = ActionSpec {
+    id: "mac-scan",
+    label: "MAC scan",
+    key: Some('p'),
+    enter: true,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Overlay { id: "mac-scan" },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_IP_SCAN: ActionSpec = ActionSpec {
+    id: "ip-scan",
+    label: "IP scan",
+    key: Some('p'),
+    enter: true,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Overlay { id: "ip-scan" },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_PROFILER: ActionSpec = ActionSpec {
+    id: "profiler",
+    label: "Profiler",
+    key: Some('p'),
+    enter: true,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Overlay { id: "profiler" },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_WOL: ActionSpec = ActionSpec {
+    id: "wol",
+    label: "Wake on LAN",
+    key: Some('p'),
+    enter: true,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::WakeOnLan,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_SMS: ActionSpec = ActionSpec {
+    id: "sms",
+    label: "Send SMS",
+    key: Some('p'),
+    enter: true,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::SendSms,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const BANDWIDTH_ACTIONS: &[ActionSpec] = &[ACTION_BANDWIDTH];
+pub const FLOOD_PING_ACTIONS: &[ActionSpec] = &[ACTION_FLOOD_PING];
+pub const MAC_SCAN_ACTIONS: &[ActionSpec] = &[ACTION_MAC_SCAN];
+pub const IP_SCAN_ACTIONS: &[ActionSpec] = &[ACTION_IP_SCAN];
+pub const PROFILER_ACTIONS: &[ActionSpec] = &[ACTION_PROFILER];
+pub const WOL_ACTIONS: &[ActionSpec] = &[ACTION_WOL];
+pub const SMS_ACTIONS: &[ActionSpec] = &[ACTION_SMS];
 
 /// Static ARP: add/edit/remove including dynamic rows.
 pub const ARP_ACTIONS: &[ActionSpec] = &[ACTION_ADD, ACTION_EDIT, ACTION_REMOVE_SELECTED];
@@ -584,6 +960,9 @@ pub const INTERFACE_CREATE_TARGETS: &[(&str, &str)] = &[
     ("interface-list-members", "List members"),
     ("vrf", "VRF"),
     ("wifi", "WiFi"),
+    ("6to4", "6to4 Tunnel"),
+    ("sit", "SIT Tunnel"),
+    ("gre6", "GRE6 Tunnel"),
 ];
 
 #[cfg(test)]
@@ -641,6 +1020,12 @@ mod tests {
         let ids: Vec<_> = LEASE_ACTIONS.iter().map(|action| action.id).collect();
         assert!(ids.contains(&"make-static"));
         assert_eq!(ActionCommand::MakeStatic.rest_name(), "make-static");
+        assert!(LEASE_ACTIONS.iter().any(|action| action.id == "release"));
+        assert_eq!(ActionCommand::Release.rest_name(), "release");
+        assert!(SCRIPT_ACTIONS.iter().any(|action| action.id == "run"));
+        assert!(RADIO_ACTIONS.iter().any(|action| action.id == "scan"));
+        assert_eq!(ActionCommand::Flush.rest_name(), "flush");
+        assert_eq!(ActionCommand::Upgrade.rest_name(), "upgrade");
     }
 
     #[test]
@@ -727,11 +1112,21 @@ mod tests {
             .iter()
             .filter_map(|action| action.key)
             .collect();
-        assert_eq!(keys, ['b', 'f', 'x']);
+        assert_eq!(keys, ['b', 'f', 'e', 'i', 'x']);
         let ids: Vec<_> = FILE_ACTIONS.iter().map(|action| action.id).collect();
-        assert_eq!(ids, ["backup-save", "backup-load", "fetch", "remove"]);
+        assert_eq!(
+            ids,
+            [
+                "backup-save",
+                "backup-load",
+                "fetch",
+                "export-config",
+                "import-config",
+                "remove"
+            ]
+        );
         assert!(!FILE_ACTIONS[2].needs_selection);
-        assert!(FILE_ACTIONS[3].needs_selection);
+        assert!(FILE_ACTIONS[5].needs_selection);
     }
 
     #[test]

@@ -7,6 +7,7 @@ mod about;
 mod actions;
 mod bridge_write;
 mod forms;
+mod hotspot_write;
 mod interface_write;
 mod ip_write;
 mod ipsec_write;
@@ -36,8 +37,10 @@ pub use resources::{
     ResourceSpec, navigation_tree, resource_by_id,
 };
 pub use system_write::{
-    CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT, CERT_SIGN_PROMPT, CERTIFICATE_FORM,
+    AT_CHAT_PROMPT, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT, CERT_SIGN_PROMPT, CERTIFICATE_FORM,
+    EXPORT_CONFIG_PROMPT, IMPORT_CONFIG_PROMPT, INSTALL_PACKAGE_PROMPT, RESET_CONFIG_PROMPT,
 };
 pub use theme::{
     ColorRgb, DefaultTheme, Palette, Theme, ThemeError, ThemeId, ThemeRegistry, ThemeSet,
 };
+pub use tools_write::{SMS_PROMPT, WOL_PROMPT};

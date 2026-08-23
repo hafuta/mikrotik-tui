@@ -32,6 +32,11 @@ const LOOKUP_USER_GROUP: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_USER: FieldKind = FieldKind::Lookup {
+    resource_id: "users",
+    value_key: "name",
+    multiple: false,
+};
 const LOOKUP_SCRIPT: FieldKind = FieldKind::Lookup {
     resource_id: "scripts",
     value_key: "name",
@@ -483,6 +488,151 @@ pub static PACKAGE_FORM: FormSchema = FormSchema {
         },
     ],
     create_sections: &[],
+};
+
+pub static PACKAGE_UPDATE_FORM: FormSchema = FormSchema {
+    title_key: "channel",
+    subtitle_keys: &["installed-version"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[f!("channel", "Channel", FieldKind::Text)],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("installed-version", "Installed", FieldKind::Readonly),
+                f!("latest-version", "Latest", FieldKind::Readonly),
+                f!("status", "Status", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[],
+};
+
+pub static SSH_KEY_FORM: FormSchema = FormSchema {
+    title_key: "user",
+    subtitle_keys: &["key-owner"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("user", "User", LOOKUP_USER),
+            f!("key-owner", "Key owner", FieldKind::Text),
+            COMMENT,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("user", "User", LOOKUP_USER)],
+    }],
+};
+
+pub static RESET_CONFIG_PROMPT: FormSchema = FormSchema {
+    title_key: "keep-users",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("keep-users", "Keep users", FieldKind::Toggle),
+            f!("no-defaults", "No defaults", FieldKind::Toggle),
+            f!("skip-backup", "Skip backup", FieldKind::Toggle),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("keep-users", "Keep users", FieldKind::Toggle),
+            f!("no-defaults", "No defaults", FieldKind::Toggle),
+        ],
+    }],
+};
+
+pub static INSTALL_PACKAGE_PROMPT: FormSchema = FormSchema {
+    title_key: "file-name",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("file-name", "File name", FieldKind::Text)],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("file-name", "File name", FieldKind::Text)],
+    }],
+};
+
+pub static EXPORT_CONFIG_PROMPT: FormSchema = FormSchema {
+    title_key: "file",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("file", "File", FieldKind::Text),
+            f!("hide-sensitive", "Hide sensitive", FieldKind::Toggle),
+            f!("terse", "Terse", FieldKind::Toggle),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("file", "File", FieldKind::Text)],
+    }],
+};
+
+pub static IMPORT_CONFIG_PROMPT: FormSchema = FormSchema {
+    title_key: "file-name",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("file-name", "File name", FieldKind::Text),
+            f!("from-line", "From line", FieldKind::Text),
+            f!("verbose", "Verbose", FieldKind::Toggle),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("file-name", "File name", FieldKind::Text)],
+    }],
+};
+
+pub static AT_CHAT_PROMPT: FormSchema = FormSchema {
+    title_key: "input",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("input", "AT command", FieldKind::Text)],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("input", "AT command", FieldKind::Text)],
+    }],
 };
 
 #[cfg(test)]

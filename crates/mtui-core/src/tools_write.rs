@@ -24,6 +24,11 @@ const LOOKUP_SCRIPT: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
+    multiple: false,
+};
 
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
@@ -88,6 +93,71 @@ pub static EMAIL_FORM: FormSchema = FormSchema {
         ],
     }],
     create_sections: &[],
+};
+
+pub static SNIFFER_FORM: FormSchema = FormSchema {
+    title_key: "interface",
+    subtitle_keys: &["file-name"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("interface", "Interface", LOOKUP_IFACE),
+            f!("file-name", "File name", FieldKind::Text),
+            f!("file-limit", "File limit", FieldKind::Text),
+            f!("filter-stream", "Filter stream", FieldKind::Toggle),
+            f!("filter-interface", "Filter interface", LOOKUP_IFACE),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static WOL_PROMPT: FormSchema = FormSchema {
+    title_key: "mac",
+    subtitle_keys: &["interface"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("interface", "Interface", LOOKUP_IFACE),
+            f!("mac", "MAC", FieldKind::Text),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("interface", "Interface", LOOKUP_IFACE),
+            f!("mac", "MAC", FieldKind::Text),
+        ],
+    }],
+};
+
+pub static SMS_PROMPT: FormSchema = FormSchema {
+    title_key: "phone-number",
+    subtitle_keys: &["message"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("phone-number", "Phone", FieldKind::Text),
+            f!("message", "Message", FieldKind::Text),
+            f!("channel", "Channel", FieldKind::Number),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("phone-number", "Phone", FieldKind::Text),
+            f!("message", "Message", FieldKind::Text),
+        ],
+    }],
 };
 
 #[cfg(test)]

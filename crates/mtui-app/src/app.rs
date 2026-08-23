@@ -1,6 +1,6 @@
 //! Top-level application model.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -137,6 +137,13 @@ pub enum AppCommand {
         count: String,
         src: String,
         protocol: String,
+    },
+    FetchProbe {
+        request_id: u64,
+        generation: u64,
+        endpoint: String,
+        command: String,
+        fields: BTreeMap<String, String>,
     },
     CopyToClipboard {
         text: String,

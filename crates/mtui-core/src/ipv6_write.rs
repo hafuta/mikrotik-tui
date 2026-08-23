@@ -479,6 +479,127 @@ pub static IPV6_ADDRESS_LIST_FORM: FormSchema = FormSchema {
     }],
 };
 
+pub static IPV6_DHCP_RELAY_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["interface"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            INTERFACE,
+            f!("dhcp-server", "DHCP server", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, INTERFACE],
+    }],
+};
+
+pub static IPV6_DHCP_BINDING_FORM: FormSchema = FormSchema {
+    title_key: "address",
+    subtitle_keys: &["duid"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            ADDRESS,
+            f!("duid", "DUID", FieldKind::Text),
+            f!("server", "Server", FieldKind::Text),
+            COMMENT,
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[ADDRESS],
+    }],
+};
+
+pub static IPV6_FIREWALL_MANGLE_FORM: FormSchema = FormSchema {
+    title_key: "chain",
+    subtitle_keys: &["action"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                CHAIN,
+                ACTION,
+                f!("src-address", "Src address", FieldKind::Text),
+                f!("dst-address", "Dst address", FieldKind::Text),
+                f!("protocol", "Protocol", FieldKind::Text),
+                IN_INTERFACE,
+                OUT_INTERFACE,
+                COMMENT,
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("packets", "Packets", FieldKind::Readonly),
+                f!("bytes", "Bytes", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[CHAIN, ACTION],
+    }],
+};
+
+pub static IPV6_FIREWALL_RAW_FORM: FormSchema = FormSchema {
+    title_key: "chain",
+    subtitle_keys: &["action"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                CHAIN,
+                ACTION,
+                f!("src-address", "Src address", FieldKind::Text),
+                f!("dst-address", "Dst address", FieldKind::Text),
+                IN_INTERFACE,
+                OUT_INTERFACE,
+                COMMENT,
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("packets", "Packets", FieldKind::Readonly),
+                f!("bytes", "Bytes", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[CHAIN, ACTION],
+    }],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
