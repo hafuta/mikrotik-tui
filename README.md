@@ -55,8 +55,9 @@ Work is tracked as GitHub milestones. Open issues and acceptance notes live
 on each milestone; the full list is
 [hafuta/mikrotik-tui milestones](https://github.com/hafuta/mikrotik-tui/milestones).
 
-Shipped: [session, profiles, and login](https://github.com/hafuta/mikrotik-tui/milestone/2)
-and [classic TCP API](https://github.com/hafuta/mikrotik-tui/milestone/3) (`api-ssl`).
+Shipped: [session, profiles, and login](https://github.com/hafuta/mikrotik-tui/milestone/2),
+[classic TCP API](https://github.com/hafuta/mikrotik-tui/milestone/3) (`api-ssl`),
+and [Everyday operator UX](https://github.com/hafuta/mikrotik-tui/milestone/7).
 
 Still open, in this order:
 
@@ -64,9 +65,7 @@ Still open, in this order:
    remaining WebFig menus and row actions for a stock RouterOS 7 router
 2. [Safe operations and session health](https://github.com/hafuta/mikrotik-tui/milestone/6) -
    reconnect and stale-data cues, permission-aware inspect-only, keyring, undo-lite
-3. [Everyday operator UX](https://github.com/hafuta/mikrotik-tui/milestone/7) -
-   per-screen action hints, save preview, copy/export, bulk select, demo profile
-4. [Distribution and adoption](https://github.com/hafuta/mikrotik-tui/milestone/8) -
+3. [Distribution and adoption](https://github.com/hafuta/mikrotik-tui/milestone/8) -
    signed releases, install channels, and a documented RouterOS version matrix
 
 ## Crates
