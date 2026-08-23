@@ -4,6 +4,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "predev": "node -e \"require('node:fs').copyFileSync('../scripts/install.sh','public/install.sh')\"",
+    "prebuild": "node -e \"require('node:fs').copyFileSync('../scripts/install.sh','public/install.sh')\"",
     "dev": "astro dev --host",
     "build": "astro build",
     "preview": "astro preview --host"

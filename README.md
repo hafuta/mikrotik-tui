@@ -104,7 +104,19 @@ brew tap hafuta/mikrotik-tui
 brew install mikrotik-tui
 ```
 
-Linux and Windows: download a GitHub Release archive, or build from this repo.
+Linux (amd64 and arm64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install.sh | sh
+```
+
+The Linux script verifies `checksums.txt`, writes `mikrotik-tui` to
+`~/.local/bin` (or `/usr/local/bin` as root), and prompts before replacing an
+existing binary. `--yes` skips the prompt; `--force` replaces even when the
+version matches. `--prefix DIR` chooses the install directory.
+
+Windows: unpack a binary from
+[Releases](https://github.com/hafuta/mikrotik-tui/releases).
 
 ## Tooling
 
