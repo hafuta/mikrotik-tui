@@ -6,7 +6,10 @@ use mtui_core::Palette;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
-use crate::charts::{BrailleSparkline, TrafficChart, TrafficSample, format_bytes, format_rate};
+use crate::charts::{
+    BrailleSparkline, TrafficChart, TrafficSample, format_bytes, format_rate, percent_bar,
+    percent_meter,
+};
 use crate::firewall::{FirewallHitChart, FirewallRuleMetric, MAX_FIREWALL_RULES};
 use crate::layout::{constrain_lines, fit_cell, fit_line, join_horizontal};
 use crate::styles::Styles;
@@ -309,35 +312,27 @@ fn cpu_dashboard_view(
         return constrain_lines(lines, width, height);
     }
     let mut lines = Vec::with_capacity(height);
-    for index in 0..height {
-        let Some(core) = view.cpu_cores.get(index) else {
-            lines.push(Line::default());
-            continue;
-        };
+    for core in view.cpu_cores {
         let (style, state) = cpu_state(core.load, styles);
         let label_width = (width / 5).clamp(4, 8);
         let value_width = 10;
         let spark_width = width.saturating_sub(label_width + value_width + 2).max(4);
-        let spark = BrailleSparkline {
-            samples: core.samples,
-            width: spark_width,
-            height: 1,
-            min: 0.0,
-            max: 100.0,
-            style,
-        }
-        .lines();
+        let bar = percent_meter(core.load, spark_width, style, styles.quiet);
         let value = format!("{load:3.0}% {state:<4}", load = core.load, state = state);
         let mut spans = vec![
             Span::styled(fit_cell(core.name, label_width), styles.text),
             Span::raw(" "),
         ];
-        if let Some(line) = spark.into_iter().next() {
-            spans.extend(line.spans);
-        }
+        spans.extend(bar.spans);
         spans.push(Span::raw(" "));
         spans.push(Span::styled(value, style));
         lines.push(Line::from(spans));
+        if lines.len() >= height {
+            break;
+        }
+    }
+    while lines.len() < height {
+        lines.push(Line::default());
     }
     constrain_lines(lines, width, height)
 }
@@ -405,19 +400,13 @@ fn memory_dashboard_view(
     if height <= 1 {
         return vec![summary];
     }
-    let spark_height = height.saturating_sub(1).max(1);
     let mut lines = vec![summary];
-    lines.extend(
-        BrailleSparkline {
-            samples: view.memory_samples,
-            width,
-            height: spark_height,
-            min: 0.0,
-            max: 100.0,
-            style: base,
-        }
-        .lines(),
-    );
+    if height > 1 {
+        lines.push(percent_bar(percent, width, base, styles.quiet));
+    }
+    while lines.len() < height {
+        lines.push(Line::default());
+    }
     constrain_lines(lines, width, height)
 }
 
@@ -573,6 +562,7 @@ mod tests {
     #[test]
     fn prefers_wan_height_and_caps_firewall() {
         let geometry = DashboardGeometry::new(100, 24, 4);
+        assert_eq!(geometry.cpu_height, 4, "{geometry:?}");
         assert!(
             geometry.wan_height > geometry.cpu_height,
             "WAN chart should receive leftover height: {geometry:?}"
@@ -580,6 +570,65 @@ mod tests {
         assert!(geometry.firewall_height <= 11, "{geometry:?}");
         assert!(!geometry.stacked);
         assert!(!geometry.compact);
+    }
+
+    #[test]
+    fn cpu_core_bars_sit_on_adjacent_rows() {
+        let (styles, palette) = styles();
+        let cores = [
+            CpuCoreView {
+                name: "cpu0",
+                load: 80.0,
+                samples: &[80.0],
+            },
+            CpuCoreView {
+                name: "cpu1",
+                load: 80.0,
+                samples: &[80.0],
+            },
+            CpuCoreView {
+                name: "cpu2",
+                load: 80.0,
+                samples: &[80.0],
+            },
+            CpuCoreView {
+                name: "cpu3",
+                load: 80.0,
+                samples: &[80.0],
+            },
+        ];
+        let lines = dashboard_content(
+            100,
+            24,
+            &DashboardView {
+                cpu_cores: &cores,
+                memory_used_bytes: 600,
+                memory_total_bytes: 1000,
+                memory_samples: &[60.0],
+                wan_interface: "ether1",
+                traffic_has_base: false,
+                rx_rate: 0.0,
+                tx_rate: 0.0,
+                traffic_samples: &[],
+                firewall_rules: &[],
+                firewall_offset: 0,
+            },
+            &styles,
+            &palette,
+        );
+        let cpu = lines
+            .iter()
+            .map(crate::layout::line_plain)
+            .map(|line| line.chars().take(12).collect::<String>())
+            .collect::<Vec<_>>();
+        let start = cpu
+            .iter()
+            .position(|line| line.contains("cpu0"))
+            .expect("cpu0");
+        assert!(cpu[start].contains("cpu0"));
+        assert!(cpu[start + 1].contains("cpu1"), "{cpu:?}");
+        assert!(cpu[start + 2].contains("cpu2"), "{cpu:?}");
+        assert!(cpu[start + 3].contains("cpu3"), "{cpu:?}");
     }
 
     #[test]

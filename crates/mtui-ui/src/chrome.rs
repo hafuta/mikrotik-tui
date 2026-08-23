@@ -2,11 +2,15 @@
 
 use std::time::{Duration, Instant};
 
+use ratatui::Frame;
+use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use crate::layout::{clip_line, fit_line, line_width};
+use crate::paint::fill_rect;
 use crate::styles::Styles;
 
 /// Hide the activity pulse until a request has lasted this long.
@@ -171,40 +175,351 @@ impl TabLabel {
     }
 }
 
-/// Numbered session tabs clipped to `width`.
-///
-/// Tabs render as `1:title  2:title`. The active tab is `[n]:title` and bold
-/// so it is not color-only. Disconnected tabs use muted foreground.
+const TAB_TITLE_MAX: usize = 18;
+const TAB_MIN_WIDTH: usize = 12;
+const TAB_GAP: usize = 1;
+const TAB_SIDE_PAD: usize = 1;
+const PLUS_SLOT: usize = 2;
+const LIVE_MARK: &str = " ●";
+const TAB_CAP_TOP: char = '▄';
+const TAB_CAP_BOT: char = '▀';
+
+/// Rows reserved for the session tab strip. Shrinks on short terminals.
+pub const TAB_STRIP_HEIGHT: u16 = 3;
+
+/// Rows reserved for the session header and footer bands.
+pub const CHROME_BAND_HEIGHT: u16 = 3;
+
+/// Height of the session strip for this terminal.
 #[must_use]
-pub fn tab_bar(tabs: &[TabLabel], active: u64, width: usize, styles: &Styles) -> Line<'static> {
-    if width == 0 {
-        return Line::default();
+pub fn tab_strip_height(terminal_height: u16) -> u16 {
+    if terminal_height < 12 {
+        1
+    } else {
+        TAB_STRIP_HEIGHT
     }
-    if tabs.is_empty() {
-        return fit_line(Line::default(), width);
+}
+
+/// Height of the session header and footer for this terminal.
+#[must_use]
+pub fn chrome_band_height(terminal_height: u16) -> u16 {
+    if terminal_height < 16 {
+        1
+    } else {
+        CHROME_BAND_HEIGHT
     }
-    let mut spans = Vec::with_capacity(tabs.len().saturating_mul(2));
-    for (i, tab) in tabs.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::raw("  "));
+}
+
+/// Place `content` on the middle row of a band so it stays vertically centered.
+#[must_use]
+pub fn center_in_band(content: &Line<'static>, height: u16, width: usize) -> Vec<Line<'static>> {
+    let height = usize::from(height.max(1));
+    let mid = height.saturating_sub(1) / 2;
+    let mut lines = Vec::with_capacity(height);
+    for index in 0..height {
+        if index == mid {
+            lines.push(fit_line(content.clone(), width));
+        } else {
+            lines.push(fit_line(Line::default(), width));
         }
-        let n = i + 1;
-        let is_active = tab.id == active;
-        let label = if is_active {
-            format!("[{n}]:{}", tab.title)
-        } else {
-            format!("{n}:{}", tab.title)
-        };
-        let style = if is_active {
-            styles.focus
-        } else if tab.connected {
-            styles.text
-        } else {
-            styles.muted
-        };
-        spans.push(Span::styled(label, style));
     }
-    fit_line(Line::from(spans), width)
+    lines
+}
+
+struct TabSlot {
+    x: usize,
+    width: usize,
+    index: usize,
+    title: String,
+    connected: bool,
+    active: bool,
+}
+
+fn live_width(connected: bool) -> usize {
+    if connected {
+        UnicodeWidthStr::width(LIVE_MARK)
+    } else {
+        0
+    }
+}
+
+fn tab_content_width(index: usize, title: &str, connected: bool) -> usize {
+    index.to_string().width() + 1 + title.width() + live_width(connected)
+}
+
+fn tab_outer_width(index: usize, title: &str, connected: bool) -> usize {
+    tab_content_width(index, title, connected)
+        .saturating_add(TAB_SIDE_PAD.saturating_mul(2))
+        .max(TAB_MIN_WIDTH)
+}
+
+fn clip_title_to_outer(index: usize, title: &str, connected: bool, max_outer: usize) -> String {
+    let mut title = clip_line(title.trim(), TAB_TITLE_MAX);
+    while title.width() > 0 && tab_outer_width(index, &title, connected) > max_outer {
+        title = clip_line(&title, title.width().saturating_sub(1));
+    }
+    title
+}
+
+fn layout_step(count: usize) -> usize {
+    if count == 0 {
+        0
+    } else {
+        count.saturating_sub(1).saturating_mul(TAB_GAP)
+    }
+}
+
+fn layout_tabs(tabs: &[TabLabel], active: u64, width: usize) -> Vec<TabSlot> {
+    if width == 0 || tabs.is_empty() {
+        return Vec::new();
+    }
+    let budget = width.saturating_sub(PLUS_SLOT).max(3);
+    let mut titles: Vec<String> = tabs
+        .iter()
+        .enumerate()
+        .map(|(i, tab)| clip_title_to_outer(i + 1, &tab.title, tab.connected, budget))
+        .collect();
+    loop {
+        let total: usize = titles
+            .iter()
+            .enumerate()
+            .map(|(i, title)| tab_outer_width(i + 1, title, tabs[i].connected))
+            .sum::<usize>()
+            .saturating_add(layout_step(titles.len()));
+        if total <= budget || titles.iter().all(|title| title.width() <= 1) {
+            break;
+        }
+        let longest = titles
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, title)| title.width())
+            .map(|(i, _)| i);
+        let Some(i) = longest else {
+            break;
+        };
+        titles[i] = clip_line(&titles[i], titles[i].width().saturating_sub(1));
+    }
+    let mut slots = Vec::with_capacity(tabs.len());
+    let mut x = 0;
+    for (i, tab) in tabs.iter().enumerate() {
+        let index = i + 1;
+        let mut title = titles[i].clone();
+        let mut outer = tab_outer_width(index, &title, tab.connected);
+        if x > 0 {
+            x += TAB_GAP;
+        }
+        if x + outer > budget {
+            if tab.id == active && x < budget {
+                title = clip_title_to_outer(index, &title, tab.connected, budget.saturating_sub(x));
+                outer = tab_outer_width(index, &title, tab.connected).min(budget.saturating_sub(x));
+            } else if tab.id != active {
+                x = x.saturating_sub(TAB_GAP);
+                continue;
+            } else {
+                break;
+            }
+        }
+        if outer < 3 {
+            continue;
+        }
+        slots.push(TabSlot {
+            x,
+            width: outer,
+            index,
+            title,
+            connected: tab.connected,
+            active: tab.id == active,
+        });
+        x += outer;
+    }
+    slots
+}
+
+fn slot_fill(slot: &TabSlot, styles: &Styles) -> ratatui::style::Color {
+    if slot.active {
+        styles.selection
+    } else {
+        styles.band
+    }
+}
+
+fn pad_bg(width: usize, bg: ratatui::style::Color) -> Vec<Span<'static>> {
+    if width == 0 {
+        return Vec::new();
+    }
+    vec![Span::styled(" ".repeat(width), Style::default().bg(bg))]
+}
+
+fn pad_void(width: usize, styles: &Styles) -> Vec<Span<'static>> {
+    pad_bg(width, styles.void)
+}
+
+fn slot_cap(slot: &TabSlot, styles: &Styles, cap: char) -> Vec<Span<'static>> {
+    vec![Span::styled(
+        cap.to_string().repeat(slot.width),
+        Style::default().fg(slot_fill(slot, styles)).bg(styles.void),
+    )]
+}
+
+fn slot_label(slot: &TabSlot, styles: &Styles) -> Vec<Span<'static>> {
+    let bg = slot_fill(slot, styles);
+    let title_style = if slot.active {
+        styles.focus
+    } else if slot.connected {
+        styles.text
+    } else {
+        styles.muted
+    };
+    let index_style = if slot.active {
+        styles.key
+    } else {
+        styles.quiet
+    };
+    let mut inner = vec![
+        Span::styled(slot.index.to_string(), index_style.bg(bg)),
+        Span::styled(" ", Style::default().bg(bg)),
+        Span::styled(slot.title.clone(), title_style.bg(bg)),
+    ];
+    if slot.connected {
+        inner.push(Span::styled(LIVE_MARK, styles.signal.bg(bg)));
+    }
+    let used = line_width(&Line::from(inner.clone()));
+    let extra = slot.width.saturating_sub(used);
+    let left = extra / 2;
+    let right = extra.saturating_sub(left);
+    let mut spans = pad_bg(left, bg);
+    spans.extend(inner);
+    spans.extend(pad_bg(right, bg));
+    spans
+}
+
+fn gap_spans(styles: &Styles) -> Vec<Span<'static>> {
+    pad_void(TAB_GAP, styles)
+}
+
+/// Session tiles: filled, vertically centered labels, side padding, one-cell gaps.
+#[must_use]
+pub fn tab_bar(
+    tabs: &[TabLabel],
+    active: u64,
+    width: usize,
+    styles: &Styles,
+) -> Vec<Line<'static>> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let slots = layout_tabs(tabs, active, width);
+    let caps = |slots: &[TabSlot], cap: char| {
+        let mut spans = Vec::new();
+        for (i, slot) in slots.iter().enumerate() {
+            if i > 0 {
+                spans.extend(gap_spans(styles));
+            }
+            spans.extend(slot_cap(slot, styles, cap));
+        }
+        spans
+    };
+    let mut top = caps(&slots, TAB_CAP_TOP);
+    let mut bot = caps(&slots, TAB_CAP_BOT);
+    let mut mid = Vec::new();
+    for (i, slot) in slots.iter().enumerate() {
+        if i > 0 {
+            mid.extend(gap_spans(styles));
+        }
+        mid.extend(slot_label(slot, styles));
+    }
+    let used = slots.last().map_or(0, |slot| slot.x + slot.width);
+    let rest = width.saturating_sub(used);
+    if rest > 0 {
+        top.extend(pad_void(rest, styles));
+        bot.extend(pad_void(rest, styles));
+        let mut rest_mid = pad_void(rest, styles);
+        if rest >= PLUS_SLOT {
+            rest_mid = vec![
+                Span::styled(" ", Style::default().bg(styles.void)),
+                Span::styled("+", styles.key.bg(styles.void)),
+            ];
+            if rest > PLUS_SLOT {
+                rest_mid.push(Span::styled(
+                    " ".repeat(rest.saturating_sub(PLUS_SLOT)),
+                    Style::default().bg(styles.void),
+                ));
+            }
+        }
+        mid.extend(rest_mid);
+    }
+    vec![
+        fit_line(Line::from(top), width),
+        fit_line(Line::from(mid), width),
+        fit_line(Line::from(bot), width),
+    ]
+}
+
+/// Paint session tiles into `area`. Each fill is isolated to that tab's rect.
+pub fn render_tab_bar(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    tabs: &[TabLabel],
+    active: u64,
+    styles: &Styles,
+) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    fill_rect(frame, area, styles.void);
+    let width = usize::from(area.width);
+    let slots = layout_tabs(tabs, active, width);
+    let fill_y = if area.height >= 3 {
+        area.y.saturating_add(area.height.saturating_sub(1) / 2)
+    } else {
+        area.y
+    };
+    let fill_h = if area.height >= 3 { 1 } else { area.height };
+    for slot in &slots {
+        let Ok(x) = u16::try_from(slot.x) else {
+            continue;
+        };
+        let Ok(tab_w) = u16::try_from(slot.width) else {
+            continue;
+        };
+        if x >= area.width {
+            continue;
+        }
+        let width = tab_w.min(area.width.saturating_sub(x));
+        fill_rect(
+            frame,
+            Rect {
+                x: area.x.saturating_add(x),
+                y: fill_y,
+                width,
+                height: fill_h,
+            },
+            slot_fill(slot, styles),
+        );
+    }
+    let lines = tab_bar(tabs, active, width, styles);
+    let shown = match area.height {
+        1 => lines.get(1).into_iter().collect::<Vec<_>>(),
+        2 => lines.iter().take(2).collect(),
+        _ => lines.iter().take(3).collect(),
+    };
+    for (i, line) in shown.into_iter().enumerate() {
+        let Ok(row) = u16::try_from(i) else {
+            break;
+        };
+        if row >= area.height {
+            break;
+        }
+        frame.render_widget(
+            Paragraph::new(line.clone()),
+            Rect {
+                x: area.x,
+                y: area.y.saturating_add(row),
+                width: area.width,
+                height: 1,
+            },
+        );
+    }
 }
 
 /// Hints on the left, optional status clipped to the right.
@@ -373,62 +688,140 @@ mod tests {
         assert_eq!(line_width(&line), 60);
     }
 
+    fn tab_lines(tabs: &[TabLabel], active: u64, width: usize) -> (Vec<Line<'static>>, String) {
+        let lines = tab_bar(tabs, active, width, &styles());
+        let plain = lines.iter().map(line_plain).collect::<Vec<_>>().join("\n");
+        (lines, plain)
+    }
+
     #[test]
     fn tab_bar_respects_width() {
-        let styles = styles();
         let tabs = [
             TabLabel::new(10, "edge-office", true),
             TabLabel::new(20, "core", true),
         ];
-        let line = tab_bar(&tabs, 10, 40, &styles);
-        assert_eq!(line_width(&line), 40);
-        for span in &line.spans {
-            assert!(span.style.bg.is_none());
+        let (lines, _) = tab_lines(&tabs, 10, 40);
+        assert_eq!(lines.len(), 3);
+        for line in &lines {
+            assert_eq!(line_width(line), 40);
         }
     }
 
     #[test]
     fn tab_bar_marks_active_tab() {
-        let styles = styles();
         let tabs = [
             TabLabel::new(10, "Login", false),
             TabLabel::new(20, "core", true),
         ];
-        let line = tab_bar(&tabs, 20, 48, &styles);
-        let plain = line_plain(&line);
-        assert!(plain.contains("1:Login"));
-        assert!(plain.contains("[2]:core"));
-        assert!(!plain.contains("[1]:"));
-        let active = line
+        let (lines, plain) = tab_lines(&tabs, 20, 48);
+        assert!(!plain.contains("Sessions:"), "{plain}");
+        assert!(!plain.contains('┌'), "{plain}");
+        assert!(!plain.contains('─'), "{plain}");
+        assert!(plain.contains("core"), "{plain}");
+        assert!(plain.contains("Login"), "{plain}");
+        assert!(plain.contains('●'), "{plain}");
+        let active = lines[1]
             .spans
             .iter()
-            .find(|span| span.content.contains("[2]:core"))
-            .expect("active span");
+            .find(|span| span.content == "core")
+            .expect("active title");
         assert!(active.style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
     fn tab_bar_clips_narrow_width_without_panic() {
-        let styles = styles();
         let tabs = [TabLabel::new(1, "very-long-profile-name", true)];
-        let empty = tab_bar(&tabs, 1, 0, &styles);
-        assert!(line_plain(&empty).is_empty());
-        let tiny = tab_bar(&tabs, 1, 3, &styles);
-        assert_eq!(line_width(&tiny), 3);
-        let none = tab_bar(&[], 99, 8, &styles);
-        assert_eq!(line_width(&none), 8);
+        let empty = tab_bar(&tabs, 1, 0, &styles());
+        assert!(empty.is_empty());
+        let tiny = tab_bar(&tabs, 1, 3, &styles());
+        for line in &tiny {
+            assert_eq!(line_width(line), 3);
+        }
+        let none = tab_bar(&[], 99, 8, &styles());
+        assert_eq!(none.len(), 3);
+        assert_eq!(line_width(&none[0]), 8);
     }
 
     #[test]
     fn tab_bar_shows_both_tabs_when_width_allows() {
+        let tabs = [
+            TabLabel::new(1, "alpha", true),
+            TabLabel::new(2, "beta", false),
+        ];
+        let (lines, plain) = tab_lines(&tabs, 1, 48);
+        assert!(plain.contains("alpha"), "{plain}");
+        assert!(plain.contains("beta"), "{plain}");
+        assert!(plain.contains('+'), "{plain}");
+        let slots = layout_tabs(&tabs, 1, 48);
+        assert_eq!(slots.len(), 2);
+        assert!(slots[0].width >= TAB_MIN_WIDTH, "{}", slots[0].width);
+        assert_eq!(slots[1].x, slots[0].width + TAB_GAP);
+        let mid = line_plain(&lines[1]);
+        let alpha_at = mid.find("alpha").expect("alpha");
+        assert!(alpha_at > slots[0].x, "title should be centered: {mid}");
+        assert!(plain.contains('●'), "{plain}");
+        let slot: String = mid.chars().skip(slots[0].x).take(slots[0].width).collect();
+        assert!(slot.starts_with(' '), "{slot:?}");
+        assert!(slot.ends_with(' '), "{slot:?}");
+        assert!(slot.contains('●'), "{slot:?}");
+        assert!(!line_plain(&lines[0]).contains("alpha"));
+        assert!(!line_plain(&lines[2]).contains("alpha"));
+        assert!(line_plain(&lines[0]).contains(TAB_CAP_TOP), "{plain}");
+        assert!(line_plain(&lines[2]).contains(TAB_CAP_BOT), "{plain}");
+    }
+
+    #[test]
+    fn live_tab_keeps_side_pad_and_dot() {
+        let tabs = [TabLabel::new(1, "very-long-profile-name", true)];
+        let (lines, _) = tab_lines(&tabs, 1, 80);
+        let slots = layout_tabs(&tabs, 1, 80);
+        assert_eq!(slots.len(), 1);
+        let mid = line_plain(&lines[1]);
+        let slot: String = mid.chars().skip(slots[0].x).take(slots[0].width).collect();
+        assert!(slot.starts_with(' '), "{slot:?}");
+        assert!(slot.ends_with(' '), "{slot:?}");
+        assert!(slot.contains('●'), "{slot:?}");
+        assert!(slot.contains("very-long-profile"), "{slot:?}");
+    }
+
+    #[test]
+    fn tab_fill_stays_inside_each_tab() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
         let styles = styles();
         let tabs = [
             TabLabel::new(1, "alpha", true),
             TabLabel::new(2, "beta", false),
         ];
-        let line = tab_bar(&tabs, 1, 32, &styles);
-        let plain = line_plain(&line);
-        assert!(plain.contains("[1]:alpha"));
-        assert!(plain.contains("2:beta"));
+        let backend = TestBackend::new(36, 3);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_tab_bar(frame, frame.area(), &tabs, 1, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let slots = layout_tabs(&tabs, 1, 36);
+        assert_eq!(slots.len(), 2);
+        for y in 0..3_u16 {
+            for x in 0..36_u16 {
+                let cell = &buf[(x, y)];
+                let in_active = x >= u16::try_from(slots[0].x).unwrap()
+                    && x < u16::try_from(slots[0].x + slots[0].width).unwrap();
+                let in_idle = x >= u16::try_from(slots[1].x).unwrap()
+                    && x < u16::try_from(slots[1].x + slots[1].width).unwrap();
+                if y == 1 && in_active {
+                    assert_eq!(
+                        cell.bg, styles.selection,
+                        "active fill missing at ({x},{y})"
+                    );
+                } else if y == 1 && in_idle {
+                    assert_eq!(cell.bg, styles.band, "idle fill missing at ({x},{y})");
+                } else {
+                    assert_eq!(cell.bg, styles.void, "fill escaped to ({x},{y})");
+                }
+            }
+        }
     }
 }

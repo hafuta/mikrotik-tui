@@ -41,8 +41,8 @@ flowchart TB
 - **Runtime** is the I/O loop. Every command and `WorkerMsg` carries a
   `SessionId`. Dispatch applies the message only to that session.
 
-Chrome (`tab_bar` in `mtui-ui`) paints titles and connection flags. It does
-not open sockets or interpret tab ids.
+Chrome (`render_tab_bar` in `mtui-ui`) paints filled session tiles and a
+live `●`. It does not open sockets or interpret tab ids.
 
 ## Isolation
 

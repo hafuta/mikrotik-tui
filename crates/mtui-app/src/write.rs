@@ -197,11 +197,11 @@ impl App {
         self.current_resource != "logs" && self.current_resource != DASHBOARD_ID
     }
 
-    fn pane_allows_row_actions(&self) -> bool {
+    pub(crate) fn pane_allows_row_actions(&self) -> bool {
         matches!(self.pane, Pane::Content | Pane::Inspector)
     }
 
-    fn action_offered_in_pane(&self, action: &ActionSpec) -> bool {
+    pub(crate) fn action_offered_in_pane(&self, action: &ActionSpec) -> bool {
         if !self.resource_actions_allowed() || self.pane == Pane::Console {
             return false;
         }

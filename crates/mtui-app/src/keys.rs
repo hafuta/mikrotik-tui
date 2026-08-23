@@ -2327,7 +2327,7 @@ mod console_tests {
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('`'))));
         assert_eq!(app.console_layout_height(), 6);
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));
-        assert_eq!(app.console_layout_height(), 22);
+        assert_eq!(app.console_layout_height(), 15);
     }
 }
 

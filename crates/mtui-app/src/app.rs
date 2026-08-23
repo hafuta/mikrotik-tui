@@ -21,7 +21,8 @@ use mtui_routeros::{
 use mtui_ui::{
     ActionMenuState, Command, ConsoleEntry, ConsoleLevel, DashboardGeometry, FirewallHitChart,
     FormSession, InspectorState, LayoutMetrics, LoginPane, ProbeState, Row, SavedProfileRow,
-    Signal, SignalLevel, TableState, ToggleHidden, TorchState, console_pane_height, format_rate,
+    Signal, SignalLevel, TableState, ToggleHidden, TorchState, chrome_band_height,
+    console_pane_height, format_rate, tab_strip_height,
 };
 
 use crate::demo::{DEMO_PROFILE_NAME, DEMO_URL, DemoStore, is_demo_target};
@@ -1543,9 +1544,13 @@ impl App {
             .saturating_sub(inspector)
             .saturating_sub(4)
             .max(1);
+        let band = chrome_band_height(self.terminal_height);
         let inner_h = self
             .terminal_height
-            .saturating_sub(5)
+            .saturating_sub(tab_strip_height(self.terminal_height))
+            .saturating_sub(band)
+            .saturating_sub(band)
+            .saturating_sub(2)
             .saturating_sub(self.console_layout_height())
             .max(1);
         (usize::from(inner_w), usize::from(inner_h))

@@ -28,8 +28,9 @@ pub use charts::{
     BrailleSparkline, TrafficChart, TrafficSample, format_bytes, format_rate, format_traffic_rate,
 };
 pub use chrome::{
-    ACTIVITY_SHOW_AFTER, Signal, SignalLevel, TabLabel, activity_shown, footer_bar, footer_hints,
-    header_line, session_header, signal_rail, status_line, tab_bar,
+    ACTIVITY_SHOW_AFTER, CHROME_BAND_HEIGHT, Signal, SignalLevel, TAB_STRIP_HEIGHT, TabLabel,
+    activity_shown, center_in_band, chrome_band_height, footer_bar, footer_hints, header_line,
+    render_tab_bar, session_header, signal_rail, status_line, tab_bar, tab_strip_height,
 };
 pub use color::ColorDepth;
 pub use console::{ConsoleEntry, ConsoleLevel, ConsoleState, TIME_COL, console_pane_height};

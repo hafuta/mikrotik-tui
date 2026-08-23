@@ -68,8 +68,8 @@ Set `MIKROTIK_TUI_COLOR=truecolor` or `256` to override.
 
 ## Keyboard
 
-Press `?` any time for the full map. The bindings below are the ones you use
-constantly.
+Press `?` for shortcuts that apply to the current screen. The bindings below
+are the ones you use constantly.
 
 | Keys | Action |
 |------|--------|

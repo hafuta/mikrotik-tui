@@ -23,7 +23,9 @@ pub fn console_pane_height(terminal_height: u16, visible: bool, fullscreen: bool
     if !visible {
         return 0;
     }
-    let chrome = 2; // header and footer bands
+    let chrome = crate::chrome::tab_strip_height(terminal_height)
+        .saturating_add(crate::chrome::chrome_band_height(terminal_height))
+        .saturating_add(crate::chrome::chrome_band_height(terminal_height));
     let available = terminal_height.saturating_sub(chrome);
     if available == 0 {
         return 0;
@@ -750,14 +752,14 @@ mod tests {
         assert_eq!(console_pane_height(24, false, false), 0);
         assert_eq!(console_pane_height(24, true, false), 6);
         assert_eq!(console_pane_height(40, true, false), 10);
-        assert_eq!(console_pane_height(24, true, true), 22);
+        assert_eq!(console_pane_height(24, true, true), 15);
     }
 
     #[test]
     fn short_terminals_keep_a_body_slot() {
         let height = console_pane_height(10, true, false);
         assert!(height > 0);
-        assert!(height + 2 + 3 <= 10);
+        assert!(height + 2 + crate::chrome::tab_strip_height(10) <= 10);
     }
 
     #[test]

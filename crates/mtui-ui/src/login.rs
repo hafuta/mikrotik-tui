@@ -6,7 +6,9 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
 
-use crate::chrome::{Signal, SignalLevel, footer_bar, session_header};
+use crate::chrome::{
+    Signal, SignalLevel, center_in_band, chrome_band_height, footer_bar, session_header,
+};
 use crate::layout::{clip_line, fit_cell};
 use crate::overlay::{Modal, ModalButton, ModalButtonKind, render_modal};
 use crate::paint::{fill_rect, line_on_bg};
@@ -295,12 +297,13 @@ pub struct LoginView<'a> {
 
 pub fn render_login(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, styles: &Styles) {
     fill_rect(frame, area, styles.void);
+    let band = chrome_band_height(area.height);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
+            Constraint::Length(band),
             Constraint::Min(8),
-            Constraint::Length(1),
+            Constraint::Length(band),
         ])
         .split(area);
 
@@ -316,13 +319,17 @@ pub fn render_login(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, sty
         vec![Signal::new("", view.clock, SignalLevel::Idle)]
     };
     frame.render_widget(
-        Paragraph::new(session_header(
-            "mikrotik-tui",
-            subtitle,
-            &clock_signals,
+        Paragraph::new(center_in_band(
+            &session_header(
+                "mikrotik-tui",
+                subtitle,
+                &clock_signals,
+                usize::from(area.width.max(1)),
+                styles,
+                false,
+            ),
+            band,
             usize::from(area.width.max(1)),
-            styles,
-            false,
         )),
         chunks[0],
     );
@@ -331,11 +338,15 @@ pub fn render_login(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, sty
 
     fill_rect(frame, chunks[2], styles.inset);
     frame.render_widget(
-        Paragraph::new(footer_bar(
-            view.status,
-            &login_hints(view.form),
+        Paragraph::new(center_in_band(
+            &footer_bar(
+                view.status,
+                &login_hints(view.form),
+                usize::from(area.width.max(1)),
+                styles,
+            ),
+            band,
             usize::from(area.width.max(1)),
-            styles,
         )),
         chunks[2],
     );
