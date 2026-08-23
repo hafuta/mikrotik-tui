@@ -32,6 +32,18 @@ pub enum WorkerMsg {
         session: SessionId,
         message: String,
     },
+    SessionLost {
+        session: SessionId,
+        generation: u64,
+        reason: String,
+    },
+    AccessResult {
+        session: SessionId,
+        generation: u64,
+        users: Vec<Resource>,
+        groups: Vec<Resource>,
+        error: Option<String>,
+    },
     ResourceResult {
         session: SessionId,
         request_id: u64,
@@ -139,6 +151,8 @@ impl WorkerMsg {
             Self::ProbeResult { session, .. }
             | Self::Connected { session, .. }
             | Self::AuthRequired { session, .. }
+            | Self::SessionLost { session, .. }
+            | Self::AccessResult { session, .. }
             | Self::ResourceResult { session, .. }
             | Self::DashboardResult { session, .. }
             | Self::HeaderResult { session, .. }

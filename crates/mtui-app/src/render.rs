@@ -90,13 +90,7 @@ fn draw_tab_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let tabs: Vec<TabLabel> = app
         .sessions
         .iter()
-        .map(|session| {
-            TabLabel::new(
-                session.id.get(),
-                session.tab_title(),
-                session.client.is_some() || session.demo.is_some(),
-            )
-        })
+        .map(|session| TabLabel::new(session.id.get(), session.tab_title(), session.is_live()))
         .collect();
     render_tab_bar(frame, area, &tabs, app.active.get(), &styles);
 }

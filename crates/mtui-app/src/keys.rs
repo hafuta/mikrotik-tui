@@ -1335,6 +1335,9 @@ impl App {
     }
 
     fn refresh_now(&mut self) -> Vec<AppCommand> {
+        if !self.session_ready() {
+            return self.try_reconnect();
+        }
         self.refreshing = true;
         self.poll_current()
     }

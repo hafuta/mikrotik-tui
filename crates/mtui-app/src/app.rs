@@ -37,6 +37,7 @@ const LOG_BUFFER_CAP: usize = 500;
 pub enum ConnectIntent {
     Login,
     Reauth,
+    Reconnect,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -114,6 +115,11 @@ pub enum AppCommand {
         generation: u64,
     },
     FetchHeader {
+        session: SessionId,
+        request_id: u64,
+        generation: u64,
+    },
+    FetchAccess {
         session: SessionId,
         request_id: u64,
         generation: u64,
@@ -213,6 +219,7 @@ impl AppCommand {
             | Self::FetchResource { session, .. }
             | Self::FetchDashboard { session, .. }
             | Self::FetchHeader { session, .. }
+            | Self::FetchAccess { session, .. }
             | Self::ForgetProfile { session, .. }
             | Self::Mutate { session, .. }
             | Self::FetchTorch { session, .. }
@@ -236,6 +243,7 @@ impl AppCommand {
             | Self::FetchResource { session, .. }
             | Self::FetchDashboard { session, .. }
             | Self::FetchHeader { session, .. }
+            | Self::FetchAccess { session, .. }
             | Self::ForgetProfile { session, .. }
             | Self::Mutate { session, .. }
             | Self::FetchTorch { session, .. }
@@ -1007,6 +1015,7 @@ impl App {
         } else {
             self.login.pane = LoginPane::List;
         }
+        self.reset_link();
         self.screen = Screen::Login;
         self.status = "Disconnected · profiles kept".into();
     }
@@ -1094,13 +1103,17 @@ impl App {
         let ids: Vec<SessionId> = self.sessions.iter().map(|session| session.id).collect();
         let mut out = Vec::new();
         for id in ids {
-            out.extend(self.apply_to(id, Self::poll_tick_if_due));
+            out.extend(self.apply_to(id, |app| {
+                let mut cmds = app.reconnect_tick();
+                cmds.extend(app.poll_tick_if_due());
+                cmds
+            }));
         }
         out
     }
 
     fn poll_tick_if_due(&mut self) -> Vec<AppCommand> {
-        if self.screen != Screen::Main || self.client.is_none() {
+        if self.screen != Screen::Main || self.client.is_none() || !self.session_ready() {
             return Vec::new();
         }
         match &self.overlay {
@@ -1170,6 +1183,9 @@ impl App {
                     tracing::error!(error = %err, "connection failed");
                     let kind = error_kind.unwrap_or(ErrorKind::Transport);
                     let copy = classify_connect_error(kind, &err);
+                    if self.connect_intent == ConnectIntent::Reconnect {
+                        return self.on_reconnect_failed(kind, copy);
+                    }
                     if self.connect_intent == ConnectIntent::Reauth {
                         self.reauth.error = Some(copy.clone());
                         self.status = copy;
@@ -1182,6 +1198,7 @@ impl App {
                 }
                 tracing::info!("connected");
                 self.client = client;
+                self.mark_live();
                 if let Some(router) = router {
                     self.apply_system_resource(router);
                 } else {
@@ -1189,13 +1206,18 @@ impl App {
                 }
                 self.login.error = None;
                 self.persist_connected_session();
-                if self.connect_intent == ConnectIntent::Reauth {
+                if self.connect_intent == ConnectIntent::Reauth
+                    || self.connect_intent == ConnectIntent::Reconnect
+                {
                     self.connect_intent = ConnectIntent::Login;
                     self.overlay = Overlay::None;
                     self.reauth = ReauthState::default();
                     self.screen = Screen::Main;
                     self.status = "Reconnected".into();
-                    return self.poll_current();
+                    let mut cmds = self.poll_current();
+                    cmds.extend(self.fetch_packages_command());
+                    cmds.extend(self.fetch_access_command());
+                    return cmds;
                 }
                 self.screen = Screen::Main;
                 self.status = format!("Connected · {}", self.profile_label());
@@ -1206,12 +1228,29 @@ impl App {
                 self.select_resource(&start);
                 let mut cmds = self.poll_current();
                 cmds.extend(self.fetch_packages_command());
+                cmds.extend(self.fetch_access_command());
                 cmds
             }
             WorkerMsg::AuthRequired { message, .. } => {
                 if self.screen == Screen::Main {
                     self.open_reauth(message);
                 }
+                Vec::new()
+            }
+            WorkerMsg::SessionLost {
+                generation, reason, ..
+            } => self.mark_session_lost(generation, reason),
+            WorkerMsg::AccessResult {
+                generation,
+                users,
+                groups,
+                error,
+                ..
+            } => {
+                if generation != self.poll_generation {
+                    return Vec::new();
+                }
+                self.apply_access(&users, &groups, error.as_deref());
                 Vec::new()
             }
             WorkerMsg::ResourceResult {
@@ -1243,9 +1282,14 @@ impl App {
                 self.refreshing = false;
                 if let Some(err) = error {
                     tracing::warn!(resource_id = resource_id.as_str(), error = %err, "resource refresh failed");
-                    self.status = format!("Refresh failed: {err}");
+                    self.status = if mtui_core::is_permission_trap(&err) {
+                        Self::classify_write_error(&err)
+                    } else {
+                        format!("Refresh failed: {err}")
+                    };
                     return Vec::new();
                 }
+                self.note_data_ok();
                 let loaded = resource_loaded_message(&resource_id, &rows);
                 tracing::debug!(
                     resource_id = resource_id.as_str(),
@@ -1296,6 +1340,9 @@ impl App {
                     &firewall,
                     firewall_error.as_deref(),
                 );
+                if cpu_error.is_none() || system_error.is_none() || interface_error.is_none() {
+                    self.note_data_ok();
+                }
                 Vec::new()
             }
             WorkerMsg::HeaderResult {
@@ -1307,6 +1354,9 @@ impl App {
             } => {
                 if generation != self.poll_generation || self.screen != Screen::Main {
                     return Vec::new();
+                }
+                if system.is_some() || interface_error.is_none() {
+                    self.note_data_ok();
                 }
                 self.apply_header_telemetry(system, &interfaces, interface_error.as_deref());
                 Vec::new()
@@ -1391,6 +1441,7 @@ impl App {
                 self.inspector.offset = offset;
                 let visible = self.inspector_visible_rows();
                 self.inspector.clamp_to_visible(visible);
+                self.note_data_ok();
                 Vec::new()
             }
             WorkerMsg::WanSample {
@@ -1423,7 +1474,9 @@ impl App {
     /// Live header metrics: CPU, memory, and WAN rate.
     #[must_use]
     pub fn header_signals(&self) -> Vec<Signal> {
-        vec![self.cpu_signal(), self.memory_signal(), self.wan_signal()]
+        let mut signals = self.link_signals();
+        signals.extend([self.cpu_signal(), self.memory_signal(), self.wan_signal()]);
+        signals
     }
 
     fn cpu_signal(&self) -> Signal {
@@ -1567,6 +1620,8 @@ impl App {
         self.login.error = None;
         self.current_profile = DEMO_PROFILE_NAME.into();
         self.connect_intent = ConnectIntent::Login;
+        self.access = mtui_core::SessionAccess::full("demo", "full");
+        self.mark_live();
         self.screen = Screen::Main;
         self.status = "Demo profile · fixture data, no router".into();
         let start = self
@@ -1608,6 +1663,10 @@ impl App {
             self.activate_dashboard();
         } else {
             self.loading = true;
+        }
+        if !self.session_ready() {
+            self.loading = false;
+            self.status = self.link_status_message();
         }
         if let Some(spec) = resource_by_id(id) {
             self.table = TableState::new(spec.columns);

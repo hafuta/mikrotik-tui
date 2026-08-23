@@ -4,7 +4,7 @@ use mtui_routeros::Resource;
 
 use crate::app::{App, AppCommand, Screen};
 use crate::event::{AppEvent, WorkerMsg};
-use crate::session::SessionId;
+use crate::session::{LinkState, SessionId};
 
 fn test_app() -> App {
     App::new(false).expect("app")
@@ -135,4 +135,31 @@ fn close_session_returns_addressed_command() {
         [AppCommand::CloseSession { session }] if *session == a
     ));
     assert_eq!(b.get(), 2);
+}
+
+#[test]
+fn drop_on_a_does_not_mark_b_down() {
+    let mut app = test_app();
+    let a = app.test_session();
+    app.screen = Screen::Main;
+    app.link = LinkState::Live;
+    app.poll_generation = 4;
+    app.status = "A live".into();
+    let b = app.new_session().expect("second tab");
+    app.screen = Screen::Main;
+    app.link = LinkState::Live;
+    app.poll_generation = 2;
+    app.status = "B live".into();
+
+    let _ = app.update(AppEvent::Worker(WorkerMsg::SessionLost {
+        session: a,
+        generation: 4,
+        reason: "connection closed".into(),
+    }));
+
+    assert_eq!(app.session(a).expect("a").link, LinkState::Dropped);
+    assert!(!app.session(a).expect("a").session_ready());
+    assert_eq!(app.session(b).expect("b").link, LinkState::Live);
+    assert!(app.session(b).expect("b").session_ready());
+    assert_eq!(app.session(b).expect("b").status, "B live");
 }

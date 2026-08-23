@@ -27,6 +27,8 @@ pub enum ErrorKind {
     Server,
     /// A `RouterOS` `!trap` or other API-level failure.
     Api,
+    /// The account lacks the group policy for this command.
+    Permission,
     /// The reply could not be decoded.
     Decode,
 }
@@ -44,6 +46,7 @@ impl ErrorKind {
             Self::RateLimited => "rate_limited",
             Self::Server => "server",
             Self::Api => "api",
+            Self::Permission => "permission",
             Self::Decode => "decode",
         }
     }
@@ -155,6 +158,21 @@ impl Error {
         &self.message
     }
 
+    /// True when the TCP session is gone (reset, closed, broken pipe).
+    /// A single request timeout is not treated as a drop.
+    #[must_use]
+    pub fn is_link_loss(&self) -> bool {
+        if self.kind == ErrorKind::Transport {
+            return true;
+        }
+        let lower = self.message.to_ascii_lowercase();
+        lower.contains("connection closed")
+            || lower.contains("connection reset")
+            || lower.contains("broken pipe")
+            || lower.contains("not connected")
+            || lower.contains("unexpected eof")
+    }
+
     pub(crate) fn trap(
         kind: ErrorKind,
         operation: &'static str,
@@ -182,3 +200,18 @@ impl Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transport_and_closed_are_link_loss() {
+        let closed = Error::new(ErrorKind::Api, "list", "connection closed");
+        assert!(closed.is_link_loss());
+        let timeout = Error::new(ErrorKind::Timeout, "list", "request timed out");
+        assert!(!timeout.is_link_loss());
+        let transport = Error::new(ErrorKind::Transport, "list", "broken pipe");
+        assert!(transport.is_link_loss());
+    }
+}

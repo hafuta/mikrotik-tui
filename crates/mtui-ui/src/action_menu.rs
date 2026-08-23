@@ -15,6 +15,7 @@ pub struct ActionMenuItem {
     pub label: String,
     pub keys: String,
     pub danger: bool,
+    pub note: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,9 +122,19 @@ pub fn render_action_menu(
             styles.text
         };
         let mark = if focused { ">" } else { " " };
+        let suffix = if item.note.is_empty() {
+            item.keys.clone()
+        } else {
+            format!("{}  {}", item.keys, item.note)
+        };
+        let row_style = if !item.note.is_empty() && !focused {
+            styles.muted
+        } else {
+            style
+        };
         lines.push(Line::from(Span::styled(
-            format!("{mark} {:<16} {}", item.label, item.keys),
-            style,
+            format!("{mark} {:<16} {suffix}", item.label),
+            row_style,
         )));
     }
     frame.render_widget(Paragraph::new(lines), inner);
@@ -141,12 +152,14 @@ mod tests {
                 label: "Edit".into(),
                 keys: "e".into(),
                 danger: false,
+                note: String::new(),
             },
             ActionMenuItem {
                 id: "remove".into(),
                 label: "Remove".into(),
                 keys: "x".into(),
                 danger: true,
+                note: String::new(),
             },
         ]);
         menu.insert_char('r');
