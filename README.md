@@ -29,6 +29,8 @@ System.
 - Live dashboard for CPU, memory, WAN throughput, and firewall activity
 - Tables for the common WebFig operator menus, with search, sort, and a detail pane
 - Named device profiles, last-used reconnect, optional saved password, and TOTP at connect
+- Reconnect after a dropped session, with a per-tab LINK DOWN badge and writes blocked until the tab is live again
+- READ MODE when the RouterOS group has no write policy: actions stay listed, but edit and mutate are blocked with a reason
 - Demo mode (`--demo`) to learn the UI without a router
 - TLS with the OS trust store, a CA file, or a pinned device certificate. Optional plaintext `api`.
 - Confirmed reboot, shutdown, and backup save/load
@@ -88,7 +90,7 @@ are the ones you use constantly.
 | `tab` / `shift+tab` | Cycle panes |
 | `enter` | Open, expand, or edit |
 | `/` | Filter |
-| `r` | Refresh |
+| `r` | Refresh, or reconnect a dropped tab |
 | `e` / `n` | Edit / add |
 | `d` / `x` | Enable-disable / remove |
 | `a` | Action menu |

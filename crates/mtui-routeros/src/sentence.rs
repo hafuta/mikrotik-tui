@@ -126,6 +126,9 @@ fn kind_for_trap(message: &str, category: Option<&str>) -> ErrorKind {
     if lower.contains("no such item") || lower.contains("not found") || category == Some("1") {
         return ErrorKind::NotFound;
     }
+    if mtui_core::is_permission_trap(message) {
+        return ErrorKind::Permission;
+    }
     ErrorKind::Api
 }
 
@@ -197,6 +200,17 @@ mod tests {
         let err = sentence.trap_error("login");
         assert_eq!(err.kind(), ErrorKind::Auth);
         assert_eq!(err.message(), "cannot log in");
+    }
+
+    #[test]
+    fn permission_trap_is_permission() {
+        let sentence = Sentence::new(vec![
+            "!trap".into(),
+            "=message=failure: not enough permissions (write)".into(),
+        ]);
+        let err = sentence.trap_error("patch");
+        assert_eq!(err.kind(), ErrorKind::Permission);
+        assert!(err.message().contains("not enough permissions"));
     }
 
     #[test]

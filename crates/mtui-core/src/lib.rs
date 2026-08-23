@@ -4,6 +4,7 @@
 //! palettes; concrete styling belongs in `mtui-ui`.
 
 mod about;
+mod access;
 mod actions;
 mod bridge_write;
 mod capabilities;
@@ -25,6 +26,11 @@ mod tools_write;
 mod wireguard_write;
 
 pub use about::{AboutCopy, ScreenGuide, WHEN_YOU_NEED_IT, about_copy, screen_guide};
+pub use access::{
+    POLICY_POLICY, POLICY_READ, POLICY_REBOOT, POLICY_SNIFF, POLICY_TEST, POLICY_WRITE,
+    SessionAccess, is_permission_trap, parse_policy_list, permission_denied_copy, required_policy,
+    trap_permission_copy,
+};
 pub use actions::{
     ACTION_ADD, ACTION_BACKUP_LOAD, ACTION_BACKUP_SAVE, ACTION_COPY, ACTION_EDIT, ACTION_REBOOT,
     ACTION_REMOVE, ACTION_RESET, ACTION_SHUTDOWN, ACTION_TOGGLE, ACTION_TORCH, ActionCommand,

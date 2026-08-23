@@ -4,7 +4,7 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
-use mtui_core::{DASHBOARD_ID, navigation_tree};
+use mtui_core::{DASHBOARD_ID, SessionAccess, navigation_tree};
 use mtui_routeros::{Client, Resource};
 use mtui_ui::{
     CommandPalette, ConsoleEntry, ConsoleState, InspectorState, LoginForm, NavState, TableState,
@@ -35,6 +35,15 @@ impl SessionId {
 }
 
 pub const MAX_SESSIONS: usize = 8;
+
+/// Live TCP health for one device tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkState {
+    Idle,
+    Live,
+    Dropped,
+    Reconnecting,
+}
 
 /// One device connection and its UI. Never share [`Client`] with another session.
 #[allow(clippy::struct_excessive_bools)]
@@ -81,6 +90,11 @@ pub struct Session {
     pub(crate) console_log_seq: u64,
     pub(crate) pane_before_console: Pane,
     pub(crate) demo: Option<DemoStore>,
+    pub(crate) link: LinkState,
+    pub(crate) last_ok_at: Option<Instant>,
+    pub(crate) reconnect_at: Option<Instant>,
+    pub(crate) reconnect_attempt: u32,
+    pub access: SessionAccess,
 }
 
 impl Session {
@@ -128,7 +142,22 @@ impl Session {
             console_log_seq: 0,
             pane_before_console: Pane::Content,
             demo: None,
+            link: LinkState::Idle,
+            last_ok_at: None,
+            reconnect_at: None,
+            reconnect_attempt: 0,
+            access: SessionAccess::unknown(),
         }
+    }
+
+    #[must_use]
+    pub fn session_ready(&self) -> bool {
+        !matches!(self.link, LinkState::Dropped | LinkState::Reconnecting)
+    }
+
+    #[must_use]
+    pub fn is_live(&self) -> bool {
+        self.demo.is_some() || (self.client.is_some() && self.link == LinkState::Live)
     }
 
     #[must_use]

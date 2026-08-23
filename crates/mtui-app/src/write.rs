@@ -152,7 +152,9 @@ impl App {
                 hints.push((".".into(), "hidden".into()));
             }
         }
-        if self.resource_actions_allowed() {
+        if !self.session_ready() {
+            hints.push(("r".into(), "reconnect".into()));
+        } else if self.resource_actions_allowed() {
             let row = self.table.selected_row();
             for action in self
                 .current_actions()
@@ -263,6 +265,9 @@ impl App {
     }
 
     fn dispatch_action(&mut self, action: &ActionSpec) -> Vec<AppCommand> {
+        if self.deny_if_unavailable(action) {
+            return Vec::new();
+        }
         match action.kind {
             ActionKind::Edit => self.open_edit(),
             ActionKind::Create => self.open_create(&self.current_resource.clone()),
@@ -583,11 +588,17 @@ impl App {
         let items: Vec<ActionMenuItem> = self
             .current_actions()
             .into_iter()
-            .map(|action| ActionMenuItem {
-                id: action.id.to_string(),
-                label: action_label(action, row),
-                keys: action.key.map_or_else(String::new, |key| key.to_string()),
-                danger: action.danger,
+            .map(|action| {
+                let blocked = self
+                    .access
+                    .action_block_reason(&self.current_resource, action);
+                ActionMenuItem {
+                    id: action.id.to_string(),
+                    label: action_label(action, row),
+                    keys: action.key.map_or_else(String::new, |key| key.to_string()),
+                    danger: action.danger,
+                    note: blocked.map_or(String::new(), |_| "blocked".into()),
+                }
             })
             .collect();
         if items.is_empty() {
@@ -606,6 +617,7 @@ impl App {
                 label: (*label).to_string(),
                 keys: String::new(),
                 danger: false,
+                note: String::new(),
             })
             .collect();
         self.overlay = Overlay::TypePicker(ActionMenuState::new(items));
@@ -741,6 +753,10 @@ impl App {
     }
 
     pub(crate) fn save_form(&mut self) -> Vec<AppCommand> {
+        if !self.session_ready() {
+            self.status = self.link_status_message();
+            return Vec::new();
+        }
         let (saving, is_prompt) = match &self.overlay {
             Overlay::Form(session) => (session.saving, session.prompt_command.is_some()),
             _ => return Vec::new(),
@@ -1082,6 +1098,10 @@ impl App {
     }
 
     pub(crate) fn confirm_pending(&mut self) -> Vec<AppCommand> {
+        if !self.session_ready() {
+            self.status = self.link_status_message();
+            return Vec::new();
+        }
         let Overlay::Confirm(session) = &self.overlay else {
             return Vec::new();
         };
@@ -1175,7 +1195,7 @@ impl App {
                 session.saving = false;
                 session.error = Some(err.clone());
             }
-            self.status = format!("Write failed: {err}");
+            self.status = format!("Write failed: {}", Self::classify_write_error(&err));
             return Vec::new();
         }
         self.overlay = Overlay::None;

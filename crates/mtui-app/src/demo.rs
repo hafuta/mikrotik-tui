@@ -481,6 +481,23 @@ pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>>
             firewall: store.rows("firewall-filter"),
             firewall_error: None,
         }]),
+        AppCommand::FetchAccess {
+            session,
+            generation,
+            ..
+        } => Some(vec![WorkerMsg::AccessResult {
+            session: *session,
+            generation: *generation,
+            users: vec![resource("*1", &[("name", "demo"), ("group", "full")])],
+            groups: vec![resource(
+                "*g",
+                &[
+                    ("name", "full"),
+                    ("policy", "read,write,policy,test,reboot,sniff,api"),
+                ],
+            )],
+            error: None,
+        }]),
         AppCommand::FetchHeader {
             session,
             request_id,

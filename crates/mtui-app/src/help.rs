@@ -66,7 +66,14 @@ fn push_main_help(out: &mut String, app: &App) {
             ("tab / shift+tab", "cycle panes"),
             ("← →", "panes after column scroll"),
             ("`", "toggle log console"),
-            ("r", "refresh"),
+            (
+                "r",
+                if app.session_ready() {
+                    "refresh"
+                } else {
+                    "reconnect"
+                },
+            ),
         ],
     );
     if app.current_resource == DASHBOARD_ID {

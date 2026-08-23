@@ -4,6 +4,7 @@ mod app;
 mod demo;
 mod event;
 mod files_io;
+mod health;
 mod help;
 mod keys;
 mod render;

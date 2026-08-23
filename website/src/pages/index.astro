@@ -54,7 +54,9 @@ const releases = `${repo}/releases`;
             create/edit/delete catalog, with a confirmation first. Torch and
             counters sit on interface tables. Keep more than one device open;
             each tab holds its own connection. Secrets stay masked; runtime
-            views such as logs remain inspect-only.
+            views such as logs remain inspect-only. A dropped tab shows LINK
+            DOWN and blocks writes until it reconnects. A read-only RouterOS
+            group is marked READ MODE; actions stay visible but will not open.
           </p>
         </div>
         <ul class="paths">

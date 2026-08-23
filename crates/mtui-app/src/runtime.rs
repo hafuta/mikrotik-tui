@@ -258,6 +258,20 @@ fn dispatch_commands(
                     .await;
                 });
             }
+            AppCommand::FetchAccess {
+                session,
+                request_id,
+                generation,
+            } => {
+                let Some(client) = client else {
+                    continue;
+                };
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let msg = fetch_access(session, client, request_id, generation).await;
+                    let _ = tx.send(msg);
+                });
+            }
             AppCommand::FetchHeader {
                 session,
                 request_id,
@@ -297,7 +311,7 @@ fn dispatch_commands(
                     let error = match run_mutation(&client, op).await {
                         Ok(()) => None,
                         Err(err) => {
-                            send_if_auth(&tx, session, &err);
+                            send_if_session_event(&tx, session, generation, &err);
                             Some(err.to_string())
                         }
                     };
@@ -681,7 +695,7 @@ async fn fetch_resource(
             });
         }
         Err(err) => {
-            send_if_auth(&tx, session, &err);
+            send_if_session_event(&tx, session, generation, &err);
             let _ = tx.send(WorkerMsg::ResourceResult {
                 session,
                 request_id,
@@ -720,7 +734,18 @@ async fn fetch_resource(
                             row,
                         });
                     }
-                    Ok(None) | Err(_) => return,
+                    Ok(None) => {
+                        let _ = tx.send(WorkerMsg::SessionLost {
+                            session,
+                            generation,
+                            reason: "connection closed".into(),
+                        });
+                        return;
+                    }
+                    Err(err) => {
+                        send_if_session_event(&tx, session, generation, &err);
+                        return;
+                    }
                 }
             }
         }
@@ -741,6 +766,57 @@ fn send_if_auth(
             session,
             message: crate::app::classify_connect_error(ErrorKind::Auth, err.message()),
         });
+    }
+}
+
+fn send_if_session_event(
+    tx: &mpsc::UnboundedSender<WorkerMsg>,
+    session: SessionId,
+    generation: u64,
+    err: &mtui_routeros::Error,
+) {
+    send_if_auth(tx, session, err);
+    if err.is_link_loss() {
+        let _ = tx.send(WorkerMsg::SessionLost {
+            session,
+            generation,
+            reason: err.message().to_string(),
+        });
+    }
+}
+
+async fn fetch_access(
+    session: SessionId,
+    client: Arc<Client>,
+    request_id: u64,
+    generation: u64,
+) -> WorkerMsg {
+    let _ = request_id;
+    let (users, groups) = tokio::join!(client.list("/rest/user"), client.list("/rest/user/group"),);
+    match (users, groups) {
+        (Ok(users), Ok(groups)) => WorkerMsg::AccessResult {
+            session,
+            generation,
+            users,
+            groups,
+            error: None,
+        },
+        (Err(err), _) | (_, Err(err)) => {
+            if err.is_link_loss() {
+                return WorkerMsg::SessionLost {
+                    session,
+                    generation,
+                    reason: err.message().to_string(),
+                };
+            }
+            WorkerMsg::AccessResult {
+                session,
+                generation,
+                users: Vec::new(),
+                groups: Vec::new(),
+                error: Some(err.to_string()),
+            }
+        }
     }
 }
 
@@ -857,14 +933,14 @@ async fn fetch_header(
     let (system, system_error) = match sys {
         Ok(record) => (Some(record), None),
         Err(err) => {
-            send_if_auth(&tx, session, &err);
+            send_if_session_event(&tx, session, generation, &err);
             (None, Some(err.to_string()))
         }
     };
     let (interfaces, interface_error) = match interfaces {
         Ok(rows) => (rows, None),
         Err(err) => {
-            send_if_auth(&tx, session, &err);
+            send_if_session_event(&tx, session, generation, &err);
             (Vec::new(), Some(err.to_string()))
         }
     };
@@ -904,28 +980,28 @@ async fn fetch_dashboard(
     let (cpu, cpu_error) = match cpu {
         Ok(rows) => (rows, None),
         Err(err) => {
-            send_if_auth(&tx, session, &err);
+            send_if_session_event(&tx, session, generation, &err);
             (Vec::new(), Some(err.to_string()))
         }
     };
     let (system, system_error) = match sys {
         Ok(record) => (Some(record), None),
         Err(err) => {
-            send_if_auth(&tx, session, &err);
+            send_if_session_event(&tx, session, generation, &err);
             (None, Some(err.to_string()))
         }
     };
     let (interfaces, interface_error) = match interfaces {
         Ok(rows) => (rows, None),
         Err(err) => {
-            send_if_auth(&tx, session, &err);
+            send_if_session_event(&tx, session, generation, &err);
             (Vec::new(), Some(err.to_string()))
         }
     };
     let (firewall, firewall_error) = match firewall {
         Ok(rows) => (rows, None),
         Err(err) => {
-            send_if_auth(&tx, session, &err);
+            send_if_session_event(&tx, session, generation, &err);
             (Vec::new(), Some(err.to_string()))
         }
     };
@@ -981,7 +1057,18 @@ async fn stream_wan(
                             sample,
                         });
                     }
-                    Ok(None) | Err(_) => return,
+                    Ok(None) => {
+                        let _ = tx.send(WorkerMsg::SessionLost {
+                            session,
+                            generation,
+                            reason: "connection closed".into(),
+                        });
+                        return;
+                    }
+                    Err(err) => {
+                        send_if_session_event(&tx, session, generation, &err);
+                        return;
+                    }
                 }
             }
         }
@@ -1088,6 +1175,7 @@ async fn stream_torch(
                         return;
                     }
                     Err(err) => {
+                        send_if_session_event(&tx, session, generation, &err);
                         let _ = tx.send(WorkerMsg::TorchResult {
                             session,
                             generation,
@@ -1184,6 +1272,7 @@ async fn stream_probe(
                         return;
                     }
                     Err(err) => {
+                        send_if_session_event(&tx, session, generation, &err);
                         let _ = tx.send(WorkerMsg::PingTraceResult {
                             session,
                             generation,
