@@ -229,10 +229,6 @@ Linux or Windows test module.
 the binary to `bin/` and `dist/` respectively. `just --list` shows the rest
 (`fmt-fix`, `clippy`, `test`, `run`, `clean`).
 
-Pushing a `v*` tag runs GitHub Actions `Release`. It publishes archives for
-Linux (amd64, arm64), macOS (arm64, amd64), and Windows (amd64), plus
-`checksums.txt`.
-
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
