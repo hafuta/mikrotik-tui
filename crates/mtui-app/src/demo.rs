@@ -451,10 +451,12 @@ impl Default for DemoStore {
 pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>> {
     match cmd {
         AppCommand::FetchResource {
+            session,
             request_id,
             generation,
             resource_id,
         } => Some(vec![WorkerMsg::ResourceResult {
+            session: *session,
             request_id: *request_id,
             generation: *generation,
             resource_id: resource_id.clone(),
@@ -462,9 +464,11 @@ pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>>
             error: None,
         }]),
         AppCommand::FetchDashboard {
+            session,
             request_id,
             generation,
         } => Some(vec![WorkerMsg::DashboardResult {
+            session: *session,
             request_id: *request_id,
             generation: *generation,
             cpu: Vec::new(),
@@ -477,9 +481,11 @@ pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>>
             firewall_error: None,
         }]),
         AppCommand::FetchHeader {
+            session,
             request_id,
             generation,
         } => Some(vec![WorkerMsg::HeaderResult {
+            session: *session,
             request_id: *request_id,
             generation: *generation,
             system: store.rows("system-resource").into_iter().next(),
@@ -488,37 +494,59 @@ pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>>
             interface_error: None,
         }]),
         AppCommand::FetchLookup {
+            session,
             request_id,
             generation,
             resource_id,
             value_key,
         } => Some(vec![WorkerMsg::LookupResult {
+            session: *session,
             request_id: *request_id,
             generation: *generation,
             options: store.lookup_values(resource_id, value_key),
             error: None,
         }]),
         AppCommand::Mutate {
+            session,
             request_id,
             generation,
             op,
         } => {
             let error = store.apply(op).err();
             Some(vec![WorkerMsg::MutateResult {
+                session: *session,
                 request_id: *request_id,
                 generation: *generation,
                 error,
             }])
         }
-        AppCommand::FetchTorch { generation, .. } => Some(vec![WorkerMsg::TorchResult {
+        AppCommand::FetchTorch {
+            session,
+            generation,
+            ..
+        } => Some(vec![WorkerMsg::TorchResult {
+            session: *session,
             generation: *generation,
             rows: Vec::new(),
             error: Some("Demo profile has no live probes".into()),
             done: true,
         }]),
-        AppCommand::FetchPing { generation, .. }
-        | AppCommand::FetchTraceroute { generation, .. }
-        | AppCommand::FetchProbe { generation, .. } => Some(vec![WorkerMsg::PingTraceResult {
+        AppCommand::FetchPing {
+            session,
+            generation,
+            ..
+        }
+        | AppCommand::FetchTraceroute {
+            session,
+            generation,
+            ..
+        }
+        | AppCommand::FetchProbe {
+            session,
+            generation,
+            ..
+        } => Some(vec![WorkerMsg::PingTraceResult {
+            session: *session,
             generation: *generation,
             rows: Vec::new(),
             error: Some("Demo profile has no live probes".into()),

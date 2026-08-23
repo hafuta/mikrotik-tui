@@ -9,68 +9,91 @@ use mtui_ui::{
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
 
 use crate::app::{App, Overlay, Pane, Screen};
 use crate::write::ConfirmSession;
 
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
-    let area = frame.area();
+    let full = frame.area();
     let styles = app.styles();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(full);
+    draw_tab_bar(frame, chunks[0], app);
+    let area = chunks[1];
 
     match app.screen {
         Screen::Login => {
             draw_login(frame, area, app, false);
-            draw_login_overlay(frame, area, app);
+            draw_login_overlay(frame, full, app);
         }
         Screen::Connecting => {
             draw_login(frame, area, app, true);
-            draw_login_overlay(frame, area, app);
+            draw_login_overlay(frame, full, app);
         }
-        Screen::Trust => draw_trust(frame, area, app),
+        Screen::Trust => draw_trust(frame, area, full, app),
         Screen::Main => {
             draw_main(frame, area, app);
             match app.overlay {
                 Overlay::Help => {
                     let modal = Modal::new("Keyboard help", HELP_TEXT).scroll(app.overlay_scroll);
-                    render_modal(frame, area, &modal, &styles);
+                    render_modal(frame, full, &modal, &styles);
                 }
                 Overlay::About => {
                     if let Some(copy) = mtui_core::about_copy(&app.current_resource) {
                         let modal = about_modal(&copy).scroll(app.overlay_scroll);
-                        render_modal(frame, area, &modal, &styles);
+                        render_modal(frame, full, &modal, &styles);
                     }
                 }
                 Overlay::Palette => {
-                    app.palette.render(frame, area, &styles);
+                    app.palette.render(frame, full, &styles);
                 }
-                Overlay::Confirm(ref session) => draw_confirm(frame, area, session, &styles),
+                Overlay::Confirm(ref session) => draw_confirm(frame, full, session, &styles),
                 Overlay::HideMenu {
                     ref title,
                     ref body,
                     ..
-                } => draw_hide_menu(frame, area, title, body, &styles),
-                Overlay::ForgetProfile { ref name } => draw_forget(frame, area, name, &styles),
-                Overlay::Reauth => draw_reauth(frame, area, app),
+                } => draw_hide_menu(frame, full, title, body, &styles),
+                Overlay::ForgetProfile { ref name } => draw_forget(frame, full, name, &styles),
+                Overlay::Reauth => draw_reauth(frame, full, app),
                 Overlay::Form(ref session) => {
                     let schema = session.overlay_schema(
                         mtui_core::resource_by_id(&session.resource_id).and_then(|spec| spec.form),
                     );
-                    render_form_sheet(frame, area, session, schema, &styles);
+                    render_form_sheet(frame, full, session, schema, &styles);
                 }
                 Overlay::ActionMenu(ref menu) | Overlay::TypePicker(ref menu) => {
-                    render_action_menu(frame, area, menu, &styles);
+                    render_action_menu(frame, full, menu, &styles);
                 }
                 Overlay::Torch(ref torch) => {
-                    render_torch(frame, area, torch, &styles);
+                    render_torch(frame, full, torch, &styles);
                 }
                 Overlay::Probe(ref probe) => {
-                    render_probe(frame, area, probe, &styles);
+                    render_probe(frame, full, probe, &styles);
                 }
                 Overlay::None => {}
             }
         }
     }
+}
+
+fn draw_tab_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let styles = app.styles();
+    fill_rect(frame, area, styles.band);
+    let mut spans = Vec::with_capacity(app.sessions.len());
+    for (idx, session) in app.sessions.iter().enumerate() {
+        let label = format!(" {}:{} ", idx + 1, session.tab_title());
+        let style = if session.id == app.active {
+            styles.title
+        } else {
+            styles.muted
+        };
+        spans.push(Span::styled(label, style));
+    }
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn login_clock() -> String {
@@ -192,7 +215,7 @@ fn draw_reauth(frame: &mut Frame<'_>, area: Rect, app: &App) {
     );
 }
 
-fn draw_trust(frame: &mut Frame<'_>, area: Rect, app: &App) {
+fn draw_trust(frame: &mut Frame<'_>, area: Rect, overlay: Rect, app: &App) {
     draw_login(frame, area, app, false);
     let styles = app.styles();
     let fingerprint = format_fingerprint(app.trust_fingerprint.as_deref().unwrap_or_default());
@@ -220,7 +243,7 @@ fn draw_trust(frame: &mut Frame<'_>, area: Rect, app: &App) {
     })
     .hint("Approval pins this certificate for the saved session.")
     .buttons(&buttons);
-    render_modal(frame, area, &modal, &styles);
+    render_modal(frame, overlay, &modal, &styles);
 }
 
 fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -475,6 +498,10 @@ a           action menu (Files: load backup)
 ctrl+s      preview changed fields, then save
 1-9         jump to a properties tab (when not typing)
 ctrl+k      command palette
+ctrl+t      new device tab
+ctrl+w      close tab
+ctrl+tab / ctrl+pgdn   next tab
+ctrl+shift+tab / ctrl+pgup   previous tab
 ctrl+l      log out (keeps saved devices)
 n / x       login list: new / forget device
 space       login: toggle remember password
