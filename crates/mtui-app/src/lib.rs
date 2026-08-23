@@ -1,6 +1,7 @@
 //! Application state machine: connects business logic to pure UI widgets.
 
 mod app;
+mod demo;
 mod event;
 mod files_io;
 mod keys;

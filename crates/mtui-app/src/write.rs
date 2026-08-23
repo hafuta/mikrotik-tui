@@ -8,7 +8,7 @@ use mtui_core::{
     AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
     CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, IMPORT_CONFIG_PROMPT,
     INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, RESET_CONFIG_PROMPT, SMS_PROMPT, WOL_PROMPT,
-    action_label, patch_body, resource_by_id, truthy,
+    action_label, patch_body, resource_by_id, supports_bulk_select, truthy,
 };
 use mtui_routeros::MASKED_VALUE;
 use mtui_ui::{
@@ -37,6 +37,9 @@ pub enum MutationOp {
         endpoint: String,
         command: String,
         fields: BTreeMap<String, String>,
+    },
+    Batch {
+        ops: Vec<MutationOp>,
     },
 }
 
@@ -73,6 +76,7 @@ impl fmt::Debug for MutationOp {
                 .field("command", command)
                 .field("fields", &redact_mutation_fields(fields))
                 .finish(),
+            Self::Batch { ops } => f.debug_struct("Batch").field("ops", ops).finish(),
         }
     }
 }
@@ -102,6 +106,7 @@ pub struct ConfirmSession {
     pub action_id: String,
     pub command: ActionCommand,
     pub record_id: String,
+    pub record_ids: Vec<String>,
     pub record_name: String,
     pub endpoint: String,
     pub fields: BTreeMap<String, String>,
@@ -165,12 +170,21 @@ impl App {
                 hints.push(("a".into(), "actions".into()));
             }
         }
-        // Add copy hint for content and inspector panes
         if matches!(self.pane, Pane::Content | Pane::Inspector)
             && self.current_resource != "logs"
             && !self.status.starts_with("Filter:")
         {
             hints.push(("y".into(), "copy".into()));
+            if self.pane == Pane::Content {
+                hints.push(("Y".into(), "copy table".into()));
+            }
+        }
+        if self.pane == Pane::Content
+            && supports_bulk_select(&self.current_resource)
+            && !self.status.starts_with("Filter:")
+        {
+            hints.push(("space".into(), "check".into()));
+            hints.push(("*".into(), "all".into()));
         }
         hints.push(("r".into(), "refresh".into()));
         hints.push(("q".into(), "quit".into()));
@@ -452,11 +466,16 @@ impl App {
         if matches!(command, ActionCommand::ToggleDisabled) && row.is_none() {
             return Vec::new();
         }
+        let checked = if supports_bulk_select(&self.current_resource) && bulk_command(command) {
+            self.table.checked_ids()
+        } else {
+            Vec::new()
+        };
         let mut record_id = row
             .and_then(|row| row.get(".id"))
             .cloned()
             .unwrap_or_default();
-        let record_name = row
+        let mut record_name = row
             .and_then(|row| {
                 row.get("name")
                     .or_else(|| row.get("interface"))
@@ -464,10 +483,25 @@ impl App {
             })
             .cloned()
             .unwrap_or_else(|| record_id.clone());
+        let record_ids = match checked.as_slice() {
+            [] => Vec::new(),
+            [id] => {
+                record_id.clone_from(id);
+                checked
+            }
+            [id, ..] => {
+                record_id.clone_from(id);
+                record_name = format!("{} items", checked.len());
+                checked
+            }
+        };
         if !action.needs_selection {
             record_id.clear();
         }
         let command = match (command, row) {
+            (ActionCommand::ToggleDisabled, _) if record_ids.len() > 1 => {
+                ActionCommand::ToggleDisabled
+            }
             (ActionCommand::ToggleDisabled, Some(row)) => {
                 if truthy(row.get("disabled").map(String::as_str)) {
                     ActionCommand::Enable
@@ -494,6 +528,7 @@ impl App {
             action_id: action.id.to_string(),
             command,
             record_id,
+            record_ids,
             record_name,
             endpoint: command_base_path(action.id, spec.endpoint()),
             fields,
@@ -720,6 +755,47 @@ impl App {
             };
             return self.save_prompt(command);
         }
+        let previewing = matches!(&self.overlay, Overlay::Form(session) if session.confirm_save);
+        if !previewing {
+            return self.show_save_preview();
+        }
+        self.commit_form_save()
+    }
+
+    fn show_save_preview(&mut self) -> Vec<AppCommand> {
+        let Overlay::Form(session) = &self.overlay else {
+            return Vec::new();
+        };
+        let Some(spec) = resource_by_id(&session.resource_id) else {
+            return Vec::new();
+        };
+        let Some(schema) = spec.form else {
+            return Vec::new();
+        };
+        let mut body = patch_body(schema, &session.original, &session.values, MASKED_VALUE);
+        if session.mode == mtui_ui::FormMode::Create {
+            body.retain(|_, value| !value.is_empty());
+            if body.is_empty() {
+                if let Overlay::Form(session) = &mut self.overlay {
+                    session.error = Some("Fill required fields".into());
+                }
+                return Vec::new();
+            }
+        } else if body.is_empty() {
+            self.overlay = Overlay::None;
+            self.status = "No changes".into();
+            return Vec::new();
+        }
+        let count = body.len();
+        if let Overlay::Form(session) = &mut self.overlay {
+            session.confirm_save = true;
+            session.error = None;
+        }
+        self.status = format!("Save preview · {count} field(s)");
+        Vec::new()
+    }
+
+    fn commit_form_save(&mut self) -> Vec<AppCommand> {
         let Overlay::Form(session) = &self.overlay else {
             return Vec::new();
         };
@@ -1004,6 +1080,20 @@ impl App {
         let Overlay::Confirm(session) = &self.overlay else {
             return Vec::new();
         };
+        let ids = if session.record_ids.len() > 1 {
+            session.record_ids.clone()
+        } else if !session.record_id.is_empty() {
+            vec![session.record_id.clone()]
+        } else {
+            Vec::new()
+        };
+        if ids.len() > 1 {
+            let ops = ids.iter().map(|id| self.bulk_op_for(session, id)).collect();
+            self.status = format!("{} {}…", session.title, ids.len());
+            self.overlay = Overlay::None;
+            self.table.clear_checked();
+            return vec![self.mutate_command(MutationOp::Batch { ops })];
+        }
         let mut fields = session.fields.clone();
         if !session.record_id.is_empty() && !fields.contains_key(".id") {
             fields.insert(".id".into(), session.record_id.clone());
@@ -1023,6 +1113,37 @@ impl App {
         self.status = format!("{}…", session.title);
         self.overlay = Overlay::None;
         vec![self.mutate_command(op)]
+    }
+
+    fn bulk_op_for(&self, session: &ConfirmSession, id: &str) -> MutationOp {
+        let endpoint = session.endpoint.clone();
+        if session.command == ActionCommand::Remove {
+            return MutationOp::Delete {
+                endpoint,
+                id: id.to_string(),
+            };
+        }
+        let command = match session.command {
+            ActionCommand::ToggleDisabled => {
+                let disabled = self.table.rows.iter().any(|row| {
+                    row.get(".id").map(String::as_str) == Some(id)
+                        && truthy(row.get("disabled").map(String::as_str))
+                });
+                if disabled {
+                    ActionCommand::Enable
+                } else {
+                    ActionCommand::Disable
+                }
+            }
+            other => other,
+        };
+        let mut fields = session.fields.clone();
+        fields.insert(".id".into(), id.to_string());
+        MutationOp::Command {
+            endpoint,
+            command: command.rest_name().to_string(),
+            fields,
+        }
     }
 
     pub(crate) fn mutate_command(&mut self, op: MutationOp) -> AppCommand {
@@ -1395,6 +1516,19 @@ fn command_base_path(action_id: &str, resource_endpoint: &str) -> String {
         "sms" | "send-sms" => "/rest/tool/sms".into(),
         _ => resource_endpoint.to_string(),
     }
+}
+
+fn bulk_command(command: ActionCommand) -> bool {
+    matches!(
+        command,
+        ActionCommand::Enable
+            | ActionCommand::Disable
+            | ActionCommand::ToggleDisabled
+            | ActionCommand::Remove
+            | ActionCommand::ResetCounters
+            | ActionCommand::MakeStatic
+            | ActionCommand::Release
+    )
 }
 
 fn confirm_body(action_id: &str, label: &str, record_name: &str) -> String {
@@ -2527,6 +2661,73 @@ mod tests {
                 assert!(!fields.contains_key(".id"));
             }
             other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ctrl_s_previews_changed_fields_before_patch() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("vlan");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "vlan10".into());
+        fields.insert("vlan-id".into(), "10".into());
+        fields.insert("comment".into(), "old".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "vlan".into(),
+            rows: vec![Resource {
+                id: "*4".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        if let Overlay::Form(session) = &mut app.overlay {
+            session.values.insert("comment".into(), "office".into());
+        } else {
+            panic!("expected form");
+        }
+        let cmds = app.save_form();
+        assert!(cmds.is_empty());
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected preview, got {:?}", app.overlay);
+        };
+        assert!(session.confirm_save);
+        let cmds = app.save_form();
+        match command_op(&cmds) {
+            MutationOp::Patch { id, fields, .. } => {
+                assert_eq!(id.as_deref(), Some("*4"));
+                assert_eq!(fields.get("comment").map(String::as_str), Some("office"));
+                assert!(!fields.contains_key("name"));
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bulk_disable_confirms_all_checked_firewall_rows() {
+        let mut app = load_named_rows(
+            "firewall-filter",
+            vec![filter_rule("*1", "first"), filter_rule("*2", "second")],
+        );
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        app.table.move_selection(1);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        assert_eq!(app.table.checked_count(), 2);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('d'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected bulk confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.record_ids.len(), 2);
+        assert!(session.record_name.contains("2 items"));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Batch { ops } => assert_eq!(ops.len(), 2),
+            other => panic!("expected batch, got {other:?}"),
         }
     }
 }

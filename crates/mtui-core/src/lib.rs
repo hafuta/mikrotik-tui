@@ -6,6 +6,7 @@
 mod about;
 mod actions;
 mod bridge_write;
+mod capabilities;
 mod forms;
 mod hotspot_write;
 mod interface_write;
@@ -31,7 +32,13 @@ pub use actions::{
     INTERFACE_CREATE_TARGETS, INTERFACE_LIST_ACTIONS, RESOURCE_LIFECYCLE_ACTIONS, action_label,
     is_backup_file, resolve_actions, truthy,
 };
-pub use forms::{FieldKind, FieldSpec, FormSchema, FormSection, extra_status_fields, patch_body};
+pub use capabilities::{
+    BULK_SELECT_RESOURCES, WIFI_PACKAGES, WIRELESS_PACKAGES, installed_package_names,
+    required_packages, supports_bulk_select, unavailable_menus,
+};
+pub use forms::{
+    FieldKind, FieldSpec, FormSchema, FormSection, extra_status_fields, patch_body, preview_changes,
+};
 pub use resources::{
     ALL_RESOURCES, ColumnSpec, DASHBOARD_ID, FetchKind, NAVIGATION, NavGroup, NavItem,
     ResourceSpec, navigation_tree, resource_by_id,

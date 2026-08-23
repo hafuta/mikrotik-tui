@@ -447,6 +447,10 @@ e           edit
 n           add
 d           enable / disable
 c           copy · console: copy focused log
+y           copy selected row / inspector
+Y           copy filtered table
+space       check row (firewall, DHCP, queues) · logs: pause
+*           check all filtered rows
 g           certificates: sign (Home still jumps to first row)
 p           certificates: import (file already on the router)
 w           certificates: export
@@ -461,7 +465,7 @@ o           shutdown (Resources; power off)
 p           ping (Tools · Ping)
 enter       traceroute (Tools · Traceroute)
 a           action menu (Files: load backup)
-ctrl+s      save properties
+ctrl+s      preview changed fields, then save
 1-9         jump to a properties tab (when not typing)
 ctrl+k      command palette
 ctrl+l      log out (keeps saved devices)

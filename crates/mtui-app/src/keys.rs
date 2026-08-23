@@ -91,8 +91,16 @@ impl App {
             }
             KeyCode::Char('n') if self.login.pane == LoginPane::List => self.start_new_profile(),
             KeyCode::Char('x' | 'd') if self.login.pane == LoginPane::List => {
-                if let Some(name) = self.login.selected_row().map(|row| row.name.clone()) {
-                    self.overlay = Overlay::ForgetProfile { name };
+                if let Some(row) = self.login.selected_row().cloned() {
+                    if crate::demo::is_demo_target(&row.url)
+                        || row
+                            .name
+                            .eq_ignore_ascii_case(crate::demo::DEMO_PROFILE_NAME)
+                    {
+                        self.status = "Demo profile cannot be forgotten".into();
+                    } else {
+                        self.overlay = Overlay::ForgetProfile { name: row.name };
+                    }
                 }
             }
             KeyCode::Char('e') if self.login.pane == LoginPane::List => {
@@ -174,6 +182,21 @@ impl App {
         let Some(row) = self.login.selected_row().cloned() else {
             return;
         };
+        if crate::demo::is_demo_target(&row.url)
+            || row
+                .name
+                .eq_ignore_ascii_case(crate::demo::DEMO_PROFILE_NAME)
+        {
+            self.login.name = crate::demo::DEMO_PROFILE_NAME.into();
+            self.login.url = crate::demo::DEMO_URL.into();
+            self.login.username = "demo".into();
+            self.login.password.clear();
+            self.login.totp.clear();
+            self.login.uses_totp = false;
+            self.login.remember_password = false;
+            self.current_profile = crate::demo::DEMO_PROFILE_NAME.into();
+            return;
+        }
         if let Some(profile) = self
             .profiles
             .load()
@@ -357,6 +380,31 @@ impl App {
             {
                 return self.copy_current_view();
             }
+            KeyCode::Char('Y')
+                if self.pane == Pane::Content
+                    && self.current_resource != "logs"
+                    && !self.status.starts_with("Filter:") =>
+            {
+                return self.copy_filtered_table();
+            }
+            KeyCode::Char(' ')
+                if self.pane == Pane::Content
+                    && self.current_resource != "logs"
+                    && !self.status.starts_with("Filter:")
+                    && mtui_core::supports_bulk_select(&self.current_resource) =>
+            {
+                self.table.toggle_checked();
+                self.status = format!("{} selected", self.table.checked_count());
+            }
+            KeyCode::Char('*')
+                if self.pane == Pane::Content
+                    && self.current_resource != "logs"
+                    && !self.status.starts_with("Filter:")
+                    && mtui_core::supports_bulk_select(&self.current_resource) =>
+            {
+                self.table.check_all_filtered();
+                self.status = format!("{} selected", self.table.checked_count());
+            }
             KeyCode::Enter => {
                 if self.pane == Pane::Nav
                     && let Some(id) = self.nav.selected_id().map(str::to_owned)
@@ -395,6 +443,9 @@ impl App {
                 if !self.table.filter.is_empty() {
                     self.table.set_filter(String::new());
                     self.status = "Filter cleared".into();
+                } else if self.table.checked_count() > 0 {
+                    self.table.clear_checked();
+                    self.status = "Selection cleared".into();
                 }
             }
             KeyCode::Backspace if !self.table.filter.is_empty() => {
@@ -627,6 +678,38 @@ impl App {
         }
     }
 
+    fn keys_form_confirm(&mut self, key: KeyEvent) -> Option<Vec<AppCommand>> {
+        let Overlay::Form(session) = &self.overlay else {
+            return Some(Vec::new());
+        };
+        if session.confirm_discard {
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => self.overlay = Overlay::None,
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    if let Overlay::Form(session) = &mut self.overlay {
+                        session.confirm_discard = false;
+                    }
+                }
+                _ => {}
+            }
+            return Some(Vec::new());
+        }
+        if session.confirm_save {
+            return Some(match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => self.save_form(),
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    if let Overlay::Form(session) = &mut self.overlay {
+                        session.confirm_save = false;
+                    }
+                    self.status = "Save canceled".into();
+                    Vec::new()
+                }
+                _ => Vec::new(),
+            });
+        }
+        None
+    }
+
     fn keys_form(&mut self, key: KeyEvent) -> Vec<AppCommand> {
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
             return self.save_form();
@@ -637,21 +720,8 @@ impl App {
             _ => return Vec::new(),
         };
 
-        if let Overlay::Form(session) = &self.overlay
-            && session.confirm_discard
-        {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
-                    self.overlay = Overlay::None;
-                }
-                KeyCode::Char('n') | KeyCode::Esc => {
-                    if let Overlay::Form(session) = &mut self.overlay {
-                        session.confirm_discard = false;
-                    }
-                }
-                _ => {}
-            }
-            return Vec::new();
+        if let Some(cmds) = self.keys_form_confirm(key) {
+            return cmds;
         }
 
         if matches!(&self.overlay, Overlay::Form(session) if session.lookup_open()) {

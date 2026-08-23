@@ -1,6 +1,6 @@
 //! Filterable / sortable table state.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use mtui_core::ColumnSpec;
 use ratatui::style::Style;
@@ -33,6 +33,7 @@ pub struct TableState {
     viewport_width: usize,
     viewport_height: usize,
     filtered: Vec<usize>,
+    checked: HashSet<String>,
 }
 
 impl TableState {
@@ -50,12 +51,14 @@ impl TableState {
             viewport_width: DEFAULT_VIEWPORT_WIDTH,
             viewport_height: DEFAULT_VIEWPORT_HEIGHT,
             filtered: Vec::new(),
+            checked: HashSet::new(),
         }
     }
 
     pub fn set_rows(&mut self, rows: Vec<Row>) {
         self.rows = rows;
         self.recompute();
+        self.prune_checked();
     }
 
     pub fn set_filter(&mut self, filter: String) {
@@ -125,6 +128,61 @@ impl TableState {
         self.filtered
             .get(self.selected)
             .and_then(|i| self.rows.get(*i))
+    }
+
+    /// Toggle the current row's bulk-select mark (keyed by `.id`).
+    pub fn toggle_checked(&mut self) {
+        let Some(id) = self.selected_row().and_then(|row| row.get(".id")).cloned() else {
+            return;
+        };
+        if !self.checked.remove(&id) {
+            self.checked.insert(id);
+        }
+    }
+
+    /// Mark every filtered row that has an `.id`.
+    pub fn check_all_filtered(&mut self) {
+        let ids: Vec<String> = self
+            .visible_rows()
+            .into_iter()
+            .filter_map(|row| row.get(".id").filter(|id| !id.is_empty()).cloned())
+            .collect();
+        self.checked.extend(ids);
+    }
+
+    pub fn clear_checked(&mut self) {
+        self.checked.clear();
+    }
+
+    #[must_use]
+    pub fn checked_count(&self) -> usize {
+        self.checked.len()
+    }
+
+    #[must_use]
+    pub fn is_row_checked(&self, row: &Row) -> bool {
+        row.get(".id")
+            .is_some_and(|id| !id.is_empty() && self.checked.contains(id))
+    }
+
+    /// Checked `.id` values in table order.
+    #[must_use]
+    pub fn checked_ids(&self) -> Vec<String> {
+        self.rows
+            .iter()
+            .filter_map(|row| {
+                let id = row.get(".id")?;
+                self.checked.contains(id).then(|| id.clone())
+            })
+            .collect()
+    }
+
+    fn prune_checked(&mut self) {
+        self.checked.retain(|id| {
+            self.rows
+                .iter()
+                .any(|row| row.get(".id").map(String::as_str) == Some(id.as_str()))
+        });
     }
 
     /// Restore selection to the filtered row whose `.id` matches `id`.
@@ -245,6 +303,13 @@ impl TableState {
         );
         if selected {
             crate::layout::fit_line(crate::paint::line_on_bg(line, styles.selection), width)
+        } else if self.is_row_checked(row) {
+            Line::from(
+                line.spans
+                    .into_iter()
+                    .map(|span| Span::styled(span.content, styles.focus))
+                    .collect::<Vec<_>>(),
+            )
         } else {
             line
         }
@@ -602,6 +667,26 @@ mod scroll_tests {
         let header = lines_plain(&[state.header_line(&styles(), 10)]);
         assert!(header.contains("Type"), "did not pan to Type: {header}");
         assert!(!header.contains("Name"), "Name stayed after pan: {header}");
+    }
+
+    #[test]
+    fn toggle_checked_tracks_row_ids() {
+        let mut state = TableState::new(&columns());
+        let mut first = rows(1).remove(0);
+        first.insert(".id".into(), "*1".into());
+        let mut second = HashMap::new();
+        second.insert("name".into(), "row-01".into());
+        second.insert(".id".into(), "*2".into());
+        state.set_rows(vec![first, second]);
+        state.toggle_checked();
+        assert_eq!(state.checked_ids(), vec!["*1".to_string()]);
+        state.move_selection(1);
+        state.toggle_checked();
+        assert_eq!(state.checked_count(), 2);
+        state.check_all_filtered();
+        assert_eq!(state.checked_count(), 2);
+        state.clear_checked();
+        assert_eq!(state.checked_count(), 0);
     }
 
     #[test]
