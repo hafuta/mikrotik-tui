@@ -97,14 +97,12 @@ profile auto-reconnects unless it requires a fresh TOTP.
 
 ## Install
 
-macOS via Homebrew (prebuilt binary, no Rust toolchain):
+macOS:
 
 ```sh
 brew tap hafuta/mikrotik-tui
 brew install mikrotik-tui
 ```
-
-The tap lives at [hafuta/homebrew-mikrotik-tui](https://github.com/hafuta/homebrew-mikrotik-tui). It does not require an Apple Developer account. `brew install --HEAD` compiles from `master` and needs Homebrew `rust`.
 
 Linux and Windows: download a GitHub Release archive, or build from this repo.
 
@@ -231,10 +229,9 @@ Linux or Windows test module.
 the binary to `bin/` and `dist/` respectively. `just --list` shows the rest
 (`fmt-fix`, `clippy`, `test`, `run`, `clean`).
 
-Pushing a `v*` tag runs GitHub Actions `Release`. It publishes unsigned
-archives for Linux (amd64, arm64), macOS (arm64, amd64), and Windows (amd64),
-plus `checksums.txt`. Mac Gatekeeper and Windows SmartScreen may warn until
-the binaries are signed.
+Pushing a `v*` tag runs GitHub Actions `Release`. It publishes archives for
+Linux (amd64, arm64), macOS (arm64, amd64), and Windows (amd64), plus
+`checksums.txt`.
 
 ## License
 
