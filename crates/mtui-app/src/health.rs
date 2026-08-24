@@ -21,6 +21,9 @@ impl App {
         self.reconnect_at = None;
         self.reconnect_attempt = 0;
         self.access = SessionAccess::unknown();
+        self.safe_mode = mtui_core::SafeModeStatus::default();
+        self.last_safe_mode_verb = None;
+        self.safe_mode_after = crate::safe_mode::SafeModeAfter::None;
     }
 
     pub(crate) fn mark_live(&mut self) {
@@ -47,6 +50,10 @@ impl App {
         let reason = reason.into();
         tracing::warn!(error = %reason, "session dropped");
         self.bump_request_generation();
+        if self.safe_mode.we_hold() {
+            self.held_safe_mode_at_drop = true;
+            self.safe_mode.current = false;
+        }
         self.client = None;
         self.link = LinkState::Dropped;
         self.refreshing = false;
@@ -54,7 +61,11 @@ impl App {
         self.close_remote_overlays();
         if self.login.uses_totp || !self.can_auto_reconnect() {
             self.reconnect_at = None;
-            self.status = self.link_status_message();
+            self.status = if self.held_safe_mode_at_drop {
+                "Connection dropped while Safe Mode was on. The router will unroll those changes after it notices this session is gone.".into()
+            } else {
+                self.link_status_message()
+            };
             return Vec::new();
         }
         self.begin_reconnect()
@@ -69,6 +80,8 @@ impl App {
                 | Overlay::TypePicker(_)
                 | Overlay::Torch(_)
                 | Overlay::Probe(_)
+                | Overlay::SafeModeConflict { .. }
+                | Overlay::SafeModeLeave { .. }
         ) {
             self.overlay = Overlay::None;
         }
@@ -106,7 +119,11 @@ impl App {
         self.loading = false;
         self.refreshing = false;
         self.screen = Screen::Main;
-        self.status = self.link_status_message();
+        self.status = if self.held_safe_mode_at_drop {
+            "Connection dropped while Safe Mode was on. Reconnecting, then unrolling that session's tagged changes.".into()
+        } else {
+            self.link_status_message()
+        };
         vec![self.connect_command()]
     }
 
@@ -214,6 +231,7 @@ impl App {
         if self.access.inspect_only() && self.session_ready() {
             out.push(Signal::new("MODE", "READ", SignalLevel::Warning));
         }
+        out.extend(self.safe_mode_signals());
         out
     }
 

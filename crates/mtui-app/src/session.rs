@@ -4,7 +4,7 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
-use mtui_core::{DASHBOARD_ID, SessionAccess, navigation_tree};
+use mtui_core::{DASHBOARD_ID, SafeModeStatus, SessionAccess, navigation_tree};
 use mtui_routeros::{Client, Resource};
 use mtui_ui::{
     CommandPalette, ConsoleEntry, ConsoleState, InspectorState, LoginForm, NavState, TableState,
@@ -14,6 +14,7 @@ use crate::app::{
     ConnectIntent, LogSeverity, Overlay, Pane, ReauthState, Screen, palette_commands,
 };
 use crate::demo::DemoStore;
+use crate::safe_mode::{SafeModeAfter, SafeModeVerb};
 use crate::telemetry::DashboardTelemetry;
 
 /// Stable id for a tab / [`Session`]. Never reused within one process.
@@ -95,6 +96,11 @@ pub struct Session {
     pub(crate) reconnect_at: Option<Instant>,
     pub(crate) reconnect_attempt: u32,
     pub access: SessionAccess,
+    pub(crate) safe_mode: SafeModeStatus,
+    pub(crate) held_safe_mode_at_drop: bool,
+    pub(crate) floating_undo_count: usize,
+    pub(crate) last_safe_mode_verb: Option<SafeModeVerb>,
+    pub(crate) safe_mode_after: SafeModeAfter,
 }
 
 impl Session {
@@ -147,6 +153,11 @@ impl Session {
             reconnect_at: None,
             reconnect_attempt: 0,
             access: SessionAccess::unknown(),
+            safe_mode: SafeModeStatus::default(),
+            held_safe_mode_at_drop: false,
+            floating_undo_count: 0,
+            last_safe_mode_verb: None,
+            safe_mode_after: SafeModeAfter::None,
         }
     }
 

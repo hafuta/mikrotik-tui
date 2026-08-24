@@ -79,6 +79,11 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                 Overlay::FilePicker(ref picker) => {
                     render_file_picker(frame, full, picker, &styles);
                 }
+                Overlay::SafeModeConflict {
+                    ref owner,
+                    ref user,
+                } => draw_safe_mode_conflict(frame, full, owner, user, &styles),
+                Overlay::SafeModeLeave { .. } => draw_safe_mode_leave(frame, full, &styles),
                 Overlay::None => {}
             }
         }
@@ -196,6 +201,71 @@ fn draw_forget(frame: &mut Frame<'_>, area: Rect, name: &str, styles: &mtui_ui::
     let modal = Modal::new("Forget device", &body)
         .alert()
         .kicker("Explicit delete")
+        .buttons(&buttons);
+    render_modal(frame, area, &modal, styles);
+}
+
+fn draw_safe_mode_conflict(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    owner: &str,
+    user: &str,
+    styles: &mtui_ui::Styles,
+) {
+    let holder = match (owner, user) {
+        ("", "") => "another session".to_string(),
+        (owner, "") => owner.to_string(),
+        ("", user) => user.to_string(),
+        (owner, user) => format!("{owner} ({user})"),
+    };
+    let body = format!(
+        "Safe Mode is held by {holder}.\n\nUnroll undoes that session's pending changes and takes Safe Mode. Keep takes Safe Mode and leaves those changes. Leave does nothing."
+    );
+    let buttons = [
+        ModalButton {
+            label: "Unroll",
+            keys: "u",
+            kind: ModalButtonKind::Primary,
+        },
+        ModalButton {
+            label: "Keep",
+            keys: "r",
+            kind: ModalButtonKind::Secondary,
+        },
+        ModalButton {
+            label: "Leave",
+            keys: "d / esc",
+            kind: ModalButtonKind::Secondary,
+        },
+    ];
+    let modal = Modal::new("Safe Mode taken", &body)
+        .alert()
+        .kicker("One owner at a time")
+        .buttons(&buttons);
+    render_modal(frame, area, &modal, styles);
+}
+
+fn draw_safe_mode_leave(frame: &mut Frame<'_>, area: Rect, styles: &mtui_ui::Styles) {
+    let body = "This tab holds Safe Mode. Unroll undoes tagged changes. Keep commits them, then this tab can close.";
+    let buttons = [
+        ModalButton {
+            label: "Unroll",
+            keys: "u / enter",
+            kind: ModalButtonKind::Primary,
+        },
+        ModalButton {
+            label: "Keep",
+            keys: "r",
+            kind: ModalButtonKind::Secondary,
+        },
+        ModalButton {
+            label: "Stay",
+            keys: "esc",
+            kind: ModalButtonKind::Secondary,
+        },
+    ];
+    let modal = Modal::new("Leave Safe Mode", body)
+        .alert()
         .buttons(&buttons);
     render_modal(frame, area, &modal, styles);
 }

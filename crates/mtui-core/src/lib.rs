@@ -18,7 +18,9 @@ mod ppp_write;
 mod queue_write;
 mod radius_write;
 mod resources;
+mod routeros_version;
 mod routing_write;
+mod safe_mode;
 mod switch_write;
 mod system_write;
 mod theme;
@@ -48,6 +50,14 @@ pub use forms::{
 pub use resources::{
     ALL_RESOURCES, ColumnSpec, DASHBOARD_ID, FetchKind, NAVIGATION, NavGroup, NavItem,
     ResourceSpec, navigation_tree, resource_by_id,
+};
+pub use routeros_version::{
+    MIN_ROUTEROS_VERSION, RouterOsVersion, parse_routeros_version, routeros_meets_minimum,
+    unsupported_routeros_copy,
+};
+pub use safe_mode::{
+    SAFE_MODE_HISTORY_LIMIT, SAFE_MODE_HISTORY_WARN, SafeModeStatus, floating_undo_count,
+    safe_mode_overflow_warning,
 };
 pub use system_write::{
     AT_CHAT_PROMPT, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT, CERT_SIGN_PROMPT, CERTIFICATE_FORM,

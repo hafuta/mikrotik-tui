@@ -14,6 +14,11 @@ impl App {
             if self.screen == Screen::Login {
                 self.persist_login_draft();
             }
+            if let Some(cmds) =
+                self.request_leave_with_safe_mode(crate::safe_mode::SafeModeAfter::Quit)
+            {
+                return cmds;
+            }
             self.should_quit = true;
             return vec![AppCommand::Quit];
         }
@@ -53,6 +58,11 @@ impl App {
             KeyCode::Char('w') => {
                 if self.sessions.len() <= 1 {
                     return Some(Vec::new());
+                }
+                if let Some(cmds) =
+                    self.request_leave_with_safe_mode(crate::safe_mode::SafeModeAfter::CloseTab)
+                {
+                    return Some(cmds);
                 }
                 let id = self.active;
                 self.close_session(id);
@@ -302,6 +312,11 @@ impl App {
                     return Vec::new();
                 }
                 KeyCode::Char('l') => {
+                    if let Some(cmds) =
+                        self.request_leave_with_safe_mode(crate::safe_mode::SafeModeAfter::Logout)
+                    {
+                        return cmds;
+                    }
                     tracing::info!("logout");
                     self.disconnect_to_profiles();
                     return Vec::new();
@@ -358,6 +373,11 @@ impl App {
                 return Vec::new();
             }
             KeyCode::Char('q') => {
+                if let Some(cmds) =
+                    self.request_leave_with_safe_mode(crate::safe_mode::SafeModeAfter::Quit)
+                {
+                    return cmds;
+                }
                 self.should_quit = true;
                 return vec![AppCommand::Quit];
             }
@@ -372,6 +392,9 @@ impl App {
             KeyCode::F(1) => {
                 self.open_about();
                 return Vec::new();
+            }
+            KeyCode::F(4) if !self.status.starts_with("Filter:") => {
+                return self.toggle_safe_mode();
             }
             KeyCode::Char('.') if !self.status.starts_with("Filter:") => {
                 self.toggle_show_hidden_menus();
@@ -527,6 +550,9 @@ impl App {
             Overlay::Confirm(_) | Overlay::HideMenu { .. } | Overlay::ForgetProfile { .. } => {
                 self.keys_confirm(key)
             }
+            Overlay::SafeModeConflict { .. } | Overlay::SafeModeLeave { .. } => {
+                self.keys_safe_mode_overlay(key)
+            }
             Overlay::Reauth => self.keys_reauth(key),
             Overlay::Form(_) => self.keys_form(key),
             Overlay::ActionMenu(_) => self.keys_action_menu(key, false),
@@ -623,6 +649,11 @@ impl App {
         let filtered_len = self.console.filtered_indices(&self.console_entries).len();
         match key.code {
             KeyCode::Char('q') => {
+                if let Some(cmds) =
+                    self.request_leave_with_safe_mode(crate::safe_mode::SafeModeAfter::Quit)
+                {
+                    return cmds;
+                }
                 self.should_quit = true;
                 return vec![AppCommand::Quit];
             }
@@ -803,6 +834,28 @@ impl App {
                     self.confirm_pending()
                 }
             }
+            _ => Vec::new(),
+        }
+    }
+
+    fn keys_safe_mode_overlay(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+        match &self.overlay {
+            Overlay::SafeModeConflict { .. } => match key.code {
+                KeyCode::Char('u') => self.confirm_safe_mode_conflict('u'),
+                KeyCode::Char('r') => self.confirm_safe_mode_conflict('r'),
+                KeyCode::Char('d' | 'n') | KeyCode::Esc => self.confirm_safe_mode_conflict('d'),
+                _ => Vec::new(),
+            },
+            Overlay::SafeModeLeave { .. } => match key.code {
+                KeyCode::Char('u') | KeyCode::Enter => self.confirm_safe_mode_leave(true),
+                KeyCode::Char('r') => self.confirm_safe_mode_leave(false),
+                KeyCode::Esc | KeyCode::Char('n') => {
+                    self.overlay = Overlay::None;
+                    self.status = "Still in Safe Mode".into();
+                    Vec::new()
+                }
+                _ => Vec::new(),
+            },
             _ => Vec::new(),
         }
     }
@@ -1377,6 +1430,11 @@ impl App {
         match id {
             "refresh" => self.refresh_now(),
             "logout" | "switch-device" => {
+                if let Some(cmds) =
+                    self.request_leave_with_safe_mode(crate::safe_mode::SafeModeAfter::Logout)
+                {
+                    return cmds;
+                }
                 self.logout();
                 Vec::new()
             }
@@ -1415,6 +1473,8 @@ impl App {
                 Vec::new()
             }
             "dashboard" => self.open_resource(DASHBOARD_ID),
+            "safe-mode" => self.toggle_safe_mode(),
+            "safe-mode-unroll" => self.unroll_safe_mode(),
             other => {
                 if resource_by_id(other).is_some() {
                     self.open_resource(other)

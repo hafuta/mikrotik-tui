@@ -42,7 +42,7 @@ const releases = `${repo}/releases`;
 
       <div class="stage">
         <Deck />
-        <p class="hint">This project is new. Expect bugs and unstable behavior. Tested on current RouterOS long-term.</p>
+        <p class="hint">This project is new. Expect bugs and unstable behavior. Needs RouterOS 7.18 or newer.</p>
       </div>
 
       <section class="section section--split" id="surfaces">
@@ -115,6 +115,7 @@ const releases = `${repo}/releases`;
           <li class="key"><b>/</b><span>Filter</span></li>
           <li class="key"><b>ctrl+k</b><span>Palette</span></li>
           <li class="key"><b>ctrl+t</b><span>New device tab</span></li>
+          <li class="key"><b>F4</b><span>Safe Mode</span></li>
           <li class="key"><b>t</b><span>Torch</span></li>
           <li class="key"><b>`</b><span>App logs</span></li>
           <li class="key"><b>?</b><span>Help</span></li>
@@ -141,7 +142,7 @@ brew install mikrotik-tui
 curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh</code></pre>
           </div>
           <p class="note">
-            Needs RouterOS v7 and <code>api-ssl</code> (TLS, default port 8729)
+            Needs RouterOS 7.18 or newer and <code>api-ssl</code> (TLS, default port 8729)
             or the plaintext <code>api</code> service (default port 8728).
             Prefer TLS. Certificates are checked against the OS trust store, a
             CA file (enter to browse), or a pinned fingerprint. Saved files live under your OS

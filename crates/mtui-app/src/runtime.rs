@@ -9,7 +9,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use mtui_core::FetchKind;
+use mtui_core::{FetchKind, routeros_meets_minimum};
 use mtui_routeros::{Client, ClientOptions, ErrorKind, probe_certificate};
 use mtui_ui::ColorDepth;
 use ratatui::Terminal;
@@ -585,6 +585,31 @@ fn dispatch_commands(
                     });
                 });
             }
+            AppCommand::FetchSafeMode {
+                session,
+                generation,
+            } => {
+                let Some(client) = client else {
+                    continue;
+                };
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let result = client.system("/rest/safe-mode").await;
+                    let (row, error) = match result {
+                        Ok(row) => (Some(row), None),
+                        Err(err) => {
+                            send_if_session_event(&tx, session, generation, &err);
+                            (None, Some(err.to_string()))
+                        }
+                    };
+                    let _ = tx.send(WorkerMsg::SafeModeResult {
+                        session,
+                        generation,
+                        row,
+                        error,
+                    });
+                });
+            }
         }
     }
 }
@@ -616,13 +641,25 @@ async fn connect_worker(
     }
     match Client::connect(options).await {
         Ok(client) => match client.system("/rest/system/resource").await {
-            Ok(router) => WorkerMsg::Connected {
-                session,
-                client: Some(Arc::new(client)),
-                router: Some(router),
-                error: None,
-                error_kind: None,
-            },
+            Ok(router) => {
+                let version = router.field("version").unwrap_or("");
+                if let Err(message) = routeros_meets_minimum(version) {
+                    return WorkerMsg::Connected {
+                        session,
+                        client: None,
+                        router: None,
+                        error: Some(message),
+                        error_kind: Some(ErrorKind::Api),
+                    };
+                }
+                WorkerMsg::Connected {
+                    session,
+                    client: Some(Arc::new(client)),
+                    router: Some(router),
+                    error: None,
+                    error_kind: None,
+                }
+            }
             Err(err) => tls_or_connect_error(session, url, had_pin, err).await,
         },
         Err(err) => tls_or_connect_error(session, url, had_pin, err).await,

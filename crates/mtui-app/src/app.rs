@@ -27,6 +27,7 @@ use mtui_ui::{
 
 use crate::demo::{DEMO_PROFILE_NAME, DEMO_URL, DemoStore, is_demo_target};
 use crate::event::{AppEvent, WorkerMsg};
+use crate::safe_mode::SafeModeAfter;
 use crate::session::{MAX_SESSIONS, Session, SessionId};
 use crate::telemetry::select_wan_interface;
 use crate::write::{ConfirmSession, MutationOp};
@@ -86,6 +87,13 @@ pub enum Overlay {
         name: String,
     },
     Reauth,
+    SafeModeConflict {
+        owner: String,
+        user: String,
+    },
+    SafeModeLeave {
+        next: SafeModeAfter,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -207,6 +215,10 @@ pub enum AppCommand {
         generation: u64,
         path: String,
     },
+    FetchSafeMode {
+        session: SessionId,
+        generation: u64,
+    },
 }
 
 impl AppCommand {
@@ -231,7 +243,8 @@ impl AppCommand {
             | Self::WriteLocalFile { session, .. }
             | Self::FetchRecord { session, .. }
             | Self::FetchLookup { session, .. }
-            | Self::ListLocalDir { session, .. } => Some(*session),
+            | Self::ListLocalDir { session, .. }
+            | Self::FetchSafeMode { session, .. } => Some(*session),
         }
     }
 
@@ -255,7 +268,8 @@ impl AppCommand {
             | Self::WriteLocalFile { session, .. }
             | Self::FetchRecord { session, .. }
             | Self::FetchLookup { session, .. }
-            | Self::ListLocalDir { session, .. } => *session = id,
+            | Self::ListLocalDir { session, .. }
+            | Self::FetchSafeMode { session, .. } => *session = id,
         }
     }
 }
@@ -1217,6 +1231,7 @@ impl App {
                     let mut cmds = self.poll_current();
                     cmds.extend(self.fetch_packages_command());
                     cmds.extend(self.fetch_access_command());
+                    cmds.extend(self.on_reconnect_safe_mode());
                     return cmds;
                 }
                 self.screen = Screen::Main;
@@ -1229,6 +1244,7 @@ impl App {
                 let mut cmds = self.poll_current();
                 cmds.extend(self.fetch_packages_command());
                 cmds.extend(self.fetch_access_command());
+                cmds.extend(self.fetch_safe_mode_command());
                 cmds
             }
             WorkerMsg::AuthRequired { message, .. } => {
@@ -1290,6 +1306,9 @@ impl App {
                     return Vec::new();
                 }
                 self.note_data_ok();
+                if resource_id == "history" {
+                    self.note_history_rows(&rows);
+                }
                 let loaded = resource_loaded_message(&resource_id, &rows);
                 tracing::debug!(
                     resource_id = resource_id.as_str(),
@@ -1362,6 +1381,7 @@ impl App {
                 Vec::new()
             }
             WorkerMsg::MutateResult { .. } => self.apply_mutate_result(msg),
+            WorkerMsg::SafeModeResult { .. } => self.apply_safe_mode_result(msg),
             WorkerMsg::TorchResult {
                 generation,
                 rows,
@@ -2195,6 +2215,11 @@ fn palette_commands_filtered(
         Command::new("reset-hidden-menus", "Restore all menus")
             .with_description("put every hidden sidebar item back"),
         Command::new("dashboard", "Dashboard").with_description("live WAN overview"),
+        Command::new("safe-mode", "Toggle Safe Mode").with_description(
+            "take or release Safe Mode on this tab so a dropped session unrolls edits",
+        ),
+        Command::new("safe-mode-unroll", "Unroll Safe Mode")
+            .with_description("undo changes tagged while Safe Mode was on"),
     ];
     commands.extend(ALL_RESOURCES.iter().map(|spec| {
         Command::new(spec.id, spec.cli_path())

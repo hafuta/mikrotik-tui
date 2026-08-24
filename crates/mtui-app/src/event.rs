@@ -142,6 +142,12 @@ pub enum WorkerMsg {
         interface: String,
         sample: Resource,
     },
+    SafeModeResult {
+        session: SessionId,
+        generation: u64,
+        row: Option<Resource>,
+        error: Option<String>,
+    },
 }
 
 impl WorkerMsg {
@@ -165,7 +171,8 @@ impl WorkerMsg {
             | Self::LookupResult { session, .. }
             | Self::ListLocalDirResult { session, .. }
             | Self::ListenDelta { session, .. }
-            | Self::WanSample { session, .. } => *session,
+            | Self::WanSample { session, .. }
+            | Self::SafeModeResult { session, .. } => *session,
         }
     }
 }

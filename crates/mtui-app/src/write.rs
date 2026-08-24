@@ -138,6 +138,7 @@ impl App {
             ("i".into(), "about".into()),
             ("ctrl+k".into(), "commands".into()),
             ("`".into(), "console".into()),
+            ("F4".into(), "safe mode".into()),
         ];
         if self.nav.show_hidden {
             if self.pane == Pane::Nav {
@@ -528,7 +529,17 @@ impl App {
             fields.insert("name".into(), record_name.clone());
         }
         let label = action_label(action, row);
-        let body = confirm_body(action.id, &label, &record_name);
+        let mut body = confirm_body(action.id, &label, &record_name);
+        if self.safe_mode.we_hold()
+            && matches!(
+                action.id,
+                "reboot" | "shutdown" | "upgrade" | "reset-configuration" | "backup-load"
+            )
+        {
+            body.push_str(
+                "\n\nSafe Mode cannot undo reboot, shutdown, firmware upgrade, or reset.",
+            );
+        }
         self.overlay = Overlay::Confirm(ConfirmSession {
             title: label,
             body,
@@ -1189,6 +1200,9 @@ impl App {
         };
         if generation != self.poll_generation {
             return Vec::new();
+        }
+        if let Some(cmds) = self.finish_safe_mode_mutate(error.as_deref()) {
+            return cmds;
         }
         if let Some(err) = error {
             if let Overlay::Form(session) = &mut self.overlay {

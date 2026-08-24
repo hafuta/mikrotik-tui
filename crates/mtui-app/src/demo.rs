@@ -116,6 +116,10 @@ impl DemoStore {
                 command,
                 fields,
             } => {
+                if endpoint.trim_end_matches('/').ends_with("/safe-mode") {
+                    self.apply_safe_mode(command);
+                    return Ok(());
+                }
                 let Some(id) = fields.get(".id") else {
                     return Ok(());
                 };
@@ -144,7 +148,7 @@ impl DemoStore {
                 &[
                     ("identity", "demo-router"),
                     ("board-name", "CCR2004-16G-2S+"),
-                    ("version", "7.16.2 (long-term)"),
+                    ("version", "7.18.2 (stable)"),
                     ("cpu", "ARM"),
                     ("cpu-count", "4"),
                     ("cpu-load", "8"),
@@ -161,7 +165,7 @@ impl DemoStore {
                 "*pkg1",
                 &[
                     ("name", "routeros"),
-                    ("version", "7.16.2"),
+                    ("version", "7.18.2"),
                     ("build-time", "2025-01-15"),
                     ("disabled", "false"),
                 ],
@@ -386,6 +390,69 @@ impl DemoStore {
                 ),
             ],
         );
+        self.rows.insert(
+            "safe-mode".into(),
+            vec![resource(
+                "",
+                &[
+                    ("enabled", "false"),
+                    ("current", "false"),
+                    ("owner", ""),
+                    ("user", ""),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "history".into(),
+            vec![
+                resource(
+                    "*h1",
+                    &[
+                        ("time", "aug/25/2026 01:00:00"),
+                        ("action", "set"),
+                        ("by", "admin"),
+                        ("policy", "write"),
+                        ("floating-undo", "false"),
+                    ],
+                ),
+                resource(
+                    "*h2",
+                    &[
+                        ("time", "aug/25/2026 01:02:00"),
+                        ("action", "set"),
+                        ("by", "admin"),
+                        ("policy", "write"),
+                        ("floating-undo", "true"),
+                        ("flags", "F"),
+                    ],
+                ),
+            ],
+        );
+    }
+
+    fn apply_safe_mode(&mut self, command: &str) {
+        let row = self
+            .rows
+            .entry("safe-mode".into())
+            .or_insert_with(|| vec![resource("", &[])]);
+        let Some(row) = row.first_mut() else {
+            return;
+        };
+        match command {
+            "take" => {
+                row.fields.insert("enabled".into(), "true".into());
+                row.fields.insert("current".into(), "true".into());
+                row.fields.insert("owner".into(), "api".into());
+                row.fields.insert("user".into(), "demo".into());
+            }
+            "release" | "unroll" => {
+                row.fields.insert("enabled".into(), "false".into());
+                row.fields.insert("current".into(), "false".into());
+                row.fields.insert("owner".into(), String::new());
+                row.fields.insert("user".into(), String::new());
+            }
+            _ => {}
+        }
     }
 
     fn alloc_id(&mut self) -> String {
@@ -538,6 +605,15 @@ pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>>
                 error,
             }])
         }
+        AppCommand::FetchSafeMode {
+            session,
+            generation,
+        } => Some(vec![WorkerMsg::SafeModeResult {
+            session: *session,
+            generation: *generation,
+            row: store.rows("safe-mode").into_iter().next(),
+            error: None,
+        }]),
         AppCommand::FetchTorch {
             session,
             generation,
@@ -622,6 +698,41 @@ mod tests {
         assert_eq!(store.rows("firewall-filter").len(), 3);
         assert_eq!(store.rows("dhcp-leases").len(), 2);
         assert_eq!(store.rows("packages")[0].field("name"), Some("routeros"));
+        assert_eq!(
+            store.rows("system-resource")[0].field("version"),
+            Some("7.18.2 (stable)")
+        );
+        assert_eq!(store.rows("history").len(), 2);
+    }
+
+    #[test]
+    fn demo_safe_mode_take_and_print() {
+        let mut store = DemoStore::new();
+        store
+            .apply(&MutationOp::Command {
+                endpoint: "/rest/safe-mode".into(),
+                command: "take".into(),
+                fields: BTreeMap::new(),
+            })
+            .expect("take");
+        let row = store.rows("safe-mode").into_iter().next().expect("row");
+        assert_eq!(row.field("enabled"), Some("true"));
+        assert_eq!(row.field("current"), Some("true"));
+        let msgs = handle(
+            &mut store,
+            &AppCommand::FetchSafeMode {
+                session: crate::session::SessionId::UNSTAMPED,
+                generation: 1,
+            },
+        )
+        .expect("handled");
+        assert!(matches!(
+            msgs.as_slice(),
+            [WorkerMsg::SafeModeResult {
+                row: Some(row),
+                ..
+            }] if row.field("current") == Some("true")
+        ));
     }
 
     #[test]
