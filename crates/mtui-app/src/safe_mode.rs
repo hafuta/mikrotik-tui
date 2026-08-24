@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use mtui_core::{SafeModeStatus, floating_undo_count, safe_mode_overflow_warning};
+use mtui_core::{
+    SAFE_MODE_HISTORY_LIMIT, SafeModeStatus, floating_undo_count, safe_mode_overflow_warning,
+};
 use mtui_routeros::Resource;
 use mtui_ui::{Signal, SignalLevel};
 
@@ -38,40 +40,47 @@ impl App {
         }]
     }
 
+    pub(crate) fn fetch_safe_mode_if_ready(&mut self) -> Vec<AppCommand> {
+        if self.screen == Screen::Main && self.session_ready() {
+            self.fetch_safe_mode_command()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub(crate) fn apply_safe_mode_resource(&mut self, row: &Resource) {
         self.safe_mode = SafeModeStatus::from_fields(&row.fields);
-        if self.safe_mode.we_hold() {
-            self.held_safe_mode_at_drop = true;
-        }
-        if let Some(warning) = safe_mode_overflow_warning(self.floating_undo_count)
-            && self.safe_mode.we_hold()
-        {
-            self.status = warning;
-        }
+        self.held_safe_mode_at_drop = self.safe_mode.we_hold();
     }
 
     pub(crate) fn note_history_rows(&mut self, rows: &[Resource]) {
         let maps: Vec<_> = rows.iter().map(|row| row.fields.clone()).collect();
         self.floating_undo_count = floating_undo_count(&maps);
-        if self.safe_mode.we_hold()
-            && let Some(warning) = safe_mode_overflow_warning(self.floating_undo_count)
-        {
-            self.status = warning;
-        }
     }
 
     pub(crate) fn safe_mode_signals(&self) -> Vec<Signal> {
-        let mut out = Vec::new();
         if self.safe_mode.we_hold() {
-            out.push(Signal::new("SAFE", "ON", SignalLevel::Warning));
+            let value = if safe_mode_overflow_warning(self.floating_undo_count).is_some() {
+                format!(
+                    "ON - history {}/{SAFE_MODE_HISTORY_LIMIT}, release and take again",
+                    self.floating_undo_count
+                )
+            } else {
+                "ON - changes unroll if this tab drops".into()
+            };
+            vec![Signal::new("SAFE", value, SignalLevel::Warning)]
         } else if self.safe_mode.foreign() {
-            out.push(Signal::new(
+            vec![Signal::new(
                 "SAFE",
-                self.safe_mode.holder_label(),
+                format!(
+                    "{} - another session holds it",
+                    self.safe_mode.holder_label()
+                ),
                 SignalLevel::Error,
-            ));
+            )]
+        } else {
+            Vec::new()
         }
-        out
     }
 
     pub(crate) fn toggle_safe_mode(&mut self) -> Vec<AppCommand> {
@@ -117,7 +126,6 @@ impl App {
         fields.insert("on-error".into(), on_error.to_string());
         self.last_safe_mode_verb = Some(SafeModeVerb::Take);
         self.safe_mode_after = after;
-        self.status = "Taking Safe Mode…".into();
         vec![self.mutate_command(MutationOp::Command {
             endpoint: SAFE_MODE_ENDPOINT.into(),
             command: "take".into(),
@@ -137,11 +145,6 @@ impl App {
         };
         self.last_safe_mode_verb = Some(verb);
         self.safe_mode_after = after;
-        self.status = match verb {
-            SafeModeVerb::Take => "Taking Safe Mode…".into(),
-            SafeModeVerb::Release => "Leaving Safe Mode (commit)…".into(),
-            SafeModeVerb::Unroll => "Unrolling Safe Mode…".into(),
-        };
         vec![self.mutate_command(MutationOp::Command {
             endpoint: SAFE_MODE_ENDPOINT.into(),
             command: command.into(),
@@ -214,24 +217,21 @@ impl App {
                 self.safe_mode.enabled = true;
                 self.safe_mode.current = true;
                 self.held_safe_mode_at_drop = true;
-                self.status = "Safe Mode on. Changes unroll if this tab drops.".into();
             }
-            SafeModeVerb::Release => {
+            SafeModeVerb::Release | SafeModeVerb::Unroll => {
                 self.safe_mode = SafeModeStatus::default();
                 self.held_safe_mode_at_drop = false;
-                self.status = "Safe Mode off. Changes kept.".into();
             }
-            SafeModeVerb::Unroll => {
-                self.safe_mode = SafeModeStatus::default();
-                self.held_safe_mode_at_drop = false;
-                self.status = "Safe Mode unrolled. Pending changes undone.".into();
-            }
+        }
+        if matches!(
+            after,
+            SafeModeAfter::CloseTab | SafeModeAfter::Quit | SafeModeAfter::Logout
+        ) {
+            return Some(self.leave_after_safe_mode(after));
         }
         let mut cmds = self.fetch_safe_mode_command();
         if after == SafeModeAfter::DropHold {
             cmds.extend(self.safe_mode_command(SafeModeVerb::Release, SafeModeAfter::None));
-        } else {
-            cmds.extend(self.leave_after_safe_mode(after));
         }
         if self.current_resource == "history" {
             cmds.extend(self.poll_current());
@@ -313,12 +313,64 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    fn ctrl(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::CONTROL)
+    }
+
     fn live_app() -> App {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;
         app.link = LinkState::Live;
         app.access = SessionAccess::full("admin", "full");
         app
+    }
+
+    fn holding() -> SafeModeStatus {
+        SafeModeStatus {
+            enabled: true,
+            current: true,
+            owner: "api".into(),
+            user: "admin".into(),
+        }
+    }
+
+    fn foreign_owner() -> SafeModeStatus {
+        SafeModeStatus {
+            enabled: true,
+            current: false,
+            owner: "api".into(),
+            user: "admin".into(),
+        }
+    }
+
+    fn is_safe_mode_command(cmd: &AppCommand, verb: &str) -> bool {
+        matches!(
+            cmd,
+            AppCommand::Mutate {
+                op: MutationOp::Command {
+                    endpoint,
+                    command,
+                    ..
+                },
+                ..
+            } if endpoint == SAFE_MODE_ENDPOINT && command == verb
+        )
+    }
+
+    fn take_on_error(cmd: &AppCommand, on_error: &str) -> bool {
+        matches!(
+            cmd,
+            AppCommand::Mutate {
+                op: MutationOp::Command {
+                    endpoint,
+                    command,
+                    fields,
+                },
+                ..
+            } if endpoint == SAFE_MODE_ENDPOINT
+                && command == "take"
+                && fields.get("on-error").map(String::as_str) == Some(on_error)
+        )
     }
 
     #[test]
@@ -346,12 +398,7 @@ mod tests {
     #[test]
     fn foreign_owner_opens_conflict() {
         let mut app = live_app();
-        app.safe_mode = SafeModeStatus {
-            enabled: true,
-            current: false,
-            owner: "winbox".into(),
-            user: "admin".into(),
-        };
+        app.safe_mode = foreign_owner();
         let cmds = app.toggle_safe_mode();
         assert!(cmds.is_empty());
         assert!(matches!(app.overlay, Overlay::SafeModeConflict { .. }));
@@ -360,25 +407,47 @@ mod tests {
     #[test]
     fn close_tab_asks_when_holding() {
         let mut app = live_app();
-        app.safe_mode = SafeModeStatus {
-            enabled: true,
-            current: true,
-            owner: "api".into(),
-            user: "admin".into(),
-        };
+        app.safe_mode = holding();
         let _ = app.new_session();
         app.active = app.sessions[0].id;
-        app.sessions[0].safe_mode = SafeModeStatus {
-            enabled: true,
-            current: true,
-            owner: "api".into(),
-            user: "admin".into(),
-        };
+        app.sessions[0].safe_mode = holding();
         app.sessions[0].screen = Screen::Main;
         app.sessions[0].link = LinkState::Live;
         let asked = app.request_leave_with_safe_mode(SafeModeAfter::CloseTab);
         assert!(asked.is_some());
         assert!(matches!(app.overlay, Overlay::SafeModeLeave { .. }));
+    }
+
+    #[test]
+    fn keep_on_close_tab_switches_to_the_other_tab() {
+        let mut app = live_app();
+        app.poll_generation = 3;
+        let closing = app.active;
+        let kept = app.new_session().expect("second tab");
+        app.active = closing;
+        app.screen = Screen::Main;
+        app.link = LinkState::Live;
+        app.safe_mode = holding();
+        app.last_safe_mode_verb = Some(SafeModeVerb::Release);
+        app.safe_mode_after = SafeModeAfter::CloseTab;
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::MutateResult {
+            session: closing,
+            request_id: 1,
+            generation: 3,
+            error: None,
+        }));
+        assert!(app.session(closing).is_none());
+        assert_eq!(app.active, kept);
+        assert!(app.session(app.active).is_some());
+        assert!(cmds.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::CloseSession { session } if *session == closing
+        )));
+        assert!(
+            !cmds
+                .iter()
+                .any(|cmd| matches!(cmd, AppCommand::FetchSafeMode { .. }))
+        );
     }
 
     #[test]
@@ -391,6 +460,35 @@ mod tests {
             cmds.iter()
                 .any(|cmd| matches!(cmd, AppCommand::FetchSafeMode { .. }))
         );
+    }
+
+    #[test]
+    fn take_shows_safe_on_in_the_header() {
+        let mut app = live_app();
+        app.last_safe_mode_verb = Some(SafeModeVerb::Take);
+        let _ = app.finish_safe_mode_mutate(None);
+        let signals = app.safe_mode_signals();
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].label, "SAFE");
+        assert!(
+            signals[0].value.starts_with("ON -"),
+            "{:?}",
+            signals[0].value
+        );
+        assert!(
+            signals[0].value.contains("unroll"),
+            "{:?}",
+            signals[0].value
+        );
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: 1,
+            generation: app.poll_generation,
+            resource_id: "interfaces".into(),
+            rows: Vec::new(),
+            error: None,
+        }));
+        assert_eq!(app.safe_mode_signals()[0].label, "SAFE");
     }
 
     #[test]
@@ -409,19 +507,377 @@ mod tests {
             });
         }
         app.note_history_rows(&rows);
-        assert!(app.status.contains("80/100"));
+        let value = &app.safe_mode_signals()[0].value;
+        assert!(value.contains("80/100"), "{value}");
+    }
+
+    #[test]
+    fn print_clears_hold_when_another_session_took_it() {
+        let mut app = live_app();
+        app.safe_mode = holding();
+        app.held_safe_mode_at_drop = true;
+        let mut fields = HashMap::new();
+        fields.insert("enabled".into(), "true".into());
+        fields.insert("current".into(), "false".into());
+        fields.insert("owner".into(), "api".into());
+        fields.insert("user".into(), "admin".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::SafeModeResult {
+            session: app.test_session(),
+            generation: app.poll_generation,
+            row: Some(Resource {
+                id: "*1".into(),
+                fields,
+            }),
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+        assert!(app.safe_mode.foreign());
+        assert!(!app.safe_mode.we_hold());
+        assert!(!app.held_safe_mode_at_drop);
+        let value = &app.safe_mode_signals()[0].value;
+        assert!(value.contains("another session holds it"), "{value}");
+    }
+
+    #[test]
+    fn switching_tabs_refetches_safe_mode() {
+        let mut app = live_app();
+        let first = app.active;
+        let second = app.new_session().expect("second tab");
+        app.session_mut(second).expect("tab").screen = Screen::Main;
+        app.session_mut(second).expect("tab").link = LinkState::Live;
+        app.active = first;
+        let cmds = app.cycle_session(1);
+        assert_eq!(app.active, second);
+        assert!(
+            cmds.iter()
+                .any(|cmd| matches!(cmd, AppCommand::FetchSafeMode { .. }))
+        );
     }
 
     #[test]
     fn f4_key_takes_safe_mode() {
         let mut app = live_app();
         let cmds = app.update(AppEvent::Input(press(KeyCode::F(4))));
-        assert!(cmds.iter().any(|cmd| matches!(
-            cmd,
-            AppCommand::Mutate {
-                op: MutationOp::Command { command, .. },
-                ..
-            } if command == "take"
-        )));
+        assert!(cmds.iter().any(|cmd| take_on_error(cmd, "abort")));
+    }
+
+    #[test]
+    fn f4_releases_when_this_tab_holds() {
+        let mut app = live_app();
+        app.safe_mode = holding();
+        let cmds = app.update(AppEvent::Input(press(KeyCode::F(4))));
+        assert_eq!(cmds.len(), 1);
+        assert!(is_safe_mode_command(&cmds[0], "release"));
+    }
+
+    #[test]
+    fn conflict_unroll_takes_with_on_error_unroll() {
+        let mut app = live_app();
+        app.safe_mode = foreign_owner();
+        let _ = app.update(AppEvent::Input(press(KeyCode::F(4))));
+        assert!(matches!(app.overlay, Overlay::SafeModeConflict { .. }));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(matches!(app.overlay, Overlay::None));
+        assert_eq!(cmds.len(), 1);
+        assert!(take_on_error(&cmds[0], "unroll"));
+    }
+
+    #[test]
+    fn conflict_keep_takes_with_on_error_release() {
+        let mut app = live_app();
+        app.overlay = Overlay::SafeModeConflict {
+            owner: "api".into(),
+            user: "admin".into(),
+        };
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('r'))));
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(take_on_error(&cmds[0], "release"));
+    }
+
+    #[test]
+    fn conflict_leave_does_not_mutate() {
+        let mut app = live_app();
+        app.safe_mode = foreign_owner();
+        app.overlay = Overlay::SafeModeConflict {
+            owner: "api".into(),
+            user: "admin".into(),
+        };
+        for key in [
+            press(KeyCode::Char('d')),
+            press(KeyCode::Esc),
+            press(KeyCode::Char('n')),
+        ] {
+            app.overlay = Overlay::SafeModeConflict {
+                owner: "api".into(),
+                user: "admin".into(),
+            };
+            let cmds = app.update(AppEvent::Input(key));
+            assert!(cmds.is_empty());
+            assert!(matches!(app.overlay, Overlay::None));
+            assert!(app.safe_mode.foreign());
+            assert!(app.status.contains("other session"));
+        }
+    }
+
+    #[test]
+    fn busy_take_opens_conflict_and_refetches() {
+        let mut app = live_app();
+        app.safe_mode = foreign_owner();
+        app.last_safe_mode_verb = Some(SafeModeVerb::Take);
+        let cmds = app
+            .finish_safe_mode_mutate(Some("failure: already taken"))
+            .expect("handled");
+        assert!(matches!(app.overlay, Overlay::SafeModeConflict { .. }));
+        assert!(app.status.contains("already taken"));
+        assert!(
+            cmds.iter()
+                .any(|cmd| matches!(cmd, AppCommand::FetchSafeMode { .. }))
+        );
+    }
+
+    #[test]
+    fn hijack_error_also_opens_conflict() {
+        let mut app = live_app();
+        app.last_safe_mode_verb = Some(SafeModeVerb::Take);
+        let _ = app.finish_safe_mode_mutate(Some("cannot hijack"));
+        assert!(matches!(app.overlay, Overlay::SafeModeConflict { .. }));
+    }
+
+    #[test]
+    fn palette_unroll_sends_unroll() {
+        let mut app = live_app();
+        app.safe_mode = holding();
+        let _ = app.update(AppEvent::Input(ctrl(KeyCode::Char('k'))));
+        for ch in "Unroll Safe Mode".chars() {
+            let _ = app.update(AppEvent::Input(press(KeyCode::Char(ch))));
+        }
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(cmds.iter().any(|cmd| is_safe_mode_command(cmd, "unroll")));
+    }
+
+    #[test]
+    fn quit_asks_when_holding_then_unroll_quits() {
+        let mut app = live_app();
+        app.safe_mode = holding();
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('q'))));
+        assert!(cmds.is_empty());
+        assert!(matches!(
+            app.overlay,
+            Overlay::SafeModeLeave {
+                next: SafeModeAfter::Quit
+            }
+        ));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(is_safe_mode_command(&cmds[0], "unroll"));
+        app.poll_generation = 4;
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::MutateResult {
+            session: app.test_session(),
+            request_id: 1,
+            generation: 4,
+            error: None,
+        }));
+        assert!(app.should_quit);
+        assert!(cmds.iter().any(|cmd| matches!(cmd, AppCommand::Quit)));
+        assert!(
+            !cmds
+                .iter()
+                .any(|cmd| matches!(cmd, AppCommand::FetchSafeMode { .. }))
+        );
+    }
+
+    #[test]
+    fn leave_keep_sends_release() {
+        let mut app = live_app();
+        app.overlay = Overlay::SafeModeLeave {
+            next: SafeModeAfter::Quit,
+        };
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('r'))));
+        assert!(is_safe_mode_command(&cmds[0], "release"));
+    }
+
+    #[test]
+    fn leave_enter_unrolls() {
+        let mut app = live_app();
+        app.overlay = Overlay::SafeModeLeave {
+            next: SafeModeAfter::Logout,
+        };
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(is_safe_mode_command(&cmds[0], "unroll"));
+    }
+
+    #[test]
+    fn leave_escape_stays_in_safe_mode() {
+        let mut app = live_app();
+        app.safe_mode = holding();
+        app.overlay = Overlay::SafeModeLeave {
+            next: SafeModeAfter::Quit,
+        };
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(app.safe_mode.we_hold());
+        assert!(app.status.contains("Still in Safe Mode"));
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn logout_asks_when_holding_then_keep_disconnects() {
+        let mut app = live_app();
+        app.safe_mode = holding();
+        let cmds = app.update(AppEvent::Input(ctrl(KeyCode::Char('l'))));
+        assert!(cmds.is_empty());
+        assert!(matches!(
+            app.overlay,
+            Overlay::SafeModeLeave {
+                next: SafeModeAfter::Logout
+            }
+        ));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('r'))));
+        app.poll_generation = 2;
+        let _ = app.update(AppEvent::Worker(WorkerMsg::MutateResult {
+            session: app.test_session(),
+            request_id: 1,
+            generation: 2,
+            error: None,
+        }));
+        assert_eq!(app.screen, Screen::Login);
+        assert!(!app.safe_mode.we_hold());
+    }
+
+    #[test]
+    fn ctrl_w_asks_before_closing_a_holding_tab() {
+        let mut app = live_app();
+        app.safe_mode = holding();
+        let _ = app.new_session();
+        app.active = app.sessions[0].id;
+        app.sessions[0].safe_mode = holding();
+        app.sessions[0].screen = Screen::Main;
+        app.sessions[0].link = LinkState::Live;
+        let cmds = app.update(AppEvent::Input(ctrl(KeyCode::Char('w'))));
+        assert!(cmds.is_empty());
+        assert!(matches!(
+            app.overlay,
+            Overlay::SafeModeLeave {
+                next: SafeModeAfter::CloseTab
+            }
+        ));
+        assert_eq!(app.sessions.len(), 2);
+    }
+
+    #[test]
+    fn reconnect_after_drop_unrolls_then_releases() {
+        let mut app = live_app();
+        app.held_safe_mode_at_drop = true;
+        let cmds = app.on_reconnect_safe_mode();
+        assert!(!app.held_safe_mode_at_drop);
+        assert_eq!(cmds.len(), 1);
+        assert!(take_on_error(&cmds[0], "unroll"));
+        assert_eq!(app.safe_mode_after, SafeModeAfter::DropHold);
+        let follow = app.finish_safe_mode_mutate(None).expect("take finished");
+        assert!(app.safe_mode.we_hold());
+        assert!(
+            follow
+                .iter()
+                .any(|cmd| matches!(cmd, AppCommand::FetchSafeMode { .. }))
+        );
+        assert!(
+            follow
+                .iter()
+                .any(|cmd| is_safe_mode_command(cmd, "release"))
+        );
+    }
+
+    #[test]
+    fn reconnect_without_hold_only_prints() {
+        let mut app = live_app();
+        let cmds = app.on_reconnect_safe_mode();
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], AppCommand::FetchSafeMode { .. }));
+    }
+
+    #[test]
+    fn stale_safe_mode_print_is_ignored() {
+        let mut app = live_app();
+        app.safe_mode = holding();
+        let generation = app.poll_generation;
+        let mut fields = HashMap::new();
+        fields.insert("enabled".into(), "true".into());
+        fields.insert("current".into(), "false".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::SafeModeResult {
+            session: app.test_session(),
+            generation: generation.wrapping_add(1),
+            row: Some(Resource {
+                id: "*1".into(),
+                fields,
+            }),
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+        assert!(app.safe_mode.we_hold());
+    }
+
+    #[test]
+    fn switching_to_a_login_tab_skips_safe_mode_fetch() {
+        let mut app = live_app();
+        let first = app.active;
+        let second = app.new_session().expect("second tab");
+        app.active = first;
+        let cmds = app.cycle_session(1);
+        assert_eq!(app.active, second);
+        assert!(cmds.is_empty());
+    }
+
+    #[test]
+    fn second_tab_unroll_then_first_tab_print_shows_foreign() {
+        let mut app = live_app();
+        let first = app.active;
+        app.safe_mode = holding();
+        let second = app.new_session().expect("second tab");
+        {
+            let tab = app.session_mut(second).expect("tab");
+            tab.screen = Screen::Main;
+            tab.link = LinkState::Live;
+            tab.access = SessionAccess::full("admin", "full");
+            tab.safe_mode = foreign_owner();
+        }
+        app.active = second;
+        let _ = app.update(AppEvent::Input(press(KeyCode::F(4))));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(take_on_error(&cmds[0], "unroll"));
+        let _ = app.finish_safe_mode_mutate(None);
+        assert!(app.safe_mode.we_hold());
+        let _ = app.cycle_session(-1);
+        assert_eq!(app.active, first);
+        assert!(app.safe_mode.we_hold());
+        let mut fields = HashMap::new();
+        fields.insert("enabled".into(), "true".into());
+        fields.insert("current".into(), "false".into());
+        fields.insert("owner".into(), "api".into());
+        fields.insert("user".into(), "admin".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::SafeModeResult {
+            session: first,
+            generation: app.poll_generation,
+            row: Some(Resource {
+                id: "*1".into(),
+                fields,
+            }),
+            error: None,
+        }));
+        assert!(app.safe_mode.foreign());
+        assert!(!app.safe_mode.we_hold());
+        let value = &app.safe_mode_signals()[0].value;
+        assert!(value.contains("another session holds it"), "{value}");
+    }
+
+    #[test]
+    fn mutate_unroll_clears_hold() {
+        let mut app = live_app();
+        app.safe_mode = holding();
+        app.held_safe_mode_at_drop = true;
+        app.last_safe_mode_verb = Some(SafeModeVerb::Unroll);
+        let _ = app.finish_safe_mode_mutate(None);
+        assert!(!app.safe_mode.we_hold());
+        assert!(!app.held_safe_mode_at_drop);
     }
 }

@@ -2066,6 +2066,7 @@ mod tests {
         assert_eq!(session.endpoint, "/rest/system");
         assert!(session.record_id.is_empty());
         assert!(session.body.contains("Active sessions will drop"));
+        assert!(!session.body.contains("Safe Mode cannot undo"));
         let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
         match command_op(&cmds) {
             MutationOp::Command {
@@ -2079,6 +2080,29 @@ mod tests {
             }
             other => panic!("unexpected op {other:?}"),
         }
+    }
+
+    #[test]
+    fn reboot_confirm_warns_when_safe_mode_is_on() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("resources");
+        app.pane = Pane::Content;
+        app.safe_mode = mtui_core::SafeModeStatus {
+            enabled: true,
+            current: true,
+            owner: "api".into(),
+            user: "admin".into(),
+        };
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('b'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected reboot confirm, got {:?}", app.overlay);
+        };
+        assert!(
+            session.body.contains("Safe Mode cannot undo"),
+            "{}",
+            session.body
+        );
     }
 
     #[test]

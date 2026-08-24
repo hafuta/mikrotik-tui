@@ -351,6 +351,7 @@ pub fn render_login(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, sty
                 "mikrotik-tui",
                 subtitle,
                 &clock_signals,
+                &[],
                 usize::from(area.width.max(1)),
                 styles,
                 false,

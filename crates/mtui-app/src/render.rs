@@ -344,6 +344,7 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
         "mikrotik-tui",
         &app.session_identity(),
         &app.header_signals(),
+        &app.safe_mode_signals(),
         usize::from(area.width.max(1)),
         &styles,
         app.show_activity(),
@@ -563,5 +564,71 @@ pub(crate) fn overlay_scroll_max(app: &App) -> u16 {
             modal_max_scroll(area, &modal, &styles)
         }
         _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    use super::draw;
+    use crate::app::{App, Overlay, Screen};
+    use crate::safe_mode::SafeModeAfter;
+    use crate::session::LinkState;
+
+    fn live_main() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.link = LinkState::Live;
+        app.terminal_width = 80;
+        app.terminal_height = 24;
+        app
+    }
+
+    fn canvas(app: &App) -> String {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal.draw(|frame| draw(frame, app)).expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+        rendered
+    }
+
+    #[test]
+    fn conflict_overlay_lists_unroll_keep_and_leave() {
+        let mut app = live_main();
+        app.overlay = Overlay::SafeModeConflict {
+            owner: "api".into(),
+            user: "admin".into(),
+        };
+        let rendered = canvas(&app);
+        assert!(rendered.contains("Safe Mode taken"), "{rendered}");
+        assert!(rendered.contains("One owner at a time"), "{rendered}");
+        assert!(rendered.contains("api (admin)"), "{rendered}");
+        assert!(rendered.contains("[ Unroll ]"), "{rendered}");
+        assert!(rendered.contains("[ Keep ]"), "{rendered}");
+        assert!(rendered.contains("[ Leave ]"), "{rendered}");
+        assert!(rendered.contains("d / esc"), "{rendered}");
+    }
+
+    #[test]
+    fn leave_overlay_lists_unroll_keep_and_stay() {
+        let mut app = live_main();
+        app.overlay = Overlay::SafeModeLeave {
+            next: SafeModeAfter::Quit,
+        };
+        let rendered = canvas(&app);
+        assert!(rendered.contains("Leave Safe Mode"), "{rendered}");
+        assert!(rendered.contains("[ Unroll ]"), "{rendered}");
+        assert!(rendered.contains("[ Keep ]"), "{rendered}");
+        assert!(rendered.contains("[ Stay ]"), "{rendered}");
+        assert!(rendered.contains("u / enter"), "{rendered}");
     }
 }

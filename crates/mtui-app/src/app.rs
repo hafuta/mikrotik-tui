@@ -424,21 +424,22 @@ impl App {
         }
     }
 
-    pub fn cycle_session(&mut self, delta: isize) {
+    pub fn cycle_session(&mut self, delta: isize) -> Vec<AppCommand> {
         let Some(idx) = self
             .sessions
             .iter()
             .position(|session| session.id == self.active)
         else {
-            return;
+            return Vec::new();
         };
         let len = isize::try_from(self.sessions.len()).unwrap_or(1);
         if len == 0 {
-            return;
+            return Vec::new();
         }
         let next = (isize::try_from(idx).unwrap_or(0) + delta).rem_euclid(len);
         let next = usize::try_from(next).unwrap_or(0);
         self.active = self.sessions[next].id;
+        self.fetch_safe_mode_if_ready()
     }
 
     fn apply_to(
@@ -452,8 +453,15 @@ impl App {
         let previous = self.active;
         self.active = id;
         let cmds = f(self);
+        if self.session(self.active).is_none()
+            && let Some(session) = self.sessions.first()
+        {
+            self.active = session.id;
+        }
         let cmds = self.stamp(cmds);
-        self.active = previous;
+        if self.session(previous).is_some() {
+            self.active = previous;
+        }
         cmds
     }
 
@@ -1141,31 +1149,34 @@ impl App {
 
     fn poll_tick(&mut self) -> Vec<AppCommand> {
         let generation = self.poll_generation;
-        if self.current_resource == DASHBOARD_ID {
+        let mut cmds = if self.current_resource == DASHBOARD_ID {
             self.refreshing = true;
-            return vec![AppCommand::FetchDashboard {
+            vec![AppCommand::FetchDashboard {
+                session: SessionId::UNSTAMPED,
+                request_id: self.next_request(),
+                generation,
+            }]
+        } else {
+            let mut cmds = vec![AppCommand::FetchHeader {
                 session: SessionId::UNSTAMPED,
                 request_id: self.next_request(),
                 generation,
             }];
-        }
-        let mut cmds = vec![AppCommand::FetchHeader {
-            session: SessionId::UNSTAMPED,
-            request_id: self.next_request(),
-            generation,
-        }];
-        if resource_by_id(&self.current_resource).is_some_and(ResourceSpec::is_singleton) {
-            self.refreshing = true;
-            cmds.insert(
-                0,
-                AppCommand::FetchResource {
-                    session: SessionId::UNSTAMPED,
-                    request_id: self.next_request(),
-                    generation,
-                    resource_id: self.current_resource.clone(),
-                },
-            );
-        }
+            if resource_by_id(&self.current_resource).is_some_and(ResourceSpec::is_singleton) {
+                self.refreshing = true;
+                cmds.insert(
+                    0,
+                    AppCommand::FetchResource {
+                        session: SessionId::UNSTAMPED,
+                        request_id: self.next_request(),
+                        generation,
+                        resource_id: self.current_resource.clone(),
+                    },
+                );
+            }
+            cmds
+        };
+        cmds.extend(self.fetch_safe_mode_command());
         cmds
     }
 
@@ -1294,6 +1305,7 @@ impl App {
                 if resource_id != self.current_resource {
                     return Vec::new();
                 }
+                let announce = self.loading || self.refreshing;
                 self.loading = false;
                 self.refreshing = false;
                 if let Some(err) = error {
@@ -1329,7 +1341,9 @@ impl App {
                         self.table.select_id(&id);
                     }
                 }
-                self.status = resource_id;
+                if announce {
+                    self.status = resource_id;
+                }
                 Vec::new()
             }
             WorkerMsg::DashboardResult {
@@ -1347,6 +1361,7 @@ impl App {
                 if generation != self.poll_generation || self.current_resource != DASHBOARD_ID {
                     return Vec::new();
                 }
+                let announce = self.loading || self.refreshing;
                 self.loading = false;
                 self.refreshing = false;
                 self.apply_dashboard(
@@ -1358,6 +1373,7 @@ impl App {
                     interface_error.as_deref(),
                     &firewall,
                     firewall_error.as_deref(),
+                    announce,
                 );
                 if cpu_error.is_none() || system_error.is_none() || interface_error.is_none() {
                     self.note_data_ok();
@@ -1555,7 +1571,7 @@ impl App {
 
     pub(crate) fn poll_current(&mut self) -> Vec<AppCommand> {
         let generation = self.poll_generation;
-        if self.current_resource == DASHBOARD_ID {
+        let mut cmds = if self.current_resource == DASHBOARD_ID {
             vec![AppCommand::FetchDashboard {
                 session: SessionId::UNSTAMPED,
                 request_id: self.next_request(),
@@ -1575,7 +1591,9 @@ impl App {
                     generation,
                 },
             ]
-        }
+        };
+        cmds.extend(self.fetch_safe_mode_command());
+        cmds
     }
 
     pub(crate) fn next_request(&mut self) -> u64 {
@@ -1999,6 +2017,7 @@ impl App {
         interface_error: Option<&str>,
         firewall: &[Resource],
         firewall_error: Option<&str>,
+        announce: bool,
     ) {
         if let Some(system) = system {
             self.apply_system_resource(system.clone());
@@ -2013,7 +2032,9 @@ impl App {
         }
 
         if let Some(err) = interface_error {
-            self.status = format!("System telemetry live · WAN {err} · retrying");
+            if announce {
+                self.status = format!("System telemetry live · WAN {err} · retrying");
+            }
             return;
         }
         match select_wan_interface(interfaces) {
@@ -2026,14 +2047,18 @@ impl App {
                 if firewall_error.is_some() {
                     unavailable.push("firewall");
                 }
-                self.status = if unavailable.is_empty() {
-                    format!("WAN telemetry live · {}", self.dash.traffic_interface)
-                } else {
-                    format!("WAN live · {} telemetry retrying", unavailable.join(" + "))
-                };
+                if announce {
+                    self.status = if unavailable.is_empty() {
+                        format!("WAN telemetry live · {}", self.dash.traffic_interface)
+                    } else {
+                        format!("WAN live · {} telemetry retrying", unavailable.join(" + "))
+                    };
+                }
             }
             Err(err) => {
-                self.status = format!("System telemetry live · WAN {err} · retrying");
+                if announce {
+                    self.status = format!("System telemetry live · WAN {err} · retrying");
+                }
             }
         }
     }
@@ -2456,6 +2481,10 @@ mod dashboard_tests {
         matches!(cmd, AppCommand::FetchHeader { .. })
     }
 
+    fn is_fetch_safe_mode(cmd: &AppCommand) -> bool {
+        matches!(cmd, AppCommand::FetchSafeMode { .. })
+    }
+
     fn is_fetch_resource(cmd: &AppCommand, resource_id: &str) -> bool {
         matches!(
             cmd,
@@ -2489,15 +2518,17 @@ mod dashboard_tests {
     fn tick_poll_requests_header_off_dashboard_and_dashboard_only_on_dashboard() {
         let mut app = dashboard_app();
         let on_dashboard = app.poll_current();
-        assert_eq!(on_dashboard.len(), 1);
+        assert_eq!(on_dashboard.len(), 2);
         assert!(is_fetch_dashboard(&on_dashboard[0]));
         assert!(!on_dashboard.iter().any(is_fetch_header));
+        assert!(on_dashboard.iter().any(is_fetch_safe_mode));
 
         app.current_resource = "interfaces".into();
         let off_dashboard = app.poll_current();
-        assert_eq!(off_dashboard.len(), 2);
+        assert_eq!(off_dashboard.len(), 3);
         assert!(is_fetch_resource(&off_dashboard[0], "interfaces"));
         assert!(is_fetch_header(&off_dashboard[1]));
+        assert!(off_dashboard.iter().any(is_fetch_safe_mode));
         assert!(!off_dashboard.iter().any(is_fetch_dashboard));
     }
 

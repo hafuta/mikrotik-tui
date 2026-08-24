@@ -736,6 +736,45 @@ mod tests {
     }
 
     #[test]
+    fn demo_safe_mode_unroll_and_release_clear_hold() {
+        let mut store = DemoStore::new();
+        store
+            .apply(&MutationOp::Command {
+                endpoint: "/rest/safe-mode".into(),
+                command: "take".into(),
+                fields: BTreeMap::new(),
+            })
+            .expect("take");
+        store
+            .apply(&MutationOp::Command {
+                endpoint: "/rest/safe-mode".into(),
+                command: "unroll".into(),
+                fields: BTreeMap::new(),
+            })
+            .expect("unroll");
+        let row = store.rows("safe-mode").into_iter().next().expect("row");
+        assert_eq!(row.field("enabled"), Some("false"));
+        assert_eq!(row.field("current"), Some("false"));
+        store
+            .apply(&MutationOp::Command {
+                endpoint: "/rest/safe-mode".into(),
+                command: "take".into(),
+                fields: BTreeMap::new(),
+            })
+            .expect("take again");
+        store
+            .apply(&MutationOp::Command {
+                endpoint: "/rest/safe-mode".into(),
+                command: "release".into(),
+                fields: BTreeMap::new(),
+            })
+            .expect("release");
+        let row = store.rows("safe-mode").into_iter().next().expect("row");
+        assert_eq!(row.field("enabled"), Some("false"));
+        assert_eq!(row.field("current"), Some("false"));
+    }
+
+    #[test]
     fn demo_disable_updates_fixture_row() {
         let mut store = DemoStore::new();
         let mut fields = BTreeMap::new();

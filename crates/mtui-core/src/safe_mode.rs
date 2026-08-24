@@ -125,5 +125,27 @@ mod tests {
         assert_eq!(floating_undo_count(&[a, b, c]), 2);
         assert!(safe_mode_overflow_warning(79).is_none());
         assert!(safe_mode_overflow_warning(80).is_some());
+        assert!(safe_mode_overflow_warning(SAFE_MODE_HISTORY_LIMIT).is_some());
+    }
+
+    #[test]
+    fn holder_label_falls_back_when_owner_or_user_is_blank() {
+        assert_eq!(SafeModeStatus::default().holder_label(), "another session");
+        assert_eq!(
+            SafeModeStatus {
+                owner: "winbox".into(),
+                ..SafeModeStatus::default()
+            }
+            .holder_label(),
+            "winbox"
+        );
+        assert_eq!(
+            SafeModeStatus {
+                user: "admin".into(),
+                ..SafeModeStatus::default()
+            }
+            .holder_label(),
+            "admin"
+        );
     }
 }

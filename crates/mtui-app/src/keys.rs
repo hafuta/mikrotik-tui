@@ -69,13 +69,9 @@ impl App {
                 Some(vec![AppCommand::CloseSession { session: id }])
             }
             KeyCode::Tab | KeyCode::PageDown if !key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.cycle_session(1);
-                Some(Vec::new())
+                Some(self.cycle_session(1))
             }
-            KeyCode::BackTab | KeyCode::PageUp => {
-                self.cycle_session(-1);
-                Some(Vec::new())
-            }
+            KeyCode::BackTab | KeyCode::PageUp => Some(self.cycle_session(-1)),
             _ => None,
         }
     }
