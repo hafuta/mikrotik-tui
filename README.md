@@ -85,27 +85,45 @@ Set `MIKROTIK_TUI_COLOR=truecolor` or `256` to override.
 Press `?` for shortcuts that apply to the current screen. The bindings below
 are the ones you use constantly.
 
+### Sessions
+
 | Keys | Action |
 |------|--------|
-| `j` `k` or `↑` `↓` | Move |
-| `h` `l` | Pan wide tables |
+| `ctrl+t` / `ctrl+w` | New / close device tab |
+| `ctrl+tab` / `ctrl+shift+tab` | Next / previous device tab |
+
+### Panes
+
+| Keys | Action |
+|------|--------|
 | `tab` / `shift+tab` | Cycle panes |
+| `r` | Refresh, or reconnect a dropped tab |
+| `F4` | Take or release Safe Mode |
+
+### Table
+
+| Keys | Action |
+|------|--------|
+| `j` `k` / `↑` `↓` | Move |
+| `h` / `l` | Scroll columns |
 | `enter` | Open, expand, or edit |
 | `/` | Filter |
-| `r` | Refresh, or reconnect a dropped tab |
 | `e` / `n` | Edit / add |
 | `d` / `x` | Enable-disable / remove |
 | `a` | Action menu |
 | `ctrl+s` | Save a form |
-| `ctrl+k` | Command palette |
-| `ctrl+t` / `ctrl+w` | New / close device tab |
-| `ctrl+tab` / `ctrl+shift+tab` | Next / previous device tab |
+
+### App
+
+| Keys | Action |
+|------|--------|
 | `?` / `i` | Help / about this screen |
+| `ctrl+k` | Command palette |
 | `esc` | Close overlay or clear filter |
 | `q` | Quit |
 
-Screen-specific keys (torch, ping, backups, and so on) are listed in `?` and
-in the footer.
+Screen-specific keys (login, logs, torch, ping, backups, and so on) are listed
+in `?` and in the footer.
 
 ## License
 
