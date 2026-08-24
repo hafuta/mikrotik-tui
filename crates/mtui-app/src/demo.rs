@@ -391,6 +391,65 @@ impl DemoStore {
             ],
         );
         self.rows.insert(
+            "logging-actions".into(),
+            vec![
+                resource("*la1", &[("name", "memory"), ("target", "memory")]),
+                resource("*la2", &[("name", "disk"), ("target", "disk")]),
+                resource("*la3", &[("name", "echo"), ("target", "echo")]),
+                resource("*la4", &[("name", "email"), ("target", "email")]),
+                resource(
+                    "*la5",
+                    &[
+                        ("name", "remote"),
+                        ("target", "remote"),
+                        ("remote", "192.0.2.10"),
+                        ("remote-port", "514"),
+                        ("remote-protocol", "udp"),
+                        ("remote-log-format", "syslog"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "logging".into(),
+            vec![
+                resource(
+                    "*lr1",
+                    &[
+                        ("topics", "info"),
+                        ("action", "memory"),
+                        ("prefix", ""),
+                        ("disabled", "false"),
+                    ],
+                ),
+                resource(
+                    "*lr2",
+                    &[
+                        ("topics", "error"),
+                        ("action", "remote"),
+                        ("prefix", ""),
+                        ("disabled", "false"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "ntp-server".into(),
+            vec![resource(
+                "",
+                &[
+                    ("enabled", "false"),
+                    ("broadcast", "false"),
+                    ("multicast", "false"),
+                    ("manycast", "false"),
+                    ("vrf", "main"),
+                    ("use-local-clock", "false"),
+                    ("local-clock-stratum", "5"),
+                    ("broadcast-addresses", ""),
+                ],
+            )],
+        );
+        self.rows.insert(
             "safe-mode".into(),
             vec![resource(
                 "",
@@ -703,6 +762,27 @@ mod tests {
             Some("7.18.2 (stable)")
         );
         assert_eq!(store.rows("history").len(), 2);
+    }
+
+    #[test]
+    fn demo_logging_actions_include_remote_syslog() {
+        let store = DemoStore::new();
+        assert!(
+            store.rows("logging-actions").iter().any(|row| {
+                row.field("target") == Some("remote") && row.field("remote") == Some("192.0.2.10")
+            }),
+            "demo should seed a remote syslog action"
+        );
+        assert!(!store.rows("logging").is_empty());
+    }
+
+    #[test]
+    fn demo_ntp_server_is_disabled_singleton() {
+        let store = DemoStore::new();
+        let rows = store.rows("ntp-server");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "");
+        assert_eq!(rows[0].field("enabled"), Some("false"));
     }
 
     #[test]

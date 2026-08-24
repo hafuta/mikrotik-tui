@@ -8,6 +8,8 @@
 //! - `/rest/system/scheduler`
 //! - `/rest/system/script`
 //! - `/rest/system/logging`
+//! - `/rest/system/logging/action`
+//! - `/rest/system/ntp/server`
 //! - `/rest/snmp`
 //! - `/rest/snmp/community`
 //! - `/rest/certificate`
@@ -130,6 +132,36 @@ pub static NTP_CLIENT_FORM: FormSchema = FormSchema {
     create_sections: &[],
 };
 
+pub static NTP_SERVER_FORM: FormSchema = FormSchema {
+    title_key: "enabled",
+    subtitle_keys: &["vrf"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("enabled", "Enabled", FieldKind::Toggle),
+            f!("broadcast", "Broadcast", FieldKind::Toggle),
+            f!("multicast", "Multicast", FieldKind::Toggle),
+            f!("manycast", "Manycast", FieldKind::Toggle),
+            f!(
+                "broadcast-addresses",
+                "Broadcast addresses",
+                FieldKind::Text
+            ),
+            f!("vrf", "VRF", FieldKind::Text),
+            f!("use-local-clock", "Use local clock", FieldKind::Toggle),
+            f!(
+                "local-clock-stratum",
+                "Local clock stratum",
+                FieldKind::Text
+            ),
+            f!("auth-key", "Auth key", FieldKind::Text),
+        ],
+    }],
+    create_sections: &[],
+};
+
 pub static CLOCK_FORM: FormSchema = FormSchema {
     title_key: "time-zone-name",
     subtitle_keys: &["gmt-offset"],
@@ -241,7 +273,15 @@ pub static LOGGING_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("topics", "Topics", FieldKind::Text),
-            f!("action", "Action", FieldKind::Text),
+            f!(
+                "action",
+                "Action",
+                FieldKind::Lookup {
+                    resource_id: "logging-actions",
+                    value_key: "name",
+                    multiple: false,
+                }
+            ),
             f!("prefix", "Prefix", FieldKind::Text),
             COMMENT,
             DISABLED,
@@ -253,8 +293,68 @@ pub static LOGGING_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("topics", "Topics", FieldKind::Text),
-            f!("action", "Action", FieldKind::Text),
+            f!(
+                "action",
+                "Action",
+                FieldKind::Lookup {
+                    resource_id: "logging-actions",
+                    value_key: "name",
+                    multiple: false,
+                }
+            ),
         ],
+    }],
+};
+
+pub static LOGGING_ACTION_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["target"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                NAME,
+                f!("target", "Target", FieldKind::Text),
+                f!("remote", "Remote", FieldKind::Text),
+                f!("remote-port", "Remote port", FieldKind::Number),
+                f!("src-address", "Src address", FieldKind::Text),
+                f!("remote-protocol", "Protocol", FieldKind::Text),
+                f!("remote-log-format", "Log format", FieldKind::Text),
+                f!("syslog-facility", "Facility", FieldKind::Text),
+                f!("syslog-severity", "Severity", FieldKind::Text),
+                f!("syslog-time-format", "Time format", FieldKind::Text),
+                f!("check-certificate", "Check cert", FieldKind::Toggle),
+                f!("vrf", "VRF", FieldKind::Text),
+            ],
+        },
+        FormSection {
+            id: "advanced",
+            label: "Advanced",
+            read_only: false,
+            fields: &[
+                f!("memory-lines", "Memory lines", FieldKind::Number),
+                f!("memory-stop-on-full", "Mem stop full", FieldKind::Toggle),
+                f!("disk-file-name", "Disk file", FieldKind::Text),
+                f!("disk-lines-per-file", "Disk lines", FieldKind::Number),
+                f!("disk-file-count", "Disk files", FieldKind::Number),
+                f!("disk-stop-on-full", "Disk stop full", FieldKind::Toggle),
+                f!("email-to", "Email to", FieldKind::Text),
+                f!("email-cc", "Email CC", FieldKind::Text),
+                f!("email-start-tls", "Email STARTTLS", FieldKind::Toggle),
+                f!("script", "Script", LOOKUP_SCRIPT),
+                f!("remember", "Remember", FieldKind::Toggle),
+                f!("add-topics-string", "Add topics", FieldKind::Toggle),
+                f!("cef-event-delimiter", "CEF delimiter", FieldKind::Text),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("target", "Target", FieldKind::Text)],
     }],
 };
 
@@ -729,6 +829,34 @@ mod tests {
     }
 
     #[test]
+    fn ntp_server_is_singleton_without_advanced() {
+        assert!(NTP_SERVER_FORM.create_sections.is_empty());
+        assert_eq!(
+            NTP_SERVER_FORM.writable_keys(),
+            [
+                "enabled",
+                "broadcast",
+                "multicast",
+                "manycast",
+                "broadcast-addresses",
+                "vrf",
+                "use-local-clock",
+                "local-clock-stratum",
+                "auth-key",
+            ]
+        );
+        assert!(no_advanced(&NTP_SERVER_FORM));
+        assert_eq!(
+            NTP_SERVER_FORM.field("auth-key").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_ne!(
+            NTP_SERVER_FORM.field("auth-key").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+    }
+
+    #[test]
     fn clock_keeps_timezone_writable() {
         assert!(CLOCK_FORM.create_sections.is_empty());
         assert_eq!(
@@ -781,6 +909,23 @@ mod tests {
             LOGGING_FORM.writable_keys(),
             ["topics", "action", "prefix", "comment", "disabled"]
         );
+        assert_lookup(&LOGGING_FORM, "action", "logging-actions", "name");
+    }
+
+    #[test]
+    fn logging_action_form_covers_remote_syslog() {
+        assert_eq!(create_keys(&LOGGING_ACTION_FORM), ["name", "target"]);
+        let writable = LOGGING_ACTION_FORM.writable_keys();
+        assert!(writable.contains(&"remote"));
+        assert!(writable.contains(&"remote-port"));
+        let advanced = LOGGING_ACTION_FORM
+            .sections
+            .iter()
+            .find(|section| section.id == "advanced")
+            .expect("advanced");
+        assert!(!advanced.read_only);
+        assert!(!advanced.fields.is_empty());
+        assert_lookup(&LOGGING_ACTION_FORM, "script", "scripts", "name");
     }
 
     #[test]
