@@ -337,12 +337,25 @@ h2 {
 
 .site-foot {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.85rem;
   padding: 2.5rem 0 3rem;
   color: var(--quiet);
   font-size: 0.92rem;
+}
+
+.site-foot__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.site-foot__legal {
+  margin: 0;
+  max-width: 42rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .site-foot a {

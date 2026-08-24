@@ -128,3 +128,6 @@ in `?` and in the footer.
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+MikroTik and RouterOS are trademarks of MikroTik. This project is not
+affiliated with, endorsed by, or sponsored by MikroTik.
