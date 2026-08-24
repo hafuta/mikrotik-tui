@@ -17,6 +17,7 @@ use crate::styles::Styles;
 pub const ACTIVITY_SHOW_AFTER: Duration = Duration::from_millis(280);
 
 const ACTIVITY_SLOT: usize = 2;
+const CHROME_GUTTER: usize = 2;
 
 /// True when a busy operation has lasted long enough to be worth showing.
 #[must_use]
@@ -62,12 +63,15 @@ pub fn header_line(title: &str, subtitle: &str, styles: &Styles) -> Line<'static
 /// Product title, identity, and right-aligned live metrics (Deck mock header).
 ///
 /// The last two columns are a reserved activity pulse so busy state never
-/// rewrites the status or metrics text.
+/// rewrites the status or metrics text. `trailing` stays on the right of the
+/// metrics rail so a long Safe Mode label is not clipped first.
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn session_header(
     product: &str,
     identity: &str,
     metrics: &[Signal],
+    trailing: &[Signal],
     width: usize,
     styles: &Styles,
     activity: bool,
@@ -84,19 +88,7 @@ pub fn session_header(
     let content = if inner == 0 {
         Line::default()
     } else {
-        let left_w = line_width(&left_line);
-        if metrics.is_empty() || left_w + 2 >= inner {
-            fit_line(left_line, inner)
-        } else {
-            let rest = inner.saturating_sub(left_w);
-            let rail = signal_rail(metrics, rest.saturating_sub(1), styles);
-            let rail_w = line_width(&rail);
-            let pad = rest.saturating_sub(rail_w).max(1);
-            let mut spans = left_line.spans;
-            spans.push(Span::raw(" ".repeat(pad)));
-            spans.extend(rail.spans);
-            fit_line(Line::from(spans), inner)
-        }
+        join_header_rails(left_line, metrics, trailing, inner, styles)
     };
     if width < ACTIVITY_SLOT {
         return content;
@@ -110,12 +102,50 @@ pub fn session_header(
     fit_line(Line::from(spans), width)
 }
 
+fn join_header_rails(
+    left: Line<'static>,
+    metrics: &[Signal],
+    trailing: &[Signal],
+    inner: usize,
+    styles: &Styles,
+) -> Line<'static> {
+    let left_w = line_width(&left);
+    if left_w + 2 >= inner || (metrics.is_empty() && trailing.is_empty()) {
+        return fit_line(left, inner);
+    }
+    let rest = inner.saturating_sub(left_w);
+    let trailing_need = rail_width(trailing, styles).min(rest.saturating_sub(1));
+    let trailing_line = signal_rail(trailing, trailing_need, styles);
+    let trailing_w = line_width(&trailing_line);
+    let sep = usize::from(trailing_w > 0 && !metrics.is_empty()) * 3;
+    let metrics_budget = rest
+        .saturating_sub(trailing_w)
+        .saturating_sub(sep)
+        .saturating_sub(1);
+    let metrics_line = signal_rail(metrics, metrics_budget, styles);
+    let metrics_w = line_width(&metrics_line);
+    let used = metrics_w.saturating_add(sep).saturating_add(trailing_w);
+    let pad = rest.saturating_sub(used).max(1);
+    let mut spans = left.spans;
+    spans.push(Span::raw(" ".repeat(pad)));
+    spans.extend(metrics_line.spans);
+    if metrics_w > 0 && trailing_w > 0 {
+        spans.push(Span::styled(" · ", styles.muted));
+    }
+    spans.extend(trailing_line.spans);
+    fit_line(Line::from(spans), inner)
+}
+
 /// Compact status rail matching the Go `SignalRail` header.
 #[must_use]
 pub fn signal_rail(signals: &[Signal], width: usize, styles: &Styles) -> Line<'static> {
     if signals.is_empty() || width == 0 {
         return Line::default();
     }
+    fit_line(Line::from(signal_spans(signals, styles)), width)
+}
+
+fn signal_spans(signals: &[Signal], styles: &Styles) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     for (i, signal) in signals.iter().enumerate() {
         if i > 0 {
@@ -126,7 +156,14 @@ pub fn signal_rail(signals: &[Signal], width: usize, styles: &Styles) -> Line<'s
             .to_string();
         spans.push(Span::styled(text, style_for_level(signal.level, styles)));
     }
-    fit_line(Line::from(spans), width)
+    spans
+}
+
+fn rail_width(signals: &[Signal], styles: &Styles) -> usize {
+    if signals.is_empty() {
+        return 0;
+    }
+    line_width(&Line::from(signal_spans(signals, styles)))
 }
 
 fn style_for_level(level: SignalLevel, styles: &Styles) -> Style {
@@ -523,6 +560,9 @@ pub fn render_tab_bar(
 }
 
 /// Hints on the left, optional status clipped to the right.
+///
+/// Two-cell gutters match [`session_header`] so the footer lines up with the
+/// identity and metrics row.
 #[must_use]
 pub fn footer_bar(
     status: &str,
@@ -533,21 +573,32 @@ pub fn footer_bar(
     if width == 0 {
         return Line::default();
     }
+    let inner = width.saturating_sub(CHROME_GUTTER.saturating_mul(2));
     let hints_line = footer_hints(hints, styles);
-    let status = status.trim();
-    if status.is_empty() {
-        return fit_line(hints_line, width);
-    }
-    let hint_w = line_width(&hints_line);
-    if hint_w + 2 >= width {
-        return fit_line(hints_line, width);
-    }
-    let rest = width.saturating_sub(hint_w);
-    let clipped = clip_line(status, rest.saturating_sub(1));
-    let pad = rest.saturating_sub(clipped.width()).max(1);
-    let mut spans = hints_line.spans;
-    spans.push(Span::raw(" ".repeat(pad)));
-    spans.push(Span::styled(clipped, styles.muted));
+    let content = if inner == 0 {
+        Line::default()
+    } else {
+        let status = status.trim();
+        if status.is_empty() {
+            fit_line(hints_line, inner)
+        } else {
+            let hint_w = line_width(&hints_line);
+            if hint_w + 2 >= inner {
+                fit_line(hints_line, inner)
+            } else {
+                let rest = inner.saturating_sub(hint_w);
+                let clipped = clip_line(status, rest.saturating_sub(1));
+                let pad = rest.saturating_sub(clipped.width()).max(1);
+                let mut spans = hints_line.spans;
+                spans.push(Span::raw(" ".repeat(pad)));
+                spans.push(Span::styled(clipped, styles.muted));
+                fit_line(Line::from(spans), inner)
+            }
+        }
+    };
+    let mut spans = vec![Span::raw(" ".repeat(CHROME_GUTTER))];
+    spans.extend(content.spans);
+    spans.push(Span::raw(" ".repeat(CHROME_GUTTER)));
     fit_line(Line::from(spans), width)
 }
 
@@ -610,6 +661,7 @@ mod tests {
                 Signal::new("MEM", "41%", SignalLevel::Good),
                 Signal::new("WAN", "84.2 Mb/s", SignalLevel::Good),
             ],
+            &[],
             80,
             &styles,
             false,
@@ -627,6 +679,36 @@ mod tests {
     }
 
     #[test]
+    fn session_header_keeps_trailing_safe_mode_on_the_right() {
+        let styles = styles();
+        let line = session_header(
+            "mikrotik-tui",
+            "CCR2004 · 192.0.2.1",
+            &[
+                Signal::new("CPU", "18%", SignalLevel::Good),
+                Signal::new("WAN", "84.2 Mb/s", SignalLevel::Good),
+            ],
+            &[Signal::new(
+                "SAFE",
+                "ON - changes unroll if this tab drops",
+                SignalLevel::Warning,
+            )],
+            120,
+            &styles,
+            false,
+        );
+        let plain = line_plain(&line);
+        let wan = plain.find("WAN").expect("wan");
+        let safe = plain.find("SAFE ON -").expect("safe");
+        assert!(wan < safe, "{plain}");
+        assert!(
+            plain.contains("changes unroll if this tab drops"),
+            "{plain}"
+        );
+        assert_eq!(line_width(&line), 120);
+    }
+
+    #[test]
     fn session_header_reserves_activity_slot_without_shifting_metrics() {
         let styles = styles();
         let metrics = [
@@ -638,6 +720,7 @@ mod tests {
             "mikrotik-tui",
             "CCR2004 · 192.0.2.1",
             &metrics,
+            &[],
             80,
             &styles,
             false,
@@ -646,6 +729,7 @@ mod tests {
             "mikrotik-tui",
             "CCR2004 · 192.0.2.1",
             &metrics,
+            &[],
             80,
             &styles,
             true,
@@ -683,9 +767,20 @@ mod tests {
             &styles,
         );
         let plain = line_plain(&line);
-        assert!(plain.starts_with("enter edit"));
-        assert!(plain.contains("resource loaded interfaces"));
+        assert!(plain.starts_with("  enter edit"), "{plain:?}");
+        assert!(plain.contains("resource loaded interfaces"), "{plain:?}");
+        assert!(plain.ends_with("  "), "{plain:?}");
         assert_eq!(line_width(&line), 60);
+    }
+
+    #[test]
+    fn footer_bar_keeps_side_gutters_on_a_narrow_row() {
+        let styles = styles();
+        let line = footer_bar("on", &[("q", "quit")], 16, &styles);
+        let plain = line_plain(&line);
+        assert!(plain.starts_with("  "), "{plain:?}");
+        assert!(plain.ends_with("  "), "{plain:?}");
+        assert_eq!(line_width(&line), 16);
     }
 
     fn tab_lines(tabs: &[TabLabel], active: u64, width: usize) -> (Vec<Line<'static>>, String) {

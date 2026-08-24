@@ -74,6 +74,7 @@ fn push_main_help(out: &mut String, app: &App) {
                     "reconnect"
                 },
             ),
+            ("F4", "take or release Safe Mode"),
         ],
     );
     if app.current_resource == DASHBOARD_ID {
@@ -217,6 +218,8 @@ mod tests {
         assert!(!text.contains("sign"), "{text}");
         assert!(!text.contains("forget device"), "{text}");
         assert!(!text.contains("trust this fingerprint"), "{text}");
+        assert!(text.contains("Safe Mode"), "{text}");
+        assert!(text.contains("F4"), "{text}");
     }
 
     #[test]
@@ -236,5 +239,6 @@ mod tests {
         assert!(text.contains("new device"), "{text}");
         assert!(!text.contains("cycle sort"), "{text}");
         assert!(!text.contains("certificates"), "{text}");
+        assert!(!text.contains("F4"), "{text}");
     }
 }

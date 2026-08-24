@@ -2951,6 +2951,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             endpoint: "/rest/system/history",
         },
         columns: &[
+            col!("floating-undo", "F", 3),
             col!("time", "Time", 20),
             col!("action", "Action", 12),
             col!("by", "By", 14),

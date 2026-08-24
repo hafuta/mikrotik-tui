@@ -5,8 +5,8 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/hafuta/mikrotik-tui/ci.yml?branch=master&label=CI)](https://github.com/hafuta/mikrotik-tui/actions/workflows/ci.yml)
 
 > [!CAUTION]
-> This project is new. Expect bugs and unstable behavior. Tested against
-> current RouterOS long-term.
+> This project is new. Expect bugs and unstable behavior. Needs RouterOS
+> 7.18 or newer.
 
 <p align="center">
   <img src="assets/banner.png" alt="MikroTik TUI" width="520">
@@ -33,13 +33,15 @@ System.
 - READ MODE when the RouterOS group has no write policy: actions stay listed, but edit and mutate are blocked with a reason
 - Demo mode (`--demo`) to learn the UI without a router
 - TLS with the OS trust store, a CA file, or a pinned device certificate. Optional plaintext `api`.
+- Safe Mode (`F4`): take, release, or unroll on this tab the same way WinBox does, including a prompt when another session already holds it
 - Confirmed reboot, shutdown, and backup save/load
 - Hide menus you do not use; restore them later
 - In-app help (`?`) and a short description of the current screen (`i`)
 
-RouterOS v7 is required, with `api-ssl` or `api` enabled (`/ip service`).
-Prefer `api-ssl`. Use a dedicated, least-privileged account. Inspect-only
-access still works when you only have read permission.
+RouterOS 7.18 or newer is required, with `api-ssl` or `api` enabled
+(`/ip service`). Connect refuses older builds. Prefer `api-ssl`. Use a
+dedicated, least-privileged account. Inspect-only access still works when
+you only have read permission.
 
 ## Install
 

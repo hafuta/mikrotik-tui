@@ -1371,8 +1371,8 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "history",
         "Configuration history (`/system history`). Read-only.",
-        "See recent local changes. This is not Safe Mode/Undo.",
-        "time, action, by, policy."
+        "See recent local changes. Rows tagged F (floating-undo) are Safe Mode work that unrolls if that session dies. This table does not take or release Safe Mode; use F4.",
+        "floating-undo, time, action, by, policy."
     ),
     guide!(
         "ipv6-dhcp-relay",

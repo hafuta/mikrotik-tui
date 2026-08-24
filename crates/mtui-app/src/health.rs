@@ -21,6 +21,9 @@ impl App {
         self.reconnect_at = None;
         self.reconnect_attempt = 0;
         self.access = SessionAccess::unknown();
+        self.safe_mode = mtui_core::SafeModeStatus::default();
+        self.last_safe_mode_verb = None;
+        self.safe_mode_after = crate::safe_mode::SafeModeAfter::None;
     }
 
     pub(crate) fn mark_live(&mut self) {
@@ -47,6 +50,10 @@ impl App {
         let reason = reason.into();
         tracing::warn!(error = %reason, "session dropped");
         self.bump_request_generation();
+        if self.safe_mode.we_hold() {
+            self.held_safe_mode_at_drop = true;
+            self.safe_mode.current = false;
+        }
         self.client = None;
         self.link = LinkState::Dropped;
         self.refreshing = false;
@@ -54,7 +61,11 @@ impl App {
         self.close_remote_overlays();
         if self.login.uses_totp || !self.can_auto_reconnect() {
             self.reconnect_at = None;
-            self.status = self.link_status_message();
+            self.status = if self.held_safe_mode_at_drop {
+                "Connection dropped while Safe Mode was on. The router will unroll those changes after it notices this session is gone.".into()
+            } else {
+                self.link_status_message()
+            };
             return Vec::new();
         }
         self.begin_reconnect()
@@ -69,6 +80,8 @@ impl App {
                 | Overlay::TypePicker(_)
                 | Overlay::Torch(_)
                 | Overlay::Probe(_)
+                | Overlay::SafeModeConflict { .. }
+                | Overlay::SafeModeLeave { .. }
         ) {
             self.overlay = Overlay::None;
         }
@@ -106,7 +119,11 @@ impl App {
         self.loading = false;
         self.refreshing = false;
         self.screen = Screen::Main;
-        self.status = self.link_status_message();
+        self.status = if self.held_safe_mode_at_drop {
+            "Connection dropped while Safe Mode was on. Reconnecting, then unrolling that session's tagged changes.".into()
+        } else {
+            self.link_status_message()
+        };
         vec![self.connect_command()]
     }
 
@@ -360,6 +377,60 @@ mod tests {
         assert!(cmds.is_empty());
         assert_eq!(app.link, LinkState::Dropped);
         assert!(app.status.contains("press r"));
+    }
+
+    #[test]
+    fn drop_while_holding_safe_mode_warns_about_unroll() {
+        let mut app = main_with_interface();
+        app.safe_mode = mtui_core::SafeModeStatus {
+            enabled: true,
+            current: true,
+            owner: "api".into(),
+            user: "admin".into(),
+        };
+        let generation = app.poll_generation;
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::SessionLost {
+            session: app.test_session(),
+            generation,
+            reason: "connection closed".into(),
+        }));
+        assert!(cmds.is_empty());
+        assert_eq!(app.link, LinkState::Dropped);
+        assert!(app.held_safe_mode_at_drop);
+        assert!(!app.safe_mode.we_hold());
+        assert!(
+            app.status.contains("unroll those changes"),
+            "{}",
+            app.status
+        );
+    }
+
+    #[test]
+    fn drop_while_holding_auto_reconnects_and_keeps_unroll_intent() {
+        let mut app = main_with_interface();
+        app.login.url = "192.168.88.1".into();
+        app.login.username = "admin".into();
+        app.pending_password = Some("secret".into());
+        app.safe_mode = mtui_core::SafeModeStatus {
+            enabled: true,
+            current: true,
+            owner: "api".into(),
+            user: "admin".into(),
+        };
+        let generation = app.poll_generation;
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::SessionLost {
+            session: app.test_session(),
+            generation,
+            reason: "connection closed".into(),
+        }));
+        assert_eq!(app.link, LinkState::Reconnecting);
+        assert!(app.held_safe_mode_at_drop);
+        assert!(
+            cmds.iter()
+                .any(|cmd| matches!(cmd, AppCommand::Connect { .. })),
+            "expected connect, got {cmds:?}"
+        );
+        assert!(app.status.contains("unrolling"), "{}", app.status);
     }
 
     #[test]

@@ -9,6 +9,7 @@ mod help;
 mod keys;
 mod render;
 mod runtime;
+mod safe_mode;
 mod session;
 mod telemetry;
 mod write;

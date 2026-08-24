@@ -138,6 +138,7 @@ impl App {
             ("i".into(), "about".into()),
             ("ctrl+k".into(), "commands".into()),
             ("`".into(), "console".into()),
+            ("F4".into(), "safe mode".into()),
         ];
         if self.nav.show_hidden {
             if self.pane == Pane::Nav {
@@ -528,7 +529,17 @@ impl App {
             fields.insert("name".into(), record_name.clone());
         }
         let label = action_label(action, row);
-        let body = confirm_body(action.id, &label, &record_name);
+        let mut body = confirm_body(action.id, &label, &record_name);
+        if self.safe_mode.we_hold()
+            && matches!(
+                action.id,
+                "reboot" | "shutdown" | "upgrade" | "reset-configuration" | "backup-load"
+            )
+        {
+            body.push_str(
+                "\n\nSafe Mode cannot undo reboot, shutdown, firmware upgrade, or reset.",
+            );
+        }
         self.overlay = Overlay::Confirm(ConfirmSession {
             title: label,
             body,
@@ -1189,6 +1200,9 @@ impl App {
         };
         if generation != self.poll_generation {
             return Vec::new();
+        }
+        if let Some(cmds) = self.finish_safe_mode_mutate(error.as_deref()) {
+            return cmds;
         }
         if let Some(err) = error {
             if let Overlay::Form(session) = &mut self.overlay {
@@ -2052,6 +2066,7 @@ mod tests {
         assert_eq!(session.endpoint, "/rest/system");
         assert!(session.record_id.is_empty());
         assert!(session.body.contains("Active sessions will drop"));
+        assert!(!session.body.contains("Safe Mode cannot undo"));
         let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
         match command_op(&cmds) {
             MutationOp::Command {
@@ -2065,6 +2080,29 @@ mod tests {
             }
             other => panic!("unexpected op {other:?}"),
         }
+    }
+
+    #[test]
+    fn reboot_confirm_warns_when_safe_mode_is_on() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("resources");
+        app.pane = Pane::Content;
+        app.safe_mode = mtui_core::SafeModeStatus {
+            enabled: true,
+            current: true,
+            owner: "api".into(),
+            user: "admin".into(),
+        };
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('b'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected reboot confirm, got {:?}", app.overlay);
+        };
+        assert!(
+            session.body.contains("Safe Mode cannot undo"),
+            "{}",
+            session.body
+        );
     }
 
     #[test]

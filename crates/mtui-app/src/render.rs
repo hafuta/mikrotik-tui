@@ -79,6 +79,11 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                 Overlay::FilePicker(ref picker) => {
                     render_file_picker(frame, full, picker, &styles);
                 }
+                Overlay::SafeModeConflict {
+                    ref owner,
+                    ref user,
+                } => draw_safe_mode_conflict(frame, full, owner, user, &styles),
+                Overlay::SafeModeLeave { .. } => draw_safe_mode_leave(frame, full, &styles),
                 Overlay::None => {}
             }
         }
@@ -200,6 +205,71 @@ fn draw_forget(frame: &mut Frame<'_>, area: Rect, name: &str, styles: &mtui_ui::
     render_modal(frame, area, &modal, styles);
 }
 
+fn draw_safe_mode_conflict(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    owner: &str,
+    user: &str,
+    styles: &mtui_ui::Styles,
+) {
+    let holder = match (owner, user) {
+        ("", "") => "another session".to_string(),
+        (owner, "") => owner.to_string(),
+        ("", user) => user.to_string(),
+        (owner, user) => format!("{owner} ({user})"),
+    };
+    let body = format!(
+        "Safe Mode is held by {holder}.\n\nUnroll undoes that session's pending changes and takes Safe Mode. Keep takes Safe Mode and leaves those changes. Leave does nothing."
+    );
+    let buttons = [
+        ModalButton {
+            label: "Unroll",
+            keys: "u",
+            kind: ModalButtonKind::Primary,
+        },
+        ModalButton {
+            label: "Keep",
+            keys: "r",
+            kind: ModalButtonKind::Secondary,
+        },
+        ModalButton {
+            label: "Leave",
+            keys: "d / esc",
+            kind: ModalButtonKind::Secondary,
+        },
+    ];
+    let modal = Modal::new("Safe Mode taken", &body)
+        .alert()
+        .kicker("One owner at a time")
+        .buttons(&buttons);
+    render_modal(frame, area, &modal, styles);
+}
+
+fn draw_safe_mode_leave(frame: &mut Frame<'_>, area: Rect, styles: &mtui_ui::Styles) {
+    let body = "This tab holds Safe Mode. Unroll undoes tagged changes. Keep commits them, then this tab can close.";
+    let buttons = [
+        ModalButton {
+            label: "Unroll",
+            keys: "u / enter",
+            kind: ModalButtonKind::Primary,
+        },
+        ModalButton {
+            label: "Keep",
+            keys: "r",
+            kind: ModalButtonKind::Secondary,
+        },
+        ModalButton {
+            label: "Stay",
+            keys: "esc",
+            kind: ModalButtonKind::Secondary,
+        },
+    ];
+    let modal = Modal::new("Leave Safe Mode", body)
+        .alert()
+        .buttons(&buttons);
+    render_modal(frame, area, &modal, styles);
+}
+
 fn draw_reauth(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let styles = app.styles();
     render_reauth(
@@ -274,6 +344,7 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
         "mikrotik-tui",
         &app.session_identity(),
         &app.header_signals(),
+        &app.safe_mode_signals(),
         usize::from(area.width.max(1)),
         &styles,
         app.show_activity(),
@@ -493,5 +564,71 @@ pub(crate) fn overlay_scroll_max(app: &App) -> u16 {
             modal_max_scroll(area, &modal, &styles)
         }
         _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    use super::draw;
+    use crate::app::{App, Overlay, Screen};
+    use crate::safe_mode::SafeModeAfter;
+    use crate::session::LinkState;
+
+    fn live_main() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.link = LinkState::Live;
+        app.terminal_width = 80;
+        app.terminal_height = 24;
+        app
+    }
+
+    fn canvas(app: &App) -> String {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal.draw(|frame| draw(frame, app)).expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+        rendered
+    }
+
+    #[test]
+    fn conflict_overlay_lists_unroll_keep_and_leave() {
+        let mut app = live_main();
+        app.overlay = Overlay::SafeModeConflict {
+            owner: "api".into(),
+            user: "admin".into(),
+        };
+        let rendered = canvas(&app);
+        assert!(rendered.contains("Safe Mode taken"), "{rendered}");
+        assert!(rendered.contains("One owner at a time"), "{rendered}");
+        assert!(rendered.contains("api (admin)"), "{rendered}");
+        assert!(rendered.contains("[ Unroll ]"), "{rendered}");
+        assert!(rendered.contains("[ Keep ]"), "{rendered}");
+        assert!(rendered.contains("[ Leave ]"), "{rendered}");
+        assert!(rendered.contains("d / esc"), "{rendered}");
+    }
+
+    #[test]
+    fn leave_overlay_lists_unroll_keep_and_stay() {
+        let mut app = live_main();
+        app.overlay = Overlay::SafeModeLeave {
+            next: SafeModeAfter::Quit,
+        };
+        let rendered = canvas(&app);
+        assert!(rendered.contains("Leave Safe Mode"), "{rendered}");
+        assert!(rendered.contains("[ Unroll ]"), "{rendered}");
+        assert!(rendered.contains("[ Keep ]"), "{rendered}");
+        assert!(rendered.contains("[ Stay ]"), "{rendered}");
+        assert!(rendered.contains("u / enter"), "{rendered}");
     }
 }
