@@ -1931,6 +1931,18 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::system_write::NTP_SERVER_FORM),
     },
     ResourceSpec {
+        id: "ntp-keys",
+        group: "system-group",
+        label: "NTP Keys",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/ntp/key",
+        },
+        columns: &[col!("key-id", "Key ID", 10)],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::system_write::NTP_KEY_FORM),
+    },
+    ResourceSpec {
         id: "clock",
         group: "system-group",
         label: "Clock",
@@ -4189,6 +4201,11 @@ mod tests {
         let ntp = resource_by_id("ntp").expect("ntp");
         assert_eq!(ntp.label, "NTP Client");
         assert_eq!(ntp.endpoint(), "/rest/system/ntp/client");
+        let keys = resource_by_id("ntp-keys").expect("ntp-keys");
+        assert!(!keys.is_singleton());
+        assert_eq!(keys.endpoint(), "/rest/system/ntp/key");
+        assert_eq!(column_keys("ntp-keys"), ["key-id"]);
+        assert!(keys.form.is_some());
     }
 
     #[test]

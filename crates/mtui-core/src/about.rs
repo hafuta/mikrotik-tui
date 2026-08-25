@@ -1044,6 +1044,13 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "https://help.mikrotik.com/docs/spaces/ROS/pages/40992869/NTP"
     ),
     guide!(
+        "ntp-keys",
+        "NTP symmetric keys: numeric key ids and their secret values.",
+        "Create a key here, then pick its id as Auth. Key on NTP Server (or leave none).",
+        "key-id, key-val.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/40992869/NTP"
+    ),
+    guide!(
         "clock",
         "Local date, time, and time zone.",
         "Set zone even when NTP is on, so logs print local time.",

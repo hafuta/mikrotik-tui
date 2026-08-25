@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use mtui_core::{
-    FieldKind, FieldSpec, FormSchema, FormSection, extra_status_fields, field_visible,
-    join_ros_list, split_ros_list,
+    FieldKind, FieldSpec, FormSchema, FormSection, default_writable_value, extra_status_fields,
+    field_visible, join_ros_list, split_ros_list, with_leading_none,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -132,17 +132,16 @@ impl FormSession {
             .chain(schema.create_sections.iter())
             .flat_map(|section| section.fields)
         {
-            let FieldKind::Enum { values: options } = field.kind else {
-                continue;
-            };
             let empty = values.get(field.key).is_none_or(String::is_empty);
-            if empty {
-                let Some(first) = options.first() else {
-                    continue;
-                };
-                values.insert(field.key.to_string(), (*first).to_string());
-                original.insert(field.key.to_string(), (*first).to_string());
+            if !empty {
+                continue;
             }
+            let default = default_writable_value(field.kind);
+            if default.is_empty() {
+                continue;
+            }
+            values.insert(field.key.to_string(), default.clone());
+            original.insert(field.key.to_string(), default);
         }
         let repeat = repeat_from_schema(schema, &values);
         Self {
@@ -173,12 +172,7 @@ impl FormSession {
             for field in section.fields {
                 values
                     .entry(field.key.to_string())
-                    .or_insert_with(|| match field.kind {
-                        FieldKind::Enum { values } => {
-                            values.first().copied().unwrap_or("").to_string()
-                        }
-                        _ => String::new(),
-                    });
+                    .or_insert_with(|| default_writable_value(field.kind));
             }
         }
         let repeat = repeat_from_schema(schema, &values);
@@ -679,7 +673,11 @@ impl FormSession {
         let picker = self.lookup.as_mut().expect("lookup still open");
         picker.loading = false;
         picker.error = error;
-        picker.options = options;
+        picker.options = if picker.resource_id == "ntp-keys" {
+            with_leading_none(options)
+        } else {
+            options
+        };
         let filtered = filtered_lookup_options(&picker.options, &picker.filter, &picker.field_key);
         if picker.focus >= filtered.len() {
             picker.focus = filtered.len().saturating_sub(1);
@@ -1893,6 +1891,46 @@ mod tests {
             Some("udp")
         );
         assert!(!session.is_dirty());
+    }
+
+    #[test]
+    fn empty_ntp_auth_key_defaults_to_none_without_dirtying() {
+        let schema = FormSchema {
+            title_key: "enabled",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "auth-key",
+                    label: "Auth. Key",
+                    kind: FieldKind::Lookup {
+                        resource_id: "ntp-keys",
+                        value_key: "key-id",
+                        multiple: false,
+                    },
+                }],
+            }],
+            create_sections: &[],
+        };
+        let mut session = FormSession::edit("ntp-server", "", &HashMap::new(), &schema);
+        assert_eq!(
+            session.values.get("auth-key").map(String::as_str),
+            Some("none")
+        );
+        assert!(!session.is_dirty());
+        session.activate(&schema);
+        let (request_id, generation) = session
+            .lookup
+            .as_ref()
+            .map(|picker| (picker.request_id, picker.generation))
+            .expect("picker");
+        assert!(session.apply_lookup_result(request_id, generation, vec!["1".into()], None));
+        assert_eq!(
+            session.lookup.as_ref().unwrap().options,
+            vec!["none".to_string(), "1".into()]
+        );
     }
 
     #[test]

@@ -446,8 +446,13 @@ impl DemoStore {
                     ("use-local-clock", "false"),
                     ("local-clock-stratum", "5"),
                     ("broadcast-addresses", ""),
+                    ("auth-key", "none"),
                 ],
             )],
+        );
+        self.rows.insert(
+            "ntp-keys".into(),
+            vec![resource("*nk1", &[("key-id", "1")])],
         );
         self.rows.insert(
             "safe-mode".into(),
@@ -783,6 +788,11 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "");
         assert_eq!(rows[0].field("enabled"), Some("false"));
+        assert_eq!(rows[0].field("auth-key"), Some("none"));
+        assert_eq!(
+            store.lookup_values("ntp-keys", "key-id"),
+            vec!["1".to_string()]
+        );
     }
 
     #[test]

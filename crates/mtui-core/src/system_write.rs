@@ -10,6 +10,7 @@
 //! - `/rest/system/logging`
 //! - `/rest/system/logging/action`
 //! - `/rest/system/ntp/server`
+//! - `/rest/system/ntp/key`
 //! - `/rest/snmp`
 //! - `/rest/snmp/community`
 //! - `/rest/certificate`
@@ -57,6 +58,11 @@ const LOOKUP_FILE: FieldKind = FieldKind::Lookup {
 const LOOKUP_VRF: FieldKind = FieldKind::Lookup {
     resource_id: "vrf",
     value_key: "name",
+    multiple: false,
+};
+const LOOKUP_NTP_KEY: FieldKind = FieldKind::Lookup {
+    resource_id: "ntp-keys",
+    value_key: "key-id",
     multiple: false,
 };
 
@@ -263,10 +269,33 @@ pub static NTP_SERVER_FORM: FormSchema = FormSchema {
                 "Local Clock Stratum",
                 FieldKind::Number
             ),
-            f!("auth-key", "Auth. Key", FieldKind::Text),
+            f!("auth-key", "Auth. Key", LOOKUP_NTP_KEY),
         ],
     }],
     create_sections: &[],
+};
+
+pub static NTP_KEY_FORM: FormSchema = FormSchema {
+    title_key: "key-id",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("key-id", "Key ID", FieldKind::Number),
+            f!("key-val", "Key", FieldKind::Secret),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("key-id", "Key ID", FieldKind::Number),
+            f!("key-val", "Key", FieldKind::Secret),
+        ],
+    }],
 };
 
 pub static CLOCK_FORM: FormSchema = FormSchema {
@@ -954,14 +983,16 @@ mod tests {
             "Local Clock Stratum",
         );
         assert_label(&NTP_SERVER_FORM, "auth-key", "Auth. Key");
-        assert_eq!(
-            NTP_SERVER_FORM.field("auth-key").map(|field| field.kind),
-            Some(FieldKind::Text)
-        );
+        assert_lookup(&NTP_SERVER_FORM, "auth-key", "ntp-keys", "key-id");
         assert_ne!(
             NTP_SERVER_FORM.field("auth-key").map(|field| field.kind),
             Some(FieldKind::Secret)
         );
+        assert_eq!(
+            NTP_KEY_FORM.field("key-val").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(create_keys(&NTP_KEY_FORM), ["key-id", "key-val"]);
     }
 
     #[test]

@@ -138,6 +138,31 @@ pub fn join_ros_list(values: &[String]) -> String {
         .join(",")
 }
 
+/// Default typed into an empty writable control (enum first option, NTP key `none`).
+#[must_use]
+pub fn default_writable_value(kind: FieldKind) -> String {
+    match kind {
+        FieldKind::Enum { values } => values.first().copied().unwrap_or("").to_string(),
+        FieldKind::Lookup {
+            resource_id: "ntp-keys",
+            ..
+        } => "none".to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Put `none` first when the API combo includes an unspecified choice.
+#[must_use]
+pub fn with_leading_none(options: Vec<String>) -> Vec<String> {
+    if options.iter().any(|item| item == "none") {
+        return options;
+    }
+    let mut out = Vec::with_capacity(options.len().saturating_add(1));
+    out.push("none".into());
+    out.extend(options);
+    out
+}
+
 /// Whether a sheet field should appear given current values.
 ///
 /// Logging Actions show only the knobs that belong to Type (`target`) and, for
@@ -372,6 +397,7 @@ fn looks_secret_key(key: &str) -> bool {
         || normalized.contains("pre-shared")
         || normalized.ends_with("-secret")
         || normalized == "secret"
+        || normalized == "key-val"
 }
 
 pub const ARP_VALUES: &[&str] = &[
@@ -512,6 +538,18 @@ mod tests {
         assert_eq!(
             join_ros_list(&["10.0.0.255".into(), String::new(), "10.0.1.255".into()]),
             "10.0.0.255,10.0.1.255"
+        );
+        assert_eq!(
+            with_leading_none(vec!["1".into(), "2".into()]),
+            vec!["none".to_string(), "1".into(), "2".into()]
+        );
+        assert_eq!(
+            default_writable_value(FieldKind::Lookup {
+                resource_id: "ntp-keys",
+                value_key: "key-id",
+                multiple: false,
+            }),
+            "none"
         );
     }
 

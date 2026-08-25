@@ -66,7 +66,7 @@ exists on RouterOS 7.23 and newer. NTP Server shows Broadcast Addresses
 only when Broadcast is on, and Local Clock Stratum only when Use Local
 Clock is on (modes stay independent toggles, not a Type combo). VRF is a
 Lookup; Local Clock Stratum is Number; Broadcast Addresses is a Repeat
-under Broadcast; Auth. Key stays Text (key id, not the secret).
+under Broadcast; Auth. Key is a Lookup of NTP Keys (`none` plus `key-id`).
 
 Enum **display** may differ from the API string (`syslog` → `BSD syslog`)
 while the Select list and PATCH still use the API value. Space/Enter on an

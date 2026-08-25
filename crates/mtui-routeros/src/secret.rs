@@ -12,14 +12,14 @@ pub const MASKED_VALUE: &str = "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}
 ///
 /// Matches (case-insensitively, treating `_` and `-` as equivalent):
 /// `password`, `secret`, `passphrase`, `private-key`, `psk`, `pin`, `cak`,
-/// any key containing `password` or a pre-shared-key spelling, and any key
-/// ending in `-secret`.
+/// `key-val`, any key containing `password` or a pre-shared-key spelling, and
+/// any key ending in `-secret`.
 #[must_use]
 pub fn is_secret_key(key: &str) -> bool {
     let normalized = key.trim().to_lowercase().replace('_', "-");
     matches!(
         normalized.as_str(),
-        "password" | "secret" | "passphrase" | "private-key" | "psk" | "pin" | "cak"
+        "password" | "secret" | "passphrase" | "private-key" | "psk" | "pin" | "cak" | "key-val"
     ) || normalized.contains("password")
         || normalized.contains("pre-shared-key")
         || normalized.contains("preshared-key")
@@ -55,6 +55,7 @@ mod tests {
             "psk",
             "pin",
             "cak",
+            "key-val",
             "preshared-key",
             "pre-shared-key",
             "wpa2-pre-shared-key",
@@ -75,6 +76,8 @@ mod tests {
             "ckn",
             "my-id",
             "remote-id",
+            "auth-key",
+            "key-id",
         ] {
             assert!(!is_secret_key(key), "expected {key:?} to be ordinary");
         }
