@@ -46,8 +46,8 @@ pub use capabilities::{
 };
 pub use forms::{
     FieldKind, FieldSpec, FormSchema, FormSection, accepts_number_char, default_writable_value,
-    extra_status_fields, field_enabled, field_visible, join_ros_list, patch_body, preview_changes,
-    split_ros_list, with_leading_none,
+    extra_status_fields, field_enabled, field_visible, join_ros_list, patch_body,
+    prepare_lookup_options, preview_changes, split_ros_list, with_leading_all, with_leading_none,
 };
 pub use resources::{
     ALL_RESOURCES, ColumnSpec, DASHBOARD_ID, FetchKind, NAVIGATION, NavGroup, NavItem,

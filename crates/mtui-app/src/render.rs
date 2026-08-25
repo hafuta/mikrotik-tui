@@ -792,4 +792,66 @@ mod tests {
         assert!(!rendered.contains("[1 Status]"), "{rendered}");
         assert!(rendered.contains("esc"), "{rendered}");
     }
+
+    #[test]
+    fn romon_and_graphing_sheets_render_with_pinned_hints() {
+        let mut app = live_main();
+        app.select_resource("romon");
+        let mut fields = HashMap::new();
+        fields.insert("enabled".into(), "true".into());
+        fields.insert("id".into(), "00:00:00:00:00:00".into());
+        fields.insert("secrets".into(), "shared".into());
+        fields.insert("current-id".into(), "74:4D:28:00:00:01".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "romon".into(),
+            rows: vec![Resource {
+                id: String::new(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = crate::app::Pane::Content;
+        let _ = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        assert!(matches!(app.overlay, Overlay::Form(_)));
+        let rendered = canvas(&app);
+        assert!(rendered.contains("Enabled"), "{rendered}");
+        assert!(rendered.contains("Secrets"), "{rendered}");
+        assert!(rendered.contains("Status"), "{rendered}");
+        assert!(!rendered.contains("shared"), "{rendered}");
+        assert!(rendered.contains("esc"), "{rendered}");
+        let _ = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
+
+        app.select_resource("graphing");
+        let mut gfields = HashMap::new();
+        gfields.insert("store-every".into(), "5min".into());
+        gfields.insert("page-refresh".into(), "300".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "graphing".into(),
+            rows: vec![Resource {
+                id: String::new(),
+                fields: gfields,
+            }],
+            error: None,
+        }));
+        let _ = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        let rendered = canvas(&app);
+        assert!(rendered.contains("Store Every"), "{rendered}");
+        assert!(rendered.contains("Page Refresh"), "{rendered}");
+        assert!(rendered.contains("esc"), "{rendered}");
+    }
 }

@@ -24,7 +24,7 @@ pub fn is_secret_key(key: &str) -> bool {
     let lower = key.to_ascii_lowercase();
     matches!(
         lower.as_str(),
-        "password" | "secret" | "passphrase" | "private-key" | "psk"
+        "password" | "secret" | "secrets" | "passphrase" | "private-key" | "psk"
     ) || lower.contains("password")
         || lower.ends_with("-secret")
         || lower.contains("passphrase")

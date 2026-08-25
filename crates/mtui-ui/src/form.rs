@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use mtui_core::{
     FieldKind, FieldSpec, FormSchema, FormSection, default_writable_value, extra_status_fields,
-    field_visible, join_ros_list, split_ros_list, with_leading_none,
+    field_visible, join_ros_list, prepare_lookup_options, split_ros_list,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -673,14 +673,11 @@ impl FormSession {
             .get(&picker.field_key)
             .cloned()
             .unwrap_or_default();
+        let sheet_id = self.resource_id.clone();
         let picker = self.lookup.as_mut().expect("lookup still open");
         picker.loading = false;
         picker.error = error;
-        picker.options = if picker.resource_id == "ntp-keys" {
-            with_leading_none(options)
-        } else {
-            options
-        };
+        picker.options = prepare_lookup_options(&sheet_id, picker.resource_id, options);
         let filtered = filtered_lookup_options(&picker.options, &picker.filter, &picker.field_key);
         if picker.focus >= filtered.len() {
             picker.focus = filtered.len().saturating_sub(1);
@@ -2041,6 +2038,50 @@ mod tests {
             session.lookup.as_ref().unwrap().options,
             vec!["none".to_string(), "1".into()]
         );
+    }
+
+    #[test]
+    fn romon_port_interface_lookup_prepends_all() {
+        let schema = FormSchema {
+            title_key: "interface",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "interface",
+                    label: "Interface",
+                    kind: FieldKind::Lookup {
+                        resource_id: "interfaces",
+                        value_key: "name",
+                        multiple: false,
+                    },
+                }],
+            }],
+            create_sections: &[],
+        };
+        let mut session = FormSession::create("romon-ports", &schema);
+        session.activate(&schema);
+        let (request_id, generation) = session
+            .lookup
+            .as_ref()
+            .map(|picker| (picker.request_id, picker.generation))
+            .expect("picker");
+        assert!(session.apply_lookup_result(
+            request_id,
+            generation,
+            vec!["ether1".into(), "ether2".into()],
+            None
+        ));
+        assert_eq!(
+            session.lookup.as_ref().unwrap().options,
+            vec!["all".to_string(), "ether1".into(), "ether2".into()]
+        );
+        session.close_lookup();
+        let stale =
+            session.apply_lookup_result(request_id, generation, vec!["ether9".into()], None);
+        assert!(!stale);
     }
 
     #[test]

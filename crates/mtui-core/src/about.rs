@@ -991,6 +991,58 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "server, port, from, user, password, tls (yes/starttls/no)."
     ),
     guide!(
+        "romon",
+        "Router Management Overlay Network: an independent L2 overlay used to reach neighbors \
+         when IP routing is down. Packets use EtherType 0x88bf and are not shown in sniffer or torch.",
+        "Enable it when you need out-of-band management through a neighbor. Secrets authenticate \
+         frames with MD5 hashing; they are not encryption. Use SSH or a secure WinBox session on \
+         top. A zero ID lets the router pick current-id from a port MAC.",
+        "enabled, id, secrets (list), current-id (runtime).",
+        "https://manual.mikrotik.com/docs/management-tools/romon/"
+    ),
+    guide!(
+        "romon-ports",
+        "Which interfaces (or interface lists) take part in RoMON, with a cost and optional \
+         per-port secrets. A default all entry is present on typical routers.",
+        "Restrict RoMON to backbone ports, raise cost on slower links, or forbid a WAN. \
+         Port secrets override the global list when they are set.",
+        "interface (all or a name), forbid, cost, secrets, disabled, comment.",
+        "https://manual.mikrotik.com/docs/management-tools/romon/"
+    ),
+    guide!(
+        "graphing",
+        "Built-in RouterOS graphs for CPU/memory/disk, interface traffic, and simple queues. \
+         Collection is configured here; the pictures are served at /graphs/ on the router HTTP(S) \
+         service, not as local dashboard sparks.",
+        "Turn graphing on when you want history on the box. Avoid store-on-disk on devices with \
+         tiny flash. Page refresh may be seconds or never.",
+        "store-every (5min, hour, 24hours), page-refresh.",
+        "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/graphing/"
+    ),
+    guide!(
+        "graphing-interface",
+        "Which interfaces graphing samples for traffic charts, and which addresses may view them.",
+        "Add all or a named interface. Tighten allow-address on untrusted networks.",
+        "interface, allow-address, store-on-disk, disabled, comment.",
+        "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/graphing/"
+    ),
+    guide!(
+        "graphing-queue",
+        "Which simple queues graphing samples, plus whether the queue target-address may view charts.",
+        "Use it for per-queue history. If a queue target is 0.0.0.0/0, allow-target can open graphs \
+         more widely than allow-address.",
+        "simple-queue, allow-address, allow-target, store-on-disk, disabled, comment.",
+        "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/graphing/"
+    ),
+    guide!(
+        "graphing-resource",
+        "CPU, memory, and disk usage graphs. There is no per-interface selector on this list.",
+        "Add an entry so resource charts exist, then restrict allow-address if the graphs page \
+         should not be public.",
+        "allow-address, store-on-disk, disabled, comment.",
+        "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/graphing/"
+    ),
+    guide!(
         "ping",
         "One-shot ICMP (or similar) reachability check from the router to an address.",
         "Confirm a host is reachable from this router, not from your workstation. Replies stream \
@@ -1748,5 +1800,55 @@ mod tests {
         assert!(ifaces.body.contains("Upstream"));
         let mfc = about_copy("igmp-proxy-mfc").expect("mfc");
         assert!(mfc.body.contains("Group"));
+    }
+
+    #[test]
+    fn romon_and_graphing_guides_track_the_manual() {
+        let romon = about_copy("romon").expect("romon");
+        let ports = about_copy("romon-ports").expect("ports");
+        let graphing = about_copy("graphing").expect("graphing");
+        assert_eq!(romon.title, "About RoMON");
+        assert_eq!(ports.title, "About RoMON Ports");
+        assert_eq!(graphing.title, "About Graphing");
+        assert!(romon.kicker.contains("/tool/romon"));
+        assert!(ports.kicker.contains("/tool/romon/port"));
+        assert!(graphing.kicker.contains("/tool/graphing"));
+        assert!(romon.body.to_ascii_lowercase().contains("secret"));
+        assert!(ports.body.contains("forbid"));
+        assert!(graphing.body.contains("/graphs/"));
+        assert!(
+            about_copy("graphing-interface")
+                .expect("gi")
+                .kicker
+                .contains("/tool/graphing/interface")
+        );
+        assert!(
+            about_copy("graphing-queue")
+                .expect("gq")
+                .kicker
+                .contains("/tool/graphing/queue")
+        );
+        assert!(
+            about_copy("graphing-resource")
+                .expect("gr")
+                .kicker
+                .contains("/tool/graphing/resource")
+        );
+        for copy in [&romon, &ports, &graphing] {
+            assert!(
+                !copy.body.contains('\u{2014}'),
+                "about copy must not use em dashes"
+            );
+        }
+        assert_eq!(
+            screen_guide("romon").expect("g").docs_url,
+            Some("https://manual.mikrotik.com/docs/management-tools/romon/")
+        );
+        assert_eq!(
+            screen_guide("graphing").expect("g").docs_url,
+            Some(
+                "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/graphing/"
+            )
+        );
     }
 }

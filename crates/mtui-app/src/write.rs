@@ -3281,4 +3281,122 @@ mod tests {
         let selected = app.table.selected_row().expect("row");
         assert_eq!(selected.get(".id").map(String::as_str), Some("*36"));
     }
+
+    fn romon_port_row(id: &str, iface: &str) -> Resource {
+        let mut fields = HashMap::new();
+        fields.insert("interface".into(), iface.into());
+        fields.insert("forbid".into(), "false".into());
+        fields.insert("cost".into(), "100".into());
+        fields.insert("secrets".into(), "MARKER-SECRET".into());
+        Resource {
+            id: id.into(),
+            fields,
+        }
+    }
+
+    #[test]
+    fn romon_port_remove_confirms_then_posts_delete() {
+        let mut app = load_named_rows("romon-ports", vec![romon_port_row("*rp1", "all")]);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected remove confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Remove);
+        assert_eq!(session.record_id, "*rp1");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Delete { endpoint, id } => {
+                assert_eq!(endpoint, "/rest/tool/romon/port");
+                assert_eq!(id, "*rp1");
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    #[test]
+    fn romon_port_esc_cancels_remove() {
+        let mut app = load_named_rows("romon-ports", vec![romon_port_row("*rp1", "all")]);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        assert!(matches!(app.overlay, Overlay::Confirm(_)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    #[test]
+    fn romon_port_enter_opens_edit_sheet() {
+        let mut app = load_named_rows("romon-ports", vec![romon_port_row("*rp1", "ether1")]);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form, got {:?}", app.overlay);
+        };
+        assert_eq!(session.resource_id, "romon-ports");
+        assert_eq!(
+            session.values.get("interface").map(String::as_str),
+            Some("ether1")
+        );
+        assert_eq!(
+            session.values.get("secrets").map(String::as_str),
+            Some(MASKED_VALUE)
+        );
+    }
+
+    #[test]
+    fn graphing_enter_opens_store_every_sheet() {
+        let mut fields = HashMap::new();
+        fields.insert("store-every".into(), "hour".into());
+        fields.insert("page-refresh".into(), "never".into());
+        let mut app = load_named_rows(
+            "graphing",
+            vec![Resource {
+                id: String::new(),
+                fields,
+            }],
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form, got {:?}", app.overlay);
+        };
+        assert_eq!(session.resource_id, "graphing");
+        assert_eq!(
+            session.values.get("store-every").map(String::as_str),
+            Some("hour")
+        );
+        assert_eq!(
+            session.values.get("page-refresh").map(String::as_str),
+            Some("never")
+        );
+    }
+
+    #[test]
+    fn romon_ignores_stale_generation_and_keeps_rows_on_error() {
+        let mut app = load_named_rows("romon-ports", vec![romon_port_row("*rp1", "all")]);
+        assert_eq!(app.table.row_count(), 1);
+        let stale = app.poll_generation;
+        app.select_resource("graphing");
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: stale,
+            resource_id: "romon-ports".into(),
+            rows: vec![romon_port_row("*rp9", "ether9")],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+        assert_eq!(app.current_resource, "graphing");
+
+        app.select_resource("romon-ports");
+        let poll_gen = app.poll_generation;
+        app.table.select_id("*rp1");
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: poll_gen,
+            resource_id: "romon-ports".into(),
+            rows: Vec::new(),
+            error: Some("no such command prefix".into()),
+        }));
+        assert_eq!(app.table.row_count(), 1);
+        assert!(app.status.contains("Refresh failed"));
+    }
 }

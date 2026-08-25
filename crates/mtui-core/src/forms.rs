@@ -154,13 +154,44 @@ pub fn default_writable_value(kind: FieldKind) -> String {
 /// Put `none` first when the API combo includes an unspecified choice.
 #[must_use]
 pub fn with_leading_none(options: Vec<String>) -> Vec<String> {
-    if options.iter().any(|item| item == "none") {
+    prepend_unique("none", options)
+}
+
+/// Put `all` first when the combo includes the RouterOS wildcard interface or queue.
+#[must_use]
+pub fn with_leading_all(options: Vec<String>) -> Vec<String> {
+    prepend_unique("all", options)
+}
+
+fn prepend_unique(lead: &str, options: Vec<String>) -> Vec<String> {
+    if options.iter().any(|item| item == lead) {
         return options;
     }
     let mut out = Vec::with_capacity(options.len().saturating_add(1));
-    out.push("none".into());
+    out.push(lead.to_string());
     out.extend(options);
     out
+}
+
+/// Extra combo values that are not rows of the lookup resource (`none`, `all`).
+#[must_use]
+pub fn prepare_lookup_options(
+    sheet_resource_id: &str,
+    lookup_resource_id: &str,
+    options: Vec<String>,
+) -> Vec<String> {
+    if lookup_resource_id == "ntp-keys" {
+        return with_leading_none(options);
+    }
+    if matches!(sheet_resource_id, "romon-ports" | "graphing-interface")
+        && lookup_resource_id == "interfaces"
+    {
+        return with_leading_all(options);
+    }
+    if sheet_resource_id == "graphing-queue" && lookup_resource_id == "queue-simple" {
+        return with_leading_all(options);
+    }
+    options
 }
 
 /// Whether a sheet field should appear given current values.
@@ -437,6 +468,7 @@ fn looks_secret_key(key: &str) -> bool {
         || normalized.contains("pre-shared")
         || normalized.ends_with("-secret")
         || normalized == "secret"
+        || normalized == "secrets"
         || normalized == "key-val"
 }
 
@@ -582,6 +614,30 @@ mod tests {
         assert_eq!(
             with_leading_none(vec!["1".into(), "2".into()]),
             vec!["none".to_string(), "1".into(), "2".into()]
+        );
+        assert_eq!(
+            with_leading_all(vec!["ether1".into()]),
+            vec!["all".to_string(), "ether1".into()]
+        );
+        assert_eq!(
+            prepare_lookup_options("ntp-server", "ntp-keys", vec!["1".into()]),
+            vec!["none".to_string(), "1".into()]
+        );
+        assert_eq!(
+            prepare_lookup_options("romon-ports", "interfaces", vec!["ether1".into()]),
+            vec!["all".to_string(), "ether1".into()]
+        );
+        assert_eq!(
+            prepare_lookup_options("graphing-interface", "interfaces", vec!["ether1".into()]),
+            vec!["all".to_string(), "ether1".into()]
+        );
+        assert_eq!(
+            prepare_lookup_options("graphing-queue", "queue-simple", vec!["guest".into()]),
+            vec!["all".to_string(), "guest".into()]
+        );
+        assert_eq!(
+            prepare_lookup_options("sniffer", "interfaces", vec!["ether1".into()]),
+            vec!["ether1".to_string()]
         );
         assert_eq!(
             default_writable_value(FieldKind::Lookup {

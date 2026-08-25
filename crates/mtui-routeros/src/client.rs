@@ -506,6 +506,18 @@ mod tests {
             command_path("/rest/ipv6/firewall/connection", "print").unwrap(),
             "/ipv6/firewall/connection/print"
         );
+        assert_eq!(
+            command_path("/rest/tool/romon", "print").unwrap(),
+            "/tool/romon/print"
+        );
+        assert_eq!(
+            command_path("/rest/tool/romon/port", "add").unwrap(),
+            "/tool/romon/port/add"
+        );
+        assert_eq!(
+            command_path("/rest/tool/graphing/interface", "print").unwrap(),
+            "/tool/graphing/interface/print"
+        );
     }
 
     #[test]

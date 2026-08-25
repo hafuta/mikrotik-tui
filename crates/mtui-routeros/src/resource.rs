@@ -141,6 +141,50 @@ mod tests {
     }
 
     #[test]
+    fn romon_and_graphing_json_optional_malformed_and_secrets() {
+        let cases: &[(&str, &str, Option<&str>)] = &[
+            (
+                r#"{".id":"","enabled":"true","id":"00:00:00:00:00:00","secrets":"alpha,beta","current-id":"DC:2C:6E:9E:11:27"}"#,
+                "current-id",
+                Some("DC:2C:6E:9E:11:27"),
+            ),
+            (r#"{"enabled":"false"}"#, "enabled", Some("false")),
+            (
+                r#"{".id":"*1","interface":"all","forbid":"false","cost":"100"}"#,
+                "cost",
+                Some("100"),
+            ),
+            (
+                r#"{"store-every":"5min","page-refresh":"never"}"#,
+                "page-refresh",
+                Some("never"),
+            ),
+            (
+                r#"{".id":"*gi1","interface":"ether1","allow-address":"192.0.2.0/24","store-on-disk":"true"}"#,
+                "comment",
+                None,
+            ),
+        ];
+        for (json, key, expected) in cases {
+            let resource: Resource = serde_json::from_str(json).expect("valid tool JSON");
+            assert_eq!(resource.field(key), *expected, "json={json}");
+        }
+
+        let masked: Resource =
+            serde_json::from_str(r#"{"enabled":"yes","secrets":"shared-secret"}"#)
+                .expect("romon secrets");
+        let row = masked.display_row();
+        assert_eq!(
+            row.get("secrets").map(String::as_str),
+            Some(crate::secret::MASKED_VALUE)
+        );
+        assert_eq!(row.get("enabled").map(String::as_str), Some("yes"));
+
+        let bad: Result<Resource, _> = serde_json::from_str(r#"{"enabled":true,"secrets":1}"#);
+        assert!(bad.is_err());
+    }
+
+    #[test]
     fn display_row_includes_id_and_masks_secrets() {
         let resource: Resource =
             serde_json::from_str(r#"{".id":"*1","name":"wlan1","password":"hunter2"}"#)

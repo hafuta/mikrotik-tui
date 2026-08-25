@@ -213,5 +213,11 @@ mod tests {
         assert!(!timeout.is_link_loss());
         let transport = Error::new(ErrorKind::Transport, "list", "broken pipe");
         assert!(transport.is_link_loss());
+        let canceled = Error::new(ErrorKind::Canceled, "list", "romon print canceled");
+        assert!(!canceled.is_link_loss());
+        assert_eq!(canceled.kind(), ErrorKind::Canceled);
+        let trap = Error::new(ErrorKind::Api, "set", "no such command prefix (romon)");
+        assert!(!trap.is_link_loss());
+        assert!(trap.to_string().contains("romon"));
     }
 }

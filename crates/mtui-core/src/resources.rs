@@ -3998,6 +3998,111 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::tools_write::EMAIL_FORM),
     },
     ResourceSpec {
+        id: "romon",
+        group: "tools-group",
+        label: "RoMON",
+        fetch: FetchKind::System {
+            endpoint: "/rest/tool/romon",
+        },
+        columns: &[
+            col!("enabled", "Enabled", 8),
+            col!("id", "ID", 18),
+            col!("secrets", "Secrets", 10),
+            col!("current-id", "Current ID", 18),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::tools_write::ROMON_FORM),
+    },
+    ResourceSpec {
+        id: "romon-ports",
+        group: "tools-group",
+        label: "RoMON Ports",
+        fetch: FetchKind::List {
+            endpoint: "/rest/tool/romon/port",
+        },
+        columns: &[
+            col!("interface", "Interface", 16),
+            col!("forbid", "Forbid", 8),
+            col!("cost", "Cost", 8),
+            col!("secrets", "Secrets", 10),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::tools_write::ROMON_PORT_FORM),
+    },
+    ResourceSpec {
+        id: "graphing",
+        group: "tools-group",
+        label: "Graphing",
+        fetch: FetchKind::System {
+            endpoint: "/rest/tool/graphing",
+        },
+        columns: &[
+            col!("store-every", "Store Every", 12),
+            col!("page-refresh", "Page Refresh", 12),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::tools_write::GRAPHING_FORM),
+    },
+    ResourceSpec {
+        id: "graphing-interface",
+        group: "tools-group",
+        label: "Graphing Interface",
+        fetch: FetchKind::List {
+            endpoint: "/rest/tool/graphing/interface",
+        },
+        columns: &[
+            col!("interface", "Interface", 16),
+            col!("allow-address", "Allow Address", 18),
+            col!("store-on-disk", "Store On Disk", 12),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::tools_write::GRAPHING_INTERFACE_FORM),
+    },
+    ResourceSpec {
+        id: "graphing-queue",
+        group: "tools-group",
+        label: "Graphing Queue",
+        fetch: FetchKind::List {
+            endpoint: "/rest/tool/graphing/queue",
+        },
+        columns: &[
+            col!("simple-queue", "Simple Queue", 16),
+            col!("allow-address", "Allow Address", 18),
+            col!("allow-target", "Allow Target", 12),
+            col!("store-on-disk", "Store On Disk", 12),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::tools_write::GRAPHING_QUEUE_FORM),
+    },
+    ResourceSpec {
+        id: "graphing-resource",
+        group: "tools-group",
+        label: "Graphing Resource",
+        fetch: FetchKind::List {
+            endpoint: "/rest/tool/graphing/resource",
+        },
+        columns: &[
+            col!("allow-address", "Allow Address", 18),
+            col!("store-on-disk", "Store On Disk", 12),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::tools_write::GRAPHING_RESOURCE_FORM),
+    },
+    ResourceSpec {
         id: "ping",
         group: "tools-group",
         label: "Ping",
@@ -5098,6 +5203,12 @@ mod tests {
             [
                 "netwatch",
                 "email",
+                "romon",
+                "romon-ports",
+                "graphing",
+                "graphing-interface",
+                "graphing-queue",
+                "graphing-resource",
                 "ping",
                 "traceroute",
                 "sniffer",
@@ -5161,6 +5272,53 @@ mod tests {
         assert_eq!(
             column_keys("ipv6-firewall-connections"),
             column_keys("firewall-connections")
+        );
+    }
+
+    #[test]
+    fn romon_and_graphing_cover_webfig_tools() {
+        assert!(resource_by_id("romon").is_some_and(ResourceSpec::is_singleton));
+        assert!(resource_by_id("graphing").is_some_and(ResourceSpec::is_singleton));
+        assert!(!resource_by_id("romon-ports").is_some_and(ResourceSpec::is_singleton));
+        assert_eq!(
+            resource_by_id("romon").expect("romon").endpoint(),
+            "/rest/tool/romon"
+        );
+        assert_eq!(
+            resource_by_id("romon-ports").expect("ports").endpoint(),
+            "/rest/tool/romon/port"
+        );
+        assert_eq!(
+            resource_by_id("graphing").expect("graphing").endpoint(),
+            "/rest/tool/graphing"
+        );
+        assert_eq!(
+            resource_by_id("graphing-interface").expect("gi").endpoint(),
+            "/rest/tool/graphing/interface"
+        );
+        assert_eq!(
+            resource_by_id("graphing-queue").expect("gq").endpoint(),
+            "/rest/tool/graphing/queue"
+        );
+        assert_eq!(
+            resource_by_id("graphing-resource").expect("gr").endpoint(),
+            "/rest/tool/graphing/resource"
+        );
+        assert!(resource_by_id("romon").is_some_and(|spec| spec.form.is_some()));
+        assert!(resource_by_id("romon-ports").is_some_and(|spec| spec.form.is_some()));
+        assert!(resource_by_id("graphing").is_some_and(|spec| spec.form.is_some()));
+        assert!(column_keys("romon").contains(&"secrets"));
+        assert!(column_keys("romon-ports").contains(&"forbid"));
+        assert_eq!(column_keys("graphing"), ["store-every", "page-refresh"]);
+        let port_actions: Vec<_> = resource_by_id("romon-ports")
+            .expect("ports")
+            .actions
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(
+            port_actions,
+            ["add", "edit", "toggle-disabled", "copy", "remove"]
         );
     }
 
