@@ -509,6 +509,49 @@ pub static MACVLAN_FORM: FormSchema = FormSchema {
     }],
 };
 
+pub static VETH_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["address"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                NAME,
+                f!("address", "Address", FieldKind::Repeat),
+                f!("gateway", "Gateway", FieldKind::Text),
+                f!("gateway6", "IPv6 Gateway", FieldKind::Text),
+                f!("dhcp", "DHCP", FieldKind::Toggle),
+                MAC,
+                f!(
+                    "container-mac-address",
+                    "Container MAC Address",
+                    FieldKind::Text
+                ),
+                COMMENT,
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[RUNNING],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            NAME,
+            f!("dhcp", "DHCP", FieldKind::Toggle),
+            f!("address", "Address", FieldKind::Repeat),
+        ],
+    }],
+};
+
 pub static MACSEC_FORM: FormSchema = FormSchema {
     title_key: "name",
     subtitle_keys: &["interface", "status"],
@@ -1205,6 +1248,19 @@ mod tests {
         ] {
             assert_lookup(&DETECT_INTERNET_FORM, key, "interface-lists", false);
         }
+    }
+
+    #[test]
+    fn veth_address_is_repeat() {
+        assert_eq!(create_keys(&VETH_FORM), ["name", "dhcp", "address"]);
+        assert_eq!(
+            VETH_FORM.field("address").map(|field| field.kind),
+            Some(FieldKind::Repeat)
+        );
+        assert_eq!(
+            VETH_FORM.field("dhcp").map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
     }
 
     #[test]

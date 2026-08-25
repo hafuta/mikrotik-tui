@@ -101,6 +101,7 @@ pub struct Session {
     pub(crate) floating_undo_count: usize,
     pub(crate) last_safe_mode_verb: Option<SafeModeVerb>,
     pub(crate) safe_mode_after: SafeModeAfter,
+    pub(crate) installed_packages: HashSet<String>,
 }
 
 impl Session {
@@ -158,6 +159,7 @@ impl Session {
             floating_undo_count: 0,
             last_safe_mode_verb: None,
             safe_mode_after: SafeModeAfter::None,
+            installed_packages: HashSet::new(),
         }
     }
 

@@ -11,7 +11,7 @@ use mtui_config::{
 };
 use mtui_core::{
     ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet, installed_package_names,
-    resource_by_id, unavailable_menus,
+    resource_by_id, unavailable_menus_for_device,
 };
 
 use mtui_routeros::{
@@ -1683,8 +1683,21 @@ impl App {
     }
 
     fn apply_installed_packages(&mut self, rows: &[Resource]) {
-        let names = installed_package_names(rows.iter().map(|row| row.fields.clone()));
-        self.nav.set_unavailable(unavailable_menus(&names));
+        self.installed_packages =
+            installed_package_names(rows.iter().map(|row| row.fields.clone()));
+        self.refresh_unavailable_menus();
+    }
+
+    fn refresh_unavailable_menus(&mut self) {
+        let arch = self
+            .router
+            .fields
+            .get("architecture-name")
+            .cloned()
+            .unwrap_or_default();
+        let cpu = self.router.fields.get("cpu").cloned().unwrap_or_default();
+        let missing = unavailable_menus_for_device(&self.installed_packages, &arch, &cpu);
+        self.nav.set_unavailable(missing);
         self.rebuild_palette();
     }
 
@@ -2064,8 +2077,15 @@ impl App {
     }
 
     fn apply_system_resource(&mut self, system: Resource) {
+        let prev_arch = self.router.fields.get("architecture-name").cloned();
+        let prev_cpu = self.router.fields.get("cpu").cloned();
         self.dash.update_system(&system);
         self.router = system;
+        let arch = self.router.fields.get("architecture-name");
+        let cpu = self.router.fields.get("cpu");
+        if arch != prev_arch.as_ref() || cpu != prev_cpu.as_ref() {
+            self.refresh_unavailable_menus();
+        }
     }
 
     fn apply_header_telemetry(

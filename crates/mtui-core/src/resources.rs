@@ -769,6 +769,26 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::interface_write::MACVLAN_FORM),
     },
     ResourceSpec {
+        id: "veth",
+        group: "interfaces-group",
+        label: "VETH",
+        fetch: FetchKind::List {
+            endpoint: "/rest/interface/veth",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("address", "Address", 24),
+            col!("gateway", "Gateway", 16),
+            col!("dhcp", "DHCP", 6),
+            col!("running", "Run", 5),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
+        form: Some(&crate::interface_write::VETH_FORM),
+    },
+    ResourceSpec {
         id: "macsec",
         group: "interfaces-group",
         label: "MACsec",
@@ -4086,6 +4106,100 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: None,
     },
     ResourceSpec {
+        id: "containers",
+        group: "container-group",
+        label: "Containers",
+        fetch: FetchKind::List {
+            endpoint: "/rest/container",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("tag", "Tag", 22),
+            col!("interface", "Interface", 14),
+            col!("status", "Status", 14),
+            col!("arch", "Arch", 8),
+            col!("memory-current", "Memory", 12),
+            col!("cpu-usage", "CPU", 8),
+            col!("root-dir", "Root dir", 24),
+            col!("start-on-boot", "Boot", 6),
+            col!("logging", "Log", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::CONTAINER_ACTIONS,
+        form: Some(&crate::container_write::CONTAINER_FORM),
+    },
+    ResourceSpec {
+        id: "container-config",
+        group: "container-group",
+        label: "Config",
+        fetch: FetchKind::System {
+            endpoint: "/rest/container/config",
+        },
+        columns: &[
+            col!("registry-url", "Registry", 28),
+            col!("tmpdir", "Tmpdir", 20),
+            col!("username", "User", 12),
+            col!("memory-current", "Memory", 12),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::container_write::CONTAINER_CONFIG_FORM),
+    },
+    ResourceSpec {
+        id: "container-envs",
+        group: "container-group",
+        label: "Envs",
+        fetch: FetchKind::List {
+            endpoint: "/rest/container/envs",
+        },
+        columns: &[
+            col!("list", "List", 16),
+            col!("key", "Key", 20),
+            col!("value", "Value", 24),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::container_write::CONTAINER_ENV_FORM),
+    },
+    ResourceSpec {
+        id: "container-mounts",
+        group: "container-group",
+        label: "Mounts",
+        fetch: FetchKind::List {
+            endpoint: "/rest/container/mounts",
+        },
+        columns: &[
+            col!("list", "List", 16),
+            col!("src", "Src", 24),
+            col!("dst", "Dst", 24),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::container_write::CONTAINER_MOUNT_FORM),
+    },
+    ResourceSpec {
+        id: "apps",
+        group: "container-group",
+        label: "Apps",
+        fetch: FetchKind::List {
+            endpoint: "/rest/app",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("status", "Status", 16),
+            col!("running", "Run", 5),
+            col!("network", "Network", 12),
+            col!("ui-url", "UI URL", 28),
+            col!("ip-address", "IP", 18),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::APP_ACTIONS,
+        form: Some(&crate::container_write::APP_FORM),
+    },
+    ResourceSpec {
         id: "netwatch",
         group: "tools-group",
         label: "Netwatch",
@@ -4481,6 +4595,10 @@ pub static NAVIGATION: &[NavGroup] = &[
     NavGroup {
         id: "radius-group",
         label: "RADIUS",
+    },
+    NavGroup {
+        id: "container-group",
+        label: "Container",
     },
     NavGroup {
         id: "system-group",
@@ -4879,6 +4997,7 @@ mod tests {
                 "wireless-access-list",
                 "wireless-registration-table",
                 "macvlan",
+                "veth",
                 "macsec",
                 "macsec-profiles",
                 "vrf",
@@ -5445,6 +5564,16 @@ mod tests {
             ]
         );
         assert_eq!(group_ids("radius-group"), ["radius", "radius-incoming"]);
+        assert_eq!(
+            group_ids("container-group"),
+            [
+                "containers",
+                "container-config",
+                "container-envs",
+                "container-mounts",
+                "apps",
+            ]
+        );
         for group in [
             "ipv6-group",
             "routing-group",
@@ -5452,6 +5581,7 @@ mod tests {
             "files-group",
             "tools-group",
             "radius-group",
+            "container-group",
         ] {
             assert_unique_endpoints(group);
         }
@@ -5459,6 +5589,7 @@ mod tests {
         let labels: Vec<_> = tree.iter().map(|item| item.id.as_str()).collect();
         assert!(labels.contains(&"ipv6-group"));
         assert!(labels.contains(&"radius-group"));
+        assert!(labels.contains(&"container-group"));
         assert_eq!(labels.last().copied(), Some("system-group"));
     }
 
