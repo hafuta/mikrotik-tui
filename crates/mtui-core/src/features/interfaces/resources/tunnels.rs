@@ -9,6 +9,7 @@ const REFRESH: Duration = Duration::from_secs(10);
 pub const EOIP: ResourceSpec = ResourceSpec {
     id: "eoip",
     group: "interfaces-group",
+    cli_path: None,
     label: "EoIP Tunnel",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/eoip",
@@ -30,6 +31,7 @@ pub const EOIP: ResourceSpec = ResourceSpec {
 pub const IPIP: ResourceSpec = ResourceSpec {
     id: "ipip",
     group: "interfaces-group",
+    cli_path: None,
     label: "IP Tunnel",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/ipip",
@@ -51,6 +53,7 @@ pub const IPIP: ResourceSpec = ResourceSpec {
 pub const GRE: ResourceSpec = ResourceSpec {
     id: "gre",
     group: "interfaces-group",
+    cli_path: None,
     label: "GRE Tunnel",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/gre",
@@ -72,6 +75,7 @@ pub const GRE: ResourceSpec = ResourceSpec {
 pub const SIX_TO_FOUR: ResourceSpec = ResourceSpec {
     id: "6to4",
     group: "interfaces-group",
+    cli_path: None,
     label: "6to4 Tunnel",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/6to4",
@@ -93,6 +97,7 @@ pub const SIX_TO_FOUR: ResourceSpec = ResourceSpec {
 pub const GRE6: ResourceSpec = ResourceSpec {
     id: "gre6",
     group: "interfaces-group",
+    cli_path: None,
     label: "GRE6 Tunnel",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/gre6",

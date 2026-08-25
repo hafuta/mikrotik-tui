@@ -7,6 +7,7 @@ use crate::resources::{FetchKind, ResourceSpec};
 pub const WIFI: ResourceSpec = ResourceSpec {
     id: "wifi",
     group: "interfaces-group",
+    cli_path: None,
     label: "WiFi",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wifi",
@@ -34,6 +35,7 @@ pub const WIFI: ResourceSpec = ResourceSpec {
 pub const WIFI_SECURITY: ResourceSpec = ResourceSpec {
     id: "wifi-security",
     group: "interfaces-group",
+    cli_path: None,
     label: "WiFi Security",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wifi/security",
@@ -52,6 +54,7 @@ pub const WIFI_SECURITY: ResourceSpec = ResourceSpec {
 pub const WIFI_CHANNEL: ResourceSpec = ResourceSpec {
     id: "wifi-channel",
     group: "interfaces-group",
+    cli_path: None,
     label: "WiFi Channel",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wifi/channel",
@@ -71,6 +74,7 @@ pub const WIFI_CHANNEL: ResourceSpec = ResourceSpec {
 pub const WIFI_DATAPATH: ResourceSpec = ResourceSpec {
     id: "wifi-datapath",
     group: "interfaces-group",
+    cli_path: None,
     label: "WiFi Datapath",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wifi/datapath",
@@ -89,6 +93,7 @@ pub const WIFI_DATAPATH: ResourceSpec = ResourceSpec {
 pub const WIFI_CONFIGURATION: ResourceSpec = ResourceSpec {
     id: "wifi-configuration",
     group: "interfaces-group",
+    cli_path: None,
     label: "WiFi Configuration",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wifi/configuration",
@@ -108,6 +113,7 @@ pub const WIFI_CONFIGURATION: ResourceSpec = ResourceSpec {
 pub const WIFI_PROVISIONING: ResourceSpec = ResourceSpec {
     id: "wifi-provisioning",
     group: "interfaces-group",
+    cli_path: None,
     label: "WiFi Provisioning",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wifi/provisioning",
@@ -126,6 +132,7 @@ pub const WIFI_PROVISIONING: ResourceSpec = ResourceSpec {
 pub const WIFI_CAP: ResourceSpec = ResourceSpec {
     id: "wifi-cap",
     group: "interfaces-group",
+    cli_path: None,
     label: "WiFi CAP",
     fetch: FetchKind::System {
         endpoint: "/rest/interface/wifi/cap",
@@ -142,6 +149,7 @@ pub const WIFI_CAP: ResourceSpec = ResourceSpec {
 pub const WIFI_CAPSMAN: ResourceSpec = ResourceSpec {
     id: "wifi-capsman",
     group: "interfaces-group",
+    cli_path: None,
     label: "CAPsMAN",
     fetch: FetchKind::System {
         endpoint: "/rest/interface/wifi/capsman",

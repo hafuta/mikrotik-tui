@@ -7,6 +7,7 @@ use crate::resources::{FetchKind, ResourceSpec};
 pub const LTE: ResourceSpec = ResourceSpec {
     id: "lte",
     group: "interfaces-group",
+    cli_path: None,
     label: "LTE",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/lte",
@@ -30,6 +31,7 @@ pub const LTE: ResourceSpec = ResourceSpec {
 pub const LTE_APN: ResourceSpec = ResourceSpec {
     id: "lte-apn",
     group: "interfaces-group",
+    cli_path: None,
     label: "LTE APN",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/lte/apn",

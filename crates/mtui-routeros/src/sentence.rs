@@ -123,7 +123,11 @@ fn kind_for_trap(message: &str, category: Option<&str>) -> ErrorKind {
     {
         return ErrorKind::Auth;
     }
-    if lower.contains("no such item") || lower.contains("not found") || category == Some("1") {
+    if lower.contains("no such item")
+        || lower.contains("not found")
+        || lower.contains("no such command prefix")
+        || category == Some("1")
+    {
         return ErrorKind::NotFound;
     }
     if mtui_core::is_permission_trap(message) {
@@ -200,6 +204,17 @@ mod tests {
         let err = sentence.trap_error("login");
         assert_eq!(err.kind(), ErrorKind::Auth);
         assert_eq!(err.message(), "cannot log in");
+    }
+
+    #[test]
+    fn missing_command_prefix_is_not_found() {
+        let sentence = Sentence::new(vec![
+            "!trap".into(),
+            "=message=no such command prefix".into(),
+        ]);
+        let err = sentence.trap_error("system");
+        assert_eq!(err.kind(), ErrorKind::NotFound);
+        assert_eq!(err.message(), "no such command prefix");
     }
 
     #[test]

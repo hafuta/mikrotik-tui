@@ -7,6 +7,7 @@ use crate::resources::{FetchKind, ResourceSpec};
 pub const INTERFACES: ResourceSpec = ResourceSpec {
     id: "interfaces",
     group: "interfaces-group",
+    cli_path: None,
     label: "Interface",
     fetch: FetchKind::List {
         endpoint: "/rest/interface",
@@ -48,6 +49,7 @@ pub const INTERFACES: ResourceSpec = ResourceSpec {
 pub const INTERFACE_LISTS: ResourceSpec = ResourceSpec {
     id: "interface-lists",
     group: "interfaces-group",
+    cli_path: None,
     label: "Lists",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/list",
@@ -67,6 +69,7 @@ pub const INTERFACE_LISTS: ResourceSpec = ResourceSpec {
 pub const INTERFACE_LIST_MEMBERS: ResourceSpec = ResourceSpec {
     id: "interface-list-members",
     group: "interfaces-group",
+    cli_path: None,
     label: "List members",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/list/member",
@@ -86,6 +89,7 @@ pub const INTERFACE_LIST_MEMBERS: ResourceSpec = ResourceSpec {
 pub const ETHERNET: ResourceSpec = ResourceSpec {
     id: "ethernet",
     group: "interfaces-group",
+    cli_path: None,
     label: "Ethernet",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/ethernet",

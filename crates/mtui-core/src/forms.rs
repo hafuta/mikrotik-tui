@@ -812,6 +812,19 @@ impl FormSchema {
     }
 
     #[must_use]
+    pub fn secret_keys(&self) -> Vec<&'static str> {
+        let mut keys = Vec::new();
+        for section in self.sections.iter().chain(self.create_sections.iter()) {
+            for field in section.fields {
+                if matches!(field.kind, FieldKind::Secret) && !keys.contains(&field.key) {
+                    keys.push(field.key);
+                }
+            }
+        }
+        keys
+    }
+
+    #[must_use]
     pub fn writable_keys(&self) -> Vec<&'static str> {
         let mut keys = Vec::new();
         for section in self.sections.iter().chain(self.create_sections.iter()) {

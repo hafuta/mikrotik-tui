@@ -10,9 +10,9 @@ use mtui_config::{
     PlatformCredentialStore, Profile, ProfileStore, read_ca_file, shared_log_store,
 };
 use mtui_core::{
-    ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet,
-    edit_resource_for_interface_type, installed_package_names, resource_by_id,
-    unavailable_menus_for_device,
+    ALL_RESOURCES, DASHBOARD_ID, MISSING_PATH_REASON, ResourceSpec, ThemeRegistry, ThemeSet,
+    edit_resource_for_interface_type, installed_package_names, is_missing_command_prefix,
+    merge_unavailable_menus, resource_by_id, unavailable_menus_for_device,
 };
 
 use mtui_routeros::{
@@ -133,6 +133,10 @@ pub enum AppCommand {
         request_id: u64,
         generation: u64,
     },
+    ProbeMenuPaths {
+        session: SessionId,
+        generation: u64,
+    },
     ForgetProfile {
         session: SessionId,
         name: String,
@@ -241,6 +245,7 @@ impl AppCommand {
             | Self::FetchDashboard { session, .. }
             | Self::FetchHeader { session, .. }
             | Self::FetchAccess { session, .. }
+            | Self::ProbeMenuPaths { session, .. }
             | Self::ForgetProfile { session, .. }
             | Self::Mutate { session, .. }
             | Self::FetchTorch { session, .. }
@@ -267,6 +272,7 @@ impl AppCommand {
             | Self::FetchDashboard { session, .. }
             | Self::FetchHeader { session, .. }
             | Self::FetchAccess { session, .. }
+            | Self::ProbeMenuPaths { session, .. }
             | Self::ForgetProfile { session, .. }
             | Self::Mutate { session, .. }
             | Self::FetchTorch { session, .. }
@@ -1018,12 +1024,14 @@ impl App {
         self.poll_generation = self.poll_generation.wrapping_add(1);
         self.torch_generation = self.torch_generation.wrapping_add(1);
         self.probe_generation = self.probe_generation.wrapping_add(1);
+        self.menu_paths_generation = self.menu_paths_generation.wrapping_add(1);
     }
 
     pub(crate) fn disconnect_to_profiles(&mut self) {
         self.bump_request_generation();
         self.client = None;
         self.demo = None;
+        self.missing_path_ids.clear();
         self.nav.set_unavailable(HashMap::new());
         self.router = Resource::default();
         self.overlay = Overlay::None;
@@ -1252,6 +1260,7 @@ impl App {
                     self.status = "Reconnected".into();
                     let mut cmds = self.poll_current();
                     cmds.extend(self.fetch_packages_command());
+                    cmds.extend(self.fetch_menu_paths_command());
                     cmds.extend(self.fetch_access_command());
                     cmds.extend(self.on_reconnect_safe_mode());
                     return cmds;
@@ -1265,6 +1274,7 @@ impl App {
                 self.select_resource(&start);
                 let mut cmds = self.poll_current();
                 cmds.extend(self.fetch_packages_command());
+                cmds.extend(self.fetch_menu_paths_command());
                 cmds.extend(self.fetch_access_command());
                 cmds.extend(self.fetch_safe_mode_command());
                 cmds
@@ -1291,6 +1301,12 @@ impl App {
                 self.apply_access(&users, &groups, error.as_deref());
                 Vec::new()
             }
+            WorkerMsg::MenuPathsResult {
+                generation,
+                missing_ids,
+                error,
+                ..
+            } => self.apply_menu_paths_result(generation, missing_ids, error),
             WorkerMsg::ResourceResult {
                 request_id,
                 generation,
@@ -1320,6 +1336,9 @@ impl App {
                 self.loading = false;
                 self.refreshing = false;
                 if let Some(err) = error {
+                    if is_missing_command_prefix(&err) {
+                        return self.hide_missing_path_resource(&resource_id);
+                    }
                     tracing::warn!(resource_id = resource_id.as_str(), error = %err, "resource refresh failed");
                     self.status = if mtui_core::is_permission_trap(&err) {
                         Self::classify_write_error(&err)
@@ -1347,7 +1366,7 @@ impl App {
                         .table
                         .selected_row()
                         .and_then(|row| row.get(".id").cloned());
-                    self.apply_table_rows(Self::row_to_display(rows));
+                    self.apply_table_rows(self.row_to_display(rows));
                     if let Some(id) = selected_id {
                         self.table.select_id(&id);
                     }
@@ -1489,7 +1508,7 @@ impl App {
                     })
                     .collect();
                 merge_listen_record(&mut resources, row);
-                self.apply_table_rows(Self::row_to_display(resources));
+                self.apply_table_rows(self.row_to_display(resources));
                 if let Some(id) = selected_id {
                     self.table.select_id(&id);
                 }
@@ -1702,6 +1721,62 @@ impl App {
         }]
     }
 
+    fn fetch_menu_paths_command(&mut self) -> Vec<AppCommand> {
+        self.menu_paths_generation = self.menu_paths_generation.wrapping_add(1);
+        vec![AppCommand::ProbeMenuPaths {
+            session: SessionId::UNSTAMPED,
+            generation: self.menu_paths_generation,
+        }]
+    }
+
+    fn apply_menu_paths_result(
+        &mut self,
+        generation: u64,
+        missing_ids: HashSet<String>,
+        error: Option<String>,
+    ) -> Vec<AppCommand> {
+        if generation != self.menu_paths_generation {
+            return Vec::new();
+        }
+        if let Some(err) = error {
+            tracing::debug!(error = %err, "menu path probe failed; keeping package gates");
+            return Vec::new();
+        }
+        self.missing_path_ids = missing_ids;
+        self.refresh_unavailable_menus();
+        self.leave_if_current_unavailable()
+    }
+
+    fn hide_missing_path_resource(&mut self, resource_id: &str) -> Vec<AppCommand> {
+        tracing::info!(
+            resource_id,
+            "hiding menu; command path is absent on this device"
+        );
+        self.missing_path_ids.insert(resource_id.to_string());
+        self.refresh_unavailable_menus();
+        if self.current_resource != resource_id {
+            return Vec::new();
+        }
+        let cmds = self.leave_if_current_unavailable();
+        if cmds.is_empty() {
+            self.status = format!("{resource_id} is not available on this device");
+        }
+        cmds
+    }
+
+    fn leave_if_current_unavailable(&mut self) -> Vec<AppCommand> {
+        if !self.nav.unavailable.contains_key(&self.current_resource) {
+            return Vec::new();
+        }
+        let start = self
+            .nav
+            .first_openable_id()
+            .unwrap_or_else(|| DASHBOARD_ID.to_string());
+        self.select_resource(&start);
+        self.status = "Hidden menus this device does not provide".into();
+        self.poll_current()
+    }
+
     fn apply_installed_packages(&mut self, rows: &[Resource]) {
         self.installed_packages =
             installed_package_names(rows.iter().map(|row| row.fields.clone()));
@@ -1716,7 +1791,13 @@ impl App {
             .cloned()
             .unwrap_or_default();
         let cpu = self.router.fields.get("cpu").cloned().unwrap_or_default();
-        let missing = unavailable_menus_for_device(&self.installed_packages, &arch, &cpu);
+        let packages = unavailable_menus_for_device(&self.installed_packages, &arch, &cpu);
+        let paths = self
+            .missing_path_ids
+            .iter()
+            .map(|id| (id.clone(), MISSING_PATH_REASON.to_string()))
+            .collect();
+        let missing = merge_unavailable_menus(packages, paths);
         self.nav.set_unavailable(missing);
         self.rebuild_palette();
     }
@@ -3003,6 +3084,60 @@ mod secret_mask_tests {
     }
 
     #[test]
+    fn ipsec_psk_key_is_masked_without_treating_container_env_key_as_secret() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("ipsec-key-psk");
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("peer".into(), "office".into());
+        fields.insert("id".into(), "user@example.com".into());
+        fields.insert("key".into(), "MARKER-PSK".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "ipsec-key-psk".into(),
+            rows: vec![Resource {
+                id: "*1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+
+        let table_row = app.table.selected_row().expect("row");
+        assert_eq!(table_row.get("peer").map(String::as_str), Some("office"));
+        assert_eq!(table_row.get("key").map(String::as_str), Some(MASKED_VALUE));
+        assert!(
+            !app.inspector
+                .fields
+                .iter()
+                .any(|(_, value)| value.contains("MARKER"))
+        );
+
+        app.select_resource("container-envs");
+        let mut env = std::collections::HashMap::new();
+        env.insert("list".into(), "app".into());
+        env.insert("key".into(), "LOG_LEVEL".into());
+        env.insert("value".into(), "info".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "container-envs".into(),
+            rows: vec![Resource {
+                id: "*2".into(),
+                fields: env,
+            }],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+        let env_row = app.table.selected_row().expect("env");
+        assert_eq!(env_row.get("key").map(String::as_str), Some("LOG_LEVEL"));
+    }
+
+    #[test]
     fn stale_smb_share_result_is_ignored_after_navigation() {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;
@@ -3058,7 +3193,7 @@ mod secret_mask_tests {
             generation: app.poll_generation,
             resource_id: "smb-shares".into(),
             rows: Vec::new(),
-            error: Some("failure: no such command prefix (6)".into()),
+            error: Some("failure: request timed out".into()),
         }));
         assert!(cmds.is_empty());
         assert!(app.status.contains("Refresh failed"));
@@ -3629,5 +3764,91 @@ mod session_profile_tests {
             )),
             "expected table copy, got {cmds:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod menu_path_gate_tests {
+    use super::*;
+    use crate::event::{AppEvent, WorkerMsg};
+
+    #[test]
+    fn menu_path_probe_hides_port_controller_and_leaves_the_screen() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("bridge-port-controller");
+        let mut missing_ids = HashSet::new();
+        missing_ids.insert("bridge-port-controller".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::MenuPathsResult {
+            session: app.test_session(),
+            generation: app.menu_paths_generation,
+            missing_ids,
+            error: None,
+        }));
+        assert!(app.nav.unavailable.contains_key("bridge-port-controller"));
+        assert_ne!(app.current_resource, "bridge-port-controller");
+        assert!(!cmds.is_empty());
+    }
+
+    #[test]
+    fn missing_prefix_error_hides_the_open_menu() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("bridge-port-controller");
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "bridge-port-controller".into(),
+            rows: Vec::new(),
+            error: Some("no such command prefix".into()),
+        }));
+        assert!(app.nav.unavailable.contains_key("bridge-port-controller"));
+        assert_ne!(app.current_resource, "bridge-port-controller");
+        assert!(!cmds.is_empty());
+    }
+
+    #[test]
+    fn inspect_failure_does_not_hide_catalog_menus() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        let _ = app.update(AppEvent::Worker(WorkerMsg::MenuPathsResult {
+            session: app.test_session(),
+            generation: app.menu_paths_generation,
+            missing_ids: HashSet::new(),
+            error: Some("inspect failed".into()),
+        }));
+        assert!(!app.nav.unavailable.contains_key("bridge-port-controller"));
+        assert!(!app.nav.unavailable.contains_key("bridges"));
+    }
+
+    #[test]
+    fn stale_menu_path_probe_is_ignored() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        let mut missing_ids = HashSet::new();
+        missing_ids.insert("bridge-port-controller".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::MenuPathsResult {
+            session: app.test_session(),
+            generation: app.menu_paths_generation.wrapping_add(1),
+            missing_ids,
+            error: None,
+        }));
+        assert!(!app.nav.unavailable.contains_key("bridge-port-controller"));
+    }
+
+    #[test]
+    fn package_gate_still_hides_wifi_when_path_probe_is_empty() {
+        let mut app = App::new(false).expect("app");
+        let _ = app.enter_demo();
+        assert!(app.nav.unavailable.contains_key("wifi"));
+        let _ = app.update(AppEvent::Worker(WorkerMsg::MenuPathsResult {
+            session: app.test_session(),
+            generation: app.menu_paths_generation,
+            missing_ids: HashSet::new(),
+            error: None,
+        }));
+        assert!(app.nav.unavailable.contains_key("wifi"));
+        assert!(!app.nav.unavailable.contains_key("interfaces"));
     }
 }

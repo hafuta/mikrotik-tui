@@ -1,5 +1,6 @@
 //! Input and worker messages.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crossterm::event::KeyEvent;
@@ -42,6 +43,12 @@ pub enum WorkerMsg {
         generation: u64,
         users: Vec<Resource>,
         groups: Vec<Resource>,
+        error: Option<String>,
+    },
+    MenuPathsResult {
+        session: SessionId,
+        generation: u64,
+        missing_ids: HashSet<String>,
         error: Option<String>,
     },
     ResourceResult {
@@ -168,6 +175,7 @@ impl WorkerMsg {
             | Self::AuthRequired { session, .. }
             | Self::SessionLost { session, .. }
             | Self::AccessResult { session, .. }
+            | Self::MenuPathsResult { session, .. }
             | Self::ResourceResult { session, .. }
             | Self::DashboardResult { session, .. }
             | Self::HeaderResult { session, .. }

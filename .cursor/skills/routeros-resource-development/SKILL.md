@@ -4,7 +4,7 @@ description: Develop and review MikroTik RouterOS resources, API mappings, mutat
 ---
 # RouterOS resource development
 
-1. Inspect adjacent resources and the client abstraction before coding; follow their naming, registration, and error conventions.
+1. Inspect adjacent resources and the client abstraction before coding; follow their naming, registration, and error conventions. Set `cli_path: Some("/certificate")` when the RouterOS command is not the REST endpoint minus `/rest`, or when the nav group prefix would be wrong (Certificates under System, path `/certificate`). Overlay-only (`FetchKind::Local`) screens must set `cli_path`.
 2. When implementing a MikroTik screen (catalog resource / WinBox menu), always verify the type of each field and implement accordingly. Do not default string-like API keys to `FieldKind::Text`.
 3. Keep RouterOS transport details out of TUI models. Represent API words and values at the resource boundary and preserve unknown values where practical.
 4. Treat RouterOS IDs as opaque strings. Distinguish absent values from explicit zero/false values when encoding mutations.
