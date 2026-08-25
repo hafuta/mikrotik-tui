@@ -13,6 +13,7 @@
 //! - `ipv6-nd-prefix` → `/rest/ipv6/nd/prefix` (`IPV6_ND_PREFIX_FORM`, `MEMBER_ACTIONS`)
 //! - `ipv6-firewall-nat` → `/rest/ipv6/firewall/nat` (`IPV6_FIREWALL_NAT_FORM`, `FILTER_ACTIONS`)
 //! - `ipv6-address-list` → `/rest/ipv6/firewall/address-list` (`IPV6_ADDRESS_LIST_FORM`, `MEMBER_ACTIONS`)
+//! - `ipv6-firewall-connections` → `/rest/ipv6/firewall/connection` (inspect/remove only; no form)
 //!
 //! Group id: `ipv6-group`.
 
@@ -858,5 +859,16 @@ mod tests {
         let body = patch_body(&IPV6_ROUTE_FORM, &original, &current, "********");
         assert_eq!(body.get("gateway").map(String::as_str), Some("fe80::2"));
         assert!(!body.contains_key("active"));
+    }
+
+    #[test]
+    fn ipv6_firewall_connections_have_no_field_sheet() {
+        let spec = crate::resources::resource_by_id("ipv6-firewall-connections")
+            .expect("ipv6-firewall-connections");
+        assert!(
+            spec.form.is_none(),
+            "conntrack is inspect/remove only; do not ship a Text sheet"
+        );
+        assert!(spec.actions.iter().all(|action| action.id == "remove"));
     }
 }

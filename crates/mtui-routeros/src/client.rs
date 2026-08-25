@@ -498,6 +498,14 @@ mod tests {
             "/interface/print"
         );
         assert_eq!(command_path("/rest/tool", "fetch").unwrap(), "/tool/fetch");
+        assert_eq!(
+            command_path("/rest/ipv6/firewall/connection", "remove").unwrap(),
+            "/ipv6/firewall/connection/remove"
+        );
+        assert_eq!(
+            command_path("/rest/ipv6/firewall/connection", "print").unwrap(),
+            "/ipv6/firewall/connection/print"
+        );
     }
 
     #[test]

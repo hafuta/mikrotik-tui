@@ -164,7 +164,14 @@ mod tests {
         ] {
             assert!(supports_bulk_select(id), "{id}");
         }
-        for id in ["logs", "user-groups", "dns-static", "dashboard"] {
+        for id in [
+            "logs",
+            "user-groups",
+            "dns-static",
+            "dashboard",
+            "firewall-connections",
+            "ipv6-firewall-connections",
+        ] {
             assert!(!supports_bulk_select(id), "{id}");
         }
     }

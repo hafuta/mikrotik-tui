@@ -1431,6 +1431,16 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "chain, action, src-address, dst-address, in/out-interface, packets."
     ),
     guide!(
+        "ipv6-firewall-connections",
+        "IPv6 connection tracking table: live conntrack entries the IPv6 firewall is following.",
+        "Inspect who is talking through the router on IPv6. Remove drops that tracked entry so the \
+         next packet is treated as a new connection; it does not delete a filter rule. IPv4 \
+         connections are a separate table.",
+        "src/dst-address, protocol, ports, tcp-state, timeout, orig-rate/repl-rate, \
+         connection-mark. Reply addresses and other keys show in the inspector.",
+        "https://manual.mikrotik.com/docs/firewall-and-quality-of-service/connection-tracking/"
+    ),
+    guide!(
         "rip-instances",
         "RIP instance (`/routing rip instance`) for RIP v1/v2 on ROS 7.",
         "Only if you still speak RIP with a neighbor. Prefer OSPF/BGP otherwise.",
@@ -1605,5 +1615,27 @@ mod tests {
         assert!(lists.body.to_ascii_lowercase().contains("include"));
         assert!(lists.body.to_ascii_lowercase().contains("exclude"));
         assert!(members.body.contains("join") || members.body.contains("Joins"));
+    }
+
+    #[test]
+    fn ipv6_firewall_connections_guide_mirrors_ipv4() {
+        let guide = screen_guide("ipv6-firewall-connections").expect("guide");
+        let copy = about_copy("ipv6-firewall-connections").expect("copy");
+        assert_eq!(copy.title, "About Connections");
+        assert!(copy.kicker.contains("/ipv6/firewall/connection"));
+        assert!(copy.body.contains("/ipv6/firewall/connection"));
+        assert!(guide.summary.to_ascii_lowercase().contains("ipv6"));
+        assert!(guide.use_when.to_ascii_lowercase().contains("remove"));
+        assert!(guide.fields.contains("src/dst-address"));
+        assert_eq!(
+            guide.docs_url,
+            Some(
+                "https://manual.mikrotik.com/docs/firewall-and-quality-of-service/connection-tracking/"
+            )
+        );
+        assert!(
+            !copy.body.contains('\u{2014}'),
+            "about copy must not use em dashes"
+        );
     }
 }

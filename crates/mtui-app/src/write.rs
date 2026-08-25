@@ -2997,4 +2997,119 @@ mod tests {
             other => panic!("expected batch, got {other:?}"),
         }
     }
+
+    fn connection_row(id: &str, src: &str) -> Resource {
+        let mut fields = HashMap::new();
+        fields.insert("src-address".into(), src.into());
+        fields.insert("dst-address".into(), "2001:db8::1".into());
+        fields.insert("protocol".into(), "tcp".into());
+        fields.insert("src-port".into(), "53100".into());
+        fields.insert("dst-port".into(), "443".into());
+        fields.insert("tcp-state".into(), "established".into());
+        Resource {
+            id: id.into(),
+            fields,
+        }
+    }
+
+    #[test]
+    fn ipv6_firewall_connections_remove_posts_delete() {
+        let mut app = load_named_rows(
+            "ipv6-firewall-connections",
+            vec![connection_row("*36", "2001:db8:1::10")],
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected remove confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Remove);
+        assert_eq!(session.record_id, "*36");
+        assert_eq!(session.endpoint, "/rest/ipv6/firewall/connection");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Delete { endpoint, id } => {
+                assert_eq!(endpoint, "/rest/ipv6/firewall/connection");
+                assert_eq!(id, "*36");
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ipv6_firewall_connections_space_does_not_bulk_select() {
+        let mut app = load_named_rows(
+            "ipv6-firewall-connections",
+            vec![
+                connection_row("*36", "2001:db8:1::10"),
+                connection_row("*37", "2001:db8:1::20"),
+            ],
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        assert_eq!(app.table.checked_count(), 0);
+        assert!(matches!(app.overlay, Overlay::None));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(
+            matches!(app.overlay, Overlay::None),
+            "connections have no edit sheet, got {:?}",
+            app.overlay
+        );
+    }
+
+    #[test]
+    fn ipv6_firewall_connections_esc_cancels_remove() {
+        let mut app = load_named_rows(
+            "ipv6-firewall-connections",
+            vec![connection_row("*36", "2001:db8:1::10")],
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        assert!(matches!(app.overlay, Overlay::Confirm(_)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    #[test]
+    fn ipv6_firewall_connections_keeps_rows_on_error_and_ignores_stale() {
+        let mut app = load_named_rows(
+            "ipv6-firewall-connections",
+            vec![connection_row("*36", "2001:db8:1::10")],
+        );
+        assert_eq!(app.table.row_count(), 1);
+        let stale = app.poll_generation;
+        app.select_resource("ipv6-firewall-filter");
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: stale,
+            resource_id: "ipv6-firewall-connections".into(),
+            rows: vec![connection_row("*99", "2001:db8::99")],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+        assert_eq!(app.current_resource, "ipv6-firewall-filter");
+
+        app.select_resource("ipv6-firewall-connections");
+        let poll_gen = app.poll_generation;
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: poll_gen,
+            resource_id: "ipv6-firewall-connections".into(),
+            rows: vec![connection_row("*36", "2001:db8:1::10")],
+            error: None,
+        }));
+        app.table.select_id("*36");
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: poll_gen,
+            resource_id: "ipv6-firewall-connections".into(),
+            rows: Vec::new(),
+            error: Some("no such command prefix".into()),
+        }));
+        assert_eq!(app.table.row_count(), 1);
+        assert!(app.status.contains("Refresh failed"));
+        let selected = app.table.selected_row().expect("row");
+        assert_eq!(selected.get(".id").map(String::as_str), Some("*36"));
+    }
 }
