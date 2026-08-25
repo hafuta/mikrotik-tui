@@ -634,4 +634,84 @@ mod tests {
         assert!(rendered.contains("[ Stay ]"), "{rendered}");
         assert!(rendered.contains("u / enter"), "{rendered}");
     }
+
+    #[test]
+    fn bulk_confirm_on_interfaces_is_a_centered_overlay() {
+        use std::collections::HashMap;
+
+        use crate::event::{AppEvent, WorkerMsg};
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use mtui_routeros::Resource;
+
+        fn row(id: &str, name: &str) -> Resource {
+            let mut fields = HashMap::new();
+            fields.insert("name".into(), name.into());
+            Resource {
+                id: id.into(),
+                fields,
+            }
+        }
+
+        let mut app = live_main();
+        app.select_resource("interfaces");
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "interfaces".into(),
+            rows: vec![row("*1", "ether1"), row("*2", "ether2")],
+            error: None,
+        }));
+        app.pane = crate::app::Pane::Content;
+        let press = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        app.table.move_selection(1);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('d'))));
+
+        let rendered = canvas(&app);
+        assert!(rendered.contains("ether1"), "{rendered}");
+        assert!(rendered.contains("2 items"), "{rendered}");
+        assert!(rendered.contains("[ Confirm ]"), "{rendered}");
+        assert!(rendered.contains("[ Cancel ]"), "{rendered}");
+        let first = rendered.lines().next().expect("row");
+        assert!(
+            !first.contains("2 items"),
+            "confirm dialog should not append below the layout: {rendered}"
+        );
+    }
+
+    #[test]
+    fn narrow_interfaces_table_does_not_panic_with_checks() {
+        use std::collections::HashMap;
+
+        use crate::event::{AppEvent, WorkerMsg};
+        use mtui_routeros::Resource;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = live_main();
+        app.terminal_width = 40;
+        app.terminal_height = 10;
+        app.select_resource("interfaces");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "ether1".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "interfaces".into(),
+            rows: vec![Resource {
+                id: "*1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.table.toggle_checked();
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| draw(frame, &app))
+            .expect("narrow draw");
+    }
 }

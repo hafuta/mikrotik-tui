@@ -110,6 +110,7 @@ are the ones you use constantly.
 | `/` | Filter |
 | `e` / `n` | Edit / add |
 | `d` / `x` | Enable-disable / remove |
+| `space` / `*` | Check row / check all filtered (batch enable, disable, remove) |
 | `a` | Action menu |
 | `ctrl+s` | Save a form |
 

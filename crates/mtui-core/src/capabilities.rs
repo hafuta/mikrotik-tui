@@ -22,6 +22,30 @@ pub const BULK_SELECT_RESOURCES: &[&str] = &[
     "dhcp-relay",
     "queue-simple",
     "queue-tree",
+    "interfaces",
+    "interface-list-members",
+    "ethernet",
+    "eoip",
+    "ipip",
+    "gre",
+    "6to4",
+    "sit",
+    "gre6",
+    "vlan",
+    "vxlan",
+    "vrrp",
+    "bonding",
+    "lte",
+    "wifi",
+    "wireless",
+    "wireguard",
+    "macvlan",
+    "macsec",
+    "routes",
+    "ipv6-routes",
+    "address-list",
+    "ipv6-address-list",
+    "users",
 ];
 
 /// Packages that must be installed for `resource_id` to exist on the device.
@@ -125,11 +149,34 @@ mod tests {
 
     #[test]
     fn bulk_select_covers_operator_lists() {
-        assert!(supports_bulk_select("firewall-filter"));
-        assert!(supports_bulk_select("dhcp-leases"));
-        assert!(supports_bulk_select("queue-simple"));
-        assert!(!supports_bulk_select("interfaces"));
-        assert!(!supports_bulk_select("logs"));
+        for id in [
+            "firewall-filter",
+            "dhcp-leases",
+            "queue-simple",
+            "interfaces",
+            "ethernet",
+            "vlan",
+            "routes",
+            "ipv6-routes",
+            "address-list",
+            "ipv6-address-list",
+            "users",
+        ] {
+            assert!(supports_bulk_select(id), "{id}");
+        }
+        for id in ["logs", "user-groups", "dns-static", "dashboard"] {
+            assert!(!supports_bulk_select(id), "{id}");
+        }
+    }
+
+    #[test]
+    fn bulk_select_ids_are_catalogued_resources() {
+        for id in BULK_SELECT_RESOURCES {
+            assert!(
+                ALL_RESOURCES.iter().any(|spec| spec.id == *id),
+                "unknown bulk-select resource {id}"
+            );
+        }
     }
 
     #[test]
