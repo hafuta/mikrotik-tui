@@ -132,6 +132,8 @@ impl DemoStore {
                         }
                     }
                     "make-static" => self.set_field(endpoint, id, "dynamic", "false"),
+                    "start" | "restart" => self.set_field(endpoint, id, "status", "running"),
+                    "stop" | "kill" => self.set_field(endpoint, id, "status", "stopped"),
                     _ => {}
                 }
                 Ok(())
@@ -149,6 +151,7 @@ impl DemoStore {
                     ("identity", "demo-router"),
                     ("board-name", "CCR2004-16G-2S+"),
                     ("version", "7.18.2 (stable)"),
+                    ("architecture-name", "arm64"),
                     ("cpu", "ARM"),
                     ("cpu-count", "4"),
                     ("cpu-load", "8"),
@@ -161,15 +164,26 @@ impl DemoStore {
         );
         self.rows.insert(
             "packages".into(),
-            vec![resource(
-                "*pkg1",
-                &[
-                    ("name", "routeros"),
-                    ("version", "7.18.2"),
-                    ("build-time", "2025-01-15"),
-                    ("disabled", "false"),
-                ],
-            )],
+            vec![
+                resource(
+                    "*pkg1",
+                    &[
+                        ("name", "routeros"),
+                        ("version", "7.18.2"),
+                        ("build-time", "2025-01-15"),
+                        ("disabled", "false"),
+                    ],
+                ),
+                resource(
+                    "*pkg2",
+                    &[
+                        ("name", "container"),
+                        ("version", "7.18.2"),
+                        ("build-time", "2025-01-15"),
+                        ("disabled", "false"),
+                    ],
+                ),
+            ],
         );
         self.rows.insert(
             "interfaces".into(),
@@ -904,6 +918,111 @@ impl DemoStore {
             )],
         );
         self.rows.insert(
+            "veth".into(),
+            vec![resource(
+                "*v1",
+                &[
+                    ("name", "veth1"),
+                    ("address", "172.17.0.2/24"),
+                    ("gateway", "172.17.0.1"),
+                    ("dhcp", "false"),
+                    ("running", "true"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "container-config".into(),
+            vec![resource(
+                "",
+                &[
+                    ("registry-url", "https://registry-1.docker.io"),
+                    ("tmpdir", "disk1/tmp"),
+                    ("username", ""),
+                    ("password", "registry-demo"),
+                    ("memory-current", "0"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "container-envs".into(),
+            vec![
+                resource(
+                    "*e1",
+                    &[
+                        ("list", "ENV_PIHOLE"),
+                        ("key", "TZ"),
+                        ("value", "Europe/Riga"),
+                    ],
+                ),
+                resource(
+                    "*e2",
+                    &[
+                        ("list", "ENV_PIHOLE"),
+                        ("key", "FTLCONF_webserver_api_password"),
+                        ("value", "demo"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "container-mounts".into(),
+            vec![resource(
+                "*m1",
+                &[
+                    ("list", "MOUNT_PIHOLE"),
+                    ("src", "disk1/volumes/pihole"),
+                    ("dst", "/etc/pihole"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "containers".into(),
+            vec![
+                resource(
+                    "*c1",
+                    &[
+                        ("name", "pihole"),
+                        ("tag", "pihole/pihole:latest"),
+                        ("interface", "veth1"),
+                        ("status", "stopped"),
+                        ("arch", "arm64"),
+                        ("os", "linux"),
+                        ("root-dir", "disk1/images/pihole"),
+                        ("start-on-boot", "true"),
+                        ("logging", "true"),
+                    ],
+                ),
+                resource(
+                    "*c2",
+                    &[
+                        ("name", "alpine"),
+                        ("tag", "alpine:latest"),
+                        ("interface", "veth1"),
+                        ("status", "running"),
+                        ("arch", "arm64"),
+                        ("os", "linux"),
+                        ("root-dir", "disk1/images/alpine"),
+                        ("start-on-boot", "false"),
+                        ("logging", "false"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "apps".into(),
+            vec![resource(
+                "*a1",
+                &[
+                    ("name", "adguard"),
+                    ("status", "stopped"),
+                    ("running", "false"),
+                    ("network", "internal"),
+                    ("ui-url", "http://172.17.0.2"),
+                ],
+            )],
+        );
+        self.rows.insert(
             "safe-mode".into(),
             vec![resource(
                 "",
@@ -1211,6 +1330,18 @@ mod tests {
         assert_eq!(store.rows("firewall-filter").len(), 3);
         assert_eq!(store.rows("dhcp-leases").len(), 2);
         assert_eq!(store.rows("packages")[0].field("name"), Some("routeros"));
+        assert!(
+            store
+                .rows("packages")
+                .iter()
+                .any(|row| row.field("name") == Some("container"))
+        );
+        assert_eq!(
+            store.rows("system-resource")[0].field("architecture-name"),
+            Some("arm64")
+        );
+        assert_eq!(store.rows("veth").len(), 1);
+        assert_eq!(store.rows("containers").len(), 2);
         assert_eq!(
             store.rows("system-resource")[0].field("version"),
             Some("7.18.2 (stable)")
@@ -1250,6 +1381,24 @@ mod tests {
         let rows = store.rows("ipv6-firewall-connections");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "*37");
+    }
+
+    #[test]
+    fn demo_container_start_sets_running() {
+        let mut store = DemoStore::new();
+        store
+            .apply(&MutationOp::Command {
+                endpoint: "/rest/container".into(),
+                command: "start".into(),
+                fields: BTreeMap::from([(".id".into(), "*c1".into())]),
+            })
+            .expect("start");
+        let row = store
+            .rows("containers")
+            .into_iter()
+            .find(|row| row.id == "*c1")
+            .expect("pihole");
+        assert_eq!(row.field("status"), Some("running"));
     }
 
     #[test]

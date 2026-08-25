@@ -51,6 +51,10 @@ pub enum ActionCommand {
     CheckForUpdates,
     Start,
     Stop,
+    Restart,
+    Kill,
+    ContainerUpdate,
+    Repull,
     WakeOnLan,
     SendSms,
     AtChat,
@@ -92,6 +96,10 @@ impl ActionCommand {
             Self::CheckForUpdates => "check-for-updates",
             Self::Start => "start",
             Self::Stop => "stop",
+            Self::Restart => "restart",
+            Self::Kill => "kill",
+            Self::ContainerUpdate => "update",
+            Self::Repull => "repull",
             Self::WakeOnLan => "wol",
             Self::SendSms => "send",
             Self::AtChat => "at-chat",
@@ -982,6 +990,104 @@ pub const ACTION_STOP: ActionSpec = ActionSpec {
     when: ActionWhen::Always,
 };
 
+pub const ACTION_CONTAINER_START: ActionSpec = ActionSpec {
+    id: "start",
+    label: "Start",
+    key: Some('s'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Start,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_CONTAINER_STOP: ActionSpec = ActionSpec {
+    id: "stop",
+    label: "Stop",
+    key: Some('p'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Stop,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_CONTAINER_RESTART: ActionSpec = ActionSpec {
+    id: "restart",
+    label: "Restart",
+    key: Some('r'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Restart,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_CONTAINER_KILL: ActionSpec = ActionSpec {
+    id: "kill",
+    label: "Kill",
+    key: Some('k'),
+    enter: false,
+    needs_selection: true,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Kill,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_CONTAINER_UPDATE: ActionSpec = ActionSpec {
+    id: "update",
+    label: "Update image",
+    key: Some('u'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::ContainerUpdate,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_CONTAINER_REPULL: ActionSpec = ActionSpec {
+    id: "repull",
+    label: "Repull",
+    key: Some('l'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Repull,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const CONTAINER_ACTIONS: &[ActionSpec] = &[
+    ACTION_ADD,
+    ACTION_EDIT,
+    ACTION_REMOVE,
+    ACTION_CONTAINER_START,
+    ACTION_CONTAINER_STOP,
+    ACTION_CONTAINER_RESTART,
+    ACTION_CONTAINER_KILL,
+    ACTION_CONTAINER_UPDATE,
+    ACTION_CONTAINER_REPULL,
+];
+
+pub const APP_ACTIONS: &[ActionSpec] = &[
+    ACTION_ADD,
+    ACTION_EDIT,
+    ACTION_REMOVE,
+    ACTION_CONTAINER_START,
+    ACTION_CONTAINER_STOP,
+];
+
 pub const SNIFFER_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_START, ACTION_STOP];
 
 pub const ACTION_BANDWIDTH: ActionSpec = ActionSpec {
@@ -1088,6 +1194,7 @@ pub const INTERFACE_CREATE_TARGETS: &[(&str, &str)] = &[
     ("vrrp", "VRRP"),
     ("bonding", "Bonding"),
     ("macvlan", "MACVLAN"),
+    ("veth", "VETH"),
     ("macsec", "MACsec"),
     ("macsec-profiles", "MACsec Profile"),
     ("lte-apn", "LTE APN"),
@@ -1251,6 +1358,10 @@ mod tests {
         assert!(RADIO_ACTIONS.iter().any(|action| action.id == "scan"));
         assert_eq!(ActionCommand::Flush.rest_name(), "flush");
         assert_eq!(ActionCommand::Upgrade.rest_name(), "upgrade");
+        assert_eq!(ActionCommand::Restart.rest_name(), "restart");
+        assert_eq!(ActionCommand::Kill.rest_name(), "kill");
+        assert_eq!(ActionCommand::ContainerUpdate.rest_name(), "update");
+        assert_eq!(ActionCommand::Repull.rest_name(), "repull");
     }
 
     #[test]

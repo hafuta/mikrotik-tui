@@ -6,6 +6,7 @@ use mtui_core::NavItem;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
+use crate::layout::fit_line;
 use crate::styles::Styles;
 
 /// Result of toggling a sidebar row's hidden flag.
@@ -46,7 +47,10 @@ pub fn flatten_nav_filtered(
     for item in items {
         let group_hidden = hidden.contains(&item.id);
         let group_unavailable = unavailable.contains_key(&item.id);
-        if concealed(group_hidden || group_unavailable, show_hidden) {
+        if group_unavailable {
+            continue;
+        }
+        if user_concealed(group_hidden, show_hidden) {
             continue;
         }
         let is_group = !item.children.is_empty();
@@ -54,13 +58,11 @@ pub fn flatten_nav_filtered(
             .children
             .iter()
             .filter(|child| {
-                !concealed(
-                    hidden.contains(&child.id) || unavailable.contains_key(&child.id),
-                    show_hidden,
-                )
+                !unavailable.contains_key(&child.id)
+                    && !user_concealed(hidden.contains(&child.id), show_hidden)
             })
             .count();
-        if is_group && visible_children == 0 && !show_hidden {
+        if is_group && visible_children == 0 && !group_hidden {
             continue;
         }
         let is_expanded = is_group && expanded == Some(item.id.as_str());
@@ -79,8 +81,11 @@ pub fn flatten_nav_filtered(
         }
         for child in &item.children {
             let child_hidden = hidden.contains(&child.id) || group_hidden;
-            let child_unavailable = unavailable.contains_key(&child.id) || group_unavailable;
-            if concealed(child_hidden || child_unavailable, show_hidden) {
+            let child_unavailable = unavailable.contains_key(&child.id);
+            if child_unavailable {
+                continue;
+            }
+            if user_concealed(child_hidden, show_hidden) {
                 continue;
             }
             out.push(FlatNavEntry {
@@ -101,7 +106,7 @@ pub fn flatten_nav_filtered(
     out
 }
 
-fn concealed(tucked: bool, show_hidden: bool) -> bool {
+fn user_concealed(tucked: bool, show_hidden: bool) -> bool {
     tucked && !show_hidden
 }
 
@@ -131,18 +136,24 @@ fn subsume_hidden_children(items: &[NavItem], hidden: &mut HashSet<String>, id: 
     }
 }
 
-fn visible_leaf_count(items: &[NavItem], hidden: &HashSet<String>) -> usize {
+fn visible_leaf_count(
+    items: &[NavItem],
+    hidden: &HashSet<String>,
+    unavailable: &HashMap<String, String>,
+) -> usize {
     items
         .iter()
         .map(|item| {
-            if hidden.contains(&item.id) {
+            if hidden.contains(&item.id) || unavailable.contains_key(&item.id) {
                 0
             } else if item.children.is_empty() {
                 1
             } else {
                 item.children
                     .iter()
-                    .filter(|child| !hidden.contains(&child.id))
+                    .filter(|child| {
+                        !hidden.contains(&child.id) && !unavailable.contains_key(&child.id)
+                    })
                     .count()
             }
         })
@@ -158,6 +169,8 @@ pub struct NavState {
     pub hidden: HashSet<String>,
     pub unavailable: HashMap<String, String>,
     pub show_hidden: bool,
+    pub row_offset: usize,
+    viewport_height: usize,
 }
 
 impl NavState {
@@ -171,6 +184,8 @@ impl NavState {
             hidden: HashSet::new(),
             unavailable: HashMap::new(),
             show_hidden: false,
+            row_offset: 0,
+            viewport_height: 0,
         };
         state.rebuild();
         state
@@ -186,11 +201,41 @@ impl NavState {
         );
         if self.entries.is_empty() {
             self.selected = 0;
+            self.row_offset = 0;
             return;
         }
         if self.selected >= self.entries.len() {
             self.selected = self.entries.len() - 1;
         }
+        self.ensure_selection_visible();
+    }
+
+    /// Keep the focused row inside the inner pane height, reserving a hint
+    /// row when the tree is taller than the pane.
+    pub fn sync_viewport(&mut self, pane_height: usize) {
+        self.viewport_height = pane_height;
+        self.ensure_selection_visible();
+    }
+
+    fn list_height(&self) -> usize {
+        nav_list_height(self.viewport_height, self.entries.len())
+    }
+
+    fn ensure_selection_visible(&mut self) {
+        let visible = self.list_height();
+        let total = self.entries.len();
+        if visible == 0 || total == 0 {
+            self.row_offset = 0;
+            return;
+        }
+        let visible = visible.min(total);
+        let max_off = total.saturating_sub(visible);
+        if self.selected < self.row_offset {
+            self.row_offset = self.selected;
+        } else if self.selected >= self.row_offset.saturating_add(visible) {
+            self.row_offset = self.selected.saturating_add(1).saturating_sub(visible);
+        }
+        self.row_offset = self.row_offset.min(max_off);
     }
 
     pub fn move_by(&mut self, delta: isize) {
@@ -212,6 +257,28 @@ impl NavState {
         if let Ok(index) = usize::try_from(idx) {
             self.selected = index;
         }
+        self.ensure_selection_visible();
+    }
+
+    pub fn page_by(&mut self, direction: isize) {
+        let page = isize::try_from(self.list_height().max(1)).unwrap_or(1);
+        self.move_by(direction.saturating_mul(page));
+    }
+
+    pub fn select_first(&mut self) {
+        if self.entries.is_empty() {
+            return;
+        }
+        self.selected = 0;
+        self.ensure_selection_visible();
+    }
+
+    pub fn select_last(&mut self) {
+        if self.entries.is_empty() {
+            return;
+        }
+        self.selected = self.entries.len() - 1;
+        self.ensure_selection_visible();
     }
 
     #[must_use]
@@ -225,7 +292,8 @@ impl NavState {
         self.rebuild();
     }
 
-    /// Mark menus missing from this device's package set (id → package label).
+    /// Mark menus this device cannot offer (missing package or architecture).
+    /// They stay out of the tree even when showing user-hidden rows.
     pub fn set_unavailable(&mut self, ids: HashMap<String, String>) {
         self.unavailable = ids.into_iter().filter(|(id, _)| !id.is_empty()).collect();
         self.rebuild();
@@ -282,7 +350,7 @@ impl NavState {
         next.insert(id.to_string());
         subsume_hidden_children(&self.tree, &mut next, id);
         collapse_empty_groups(&self.tree, &mut next);
-        if visible_leaf_count(&self.tree, &next) == 0 {
+        if visible_leaf_count(&self.tree, &next, &self.unavailable) == 0 {
             return ToggleHidden::LastVisible;
         }
         if self
@@ -316,7 +384,7 @@ impl NavState {
         next.insert(id.to_string());
         subsume_hidden_children(&self.tree, &mut next, id);
         collapse_empty_groups(&self.tree, &mut next);
-        visible_leaf_count(&self.tree, &next) == 0
+        visible_leaf_count(&self.tree, &next, &self.unavailable) == 0
     }
 
     /// Parent category that would also hide if `id` is its last visible child.
@@ -330,7 +398,11 @@ impl NavState {
         let remaining = parent
             .children
             .iter()
-            .filter(|child| child.id != id && !self.hidden.contains(&child.id))
+            .filter(|child| {
+                child.id != id
+                    && !self.hidden.contains(&child.id)
+                    && !self.unavailable.contains_key(&child.id)
+            })
             .count();
         (remaining == 0).then_some(parent_id)
     }
@@ -352,7 +424,7 @@ impl NavState {
     #[must_use]
     pub fn first_openable_id(&self) -> Option<String> {
         for item in &self.tree {
-            if self.concealed(&item.id) {
+            if self.omitted_from_nav(&item.id) {
                 continue;
             }
             if item.children.is_empty() {
@@ -361,7 +433,7 @@ impl NavState {
             if let Some(child) = item
                 .children
                 .iter()
-                .find(|child| !self.concealed(&child.id))
+                .find(|child| !self.omitted_from_nav(&child.id))
             {
                 return Some(child.id.clone());
             }
@@ -369,8 +441,8 @@ impl NavState {
         None
     }
 
-    fn concealed(&self, id: &str) -> bool {
-        !self.show_hidden && (self.hidden.contains(id) || self.unavailable.contains_key(id))
+    fn omitted_from_nav(&self, id: &str) -> bool {
+        self.unavailable.contains_key(id) || (!self.show_hidden && self.hidden.contains(id))
     }
 
     fn parent_of(&self, id: &str) -> Option<&str> {
@@ -385,6 +457,13 @@ impl NavState {
     /// Select `id`, expanding its category (and collapsing others) so the
     /// matching row is visible. Group ids select that group's first child.
     pub fn select_id(&mut self, id: &str) -> bool {
+        if self.unavailable.contains_key(id)
+            || self
+                .parent_of(id)
+                .is_some_and(|parent| self.unavailable.contains_key(parent))
+        {
+            return false;
+        }
         let Some(target) = self.reveal_target(id) else {
             return false;
         };
@@ -418,12 +497,10 @@ impl NavState {
                 .children
                 .iter()
                 .find(|child| {
-                    self.show_hidden
-                        || (!self.hidden.contains(&child.id)
-                            && !self.unavailable.contains_key(&child.id))
+                    !self.unavailable.contains_key(&child.id)
+                        && (self.show_hidden || !self.hidden.contains(&child.id))
                 })
-                .or_else(|| item.children.first())
-                .map_or_else(|| item.id.clone(), |child| child.id.clone());
+                .map(|child| child.id.clone())?;
             return Some(RevealTarget {
                 selected,
                 expanded: Some(item.id.clone()),
@@ -471,6 +548,99 @@ impl NavState {
             })
             .collect()
     }
+
+    /// Windowed sidebar for a pane of `height` rows, with bottom arrows when
+    /// the tree does not fit. Call [`Self::sync_viewport`] with the same
+    /// height so the stored offset stays aligned with this window.
+    #[must_use]
+    pub fn render_pane(
+        &self,
+        focused: bool,
+        viewed_id: Option<&str>,
+        styles: &Styles,
+        width: usize,
+        height: usize,
+    ) -> Vec<Line<'static>> {
+        if height == 0 {
+            return Vec::new();
+        }
+        let total = self.entries.len();
+        let list_h = nav_list_height(height, total);
+        let start = nav_window_start(self.row_offset, self.selected, list_h, total);
+        let end = start.saturating_add(list_h).min(total);
+        let mut lines: Vec<Line<'static>> = self.entries[start..end]
+            .iter()
+            .enumerate()
+            .map(|(idx, entry)| {
+                let abs = start.saturating_add(idx);
+                nav_row_line(
+                    entry,
+                    abs == self.selected,
+                    viewed_id == Some(entry.id.as_str()),
+                    focused,
+                    width,
+                    styles,
+                )
+            })
+            .collect();
+        if nav_shows_scroll_hint(height, total) {
+            lines.push(nav_scroll_hint(width, start > 0, end < total, styles));
+        }
+        lines
+    }
+}
+
+/// Rows available for labels. When the tree is taller than the pane and at
+/// least two rows exist, the last row is reserved for up/down arrows.
+fn nav_list_height(pane_height: usize, total: usize) -> usize {
+    if pane_height == 0 || total == 0 {
+        return 0;
+    }
+    if nav_shows_scroll_hint(pane_height, total) {
+        pane_height.saturating_sub(1)
+    } else {
+        total.min(pane_height)
+    }
+}
+
+fn nav_shows_scroll_hint(pane_height: usize, total: usize) -> bool {
+    total > pane_height && pane_height >= 2
+}
+
+fn nav_window_start(offset: usize, selected: usize, list_h: usize, total: usize) -> usize {
+    if list_h == 0 || total == 0 {
+        return 0;
+    }
+    let visible = list_h.min(total);
+    let max_off = total.saturating_sub(visible);
+    let mut off = offset.min(max_off);
+    if selected < off {
+        off = selected;
+    } else if selected >= off.saturating_add(visible) {
+        off = selected.saturating_add(1).saturating_sub(visible);
+    }
+    off.min(max_off)
+}
+
+fn nav_scroll_hint(width: usize, can_up: bool, can_down: bool, styles: &Styles) -> Line<'static> {
+    let arrow = |available: bool| {
+        if available {
+            styles.text
+        } else {
+            styles.muted.add_modifier(Modifier::DIM)
+        }
+    };
+    let content_w = 4;
+    let pad = width.saturating_sub(content_w) / 2;
+    fit_line(
+        Line::from(vec![
+            Span::raw(" ".repeat(pad)),
+            Span::styled("▲", arrow(can_up)),
+            Span::raw("  "),
+            Span::styled("▼", arrow(can_down)),
+        ]),
+        width.max(1),
+    )
 }
 
 fn nav_row_line(
@@ -926,21 +1096,134 @@ mod render_tests {
     }
 
     #[test]
-    fn unavailable_menus_are_hidden_until_revealed_and_badged() {
+    fn unavailable_menus_stay_out_when_showing_hidden() {
         let mut state = NavState::new(&tree());
         let mut missing = HashMap::new();
         missing.insert("arp".into(), "hotspot".into());
         state.set_unavailable(missing);
         assert!(!visible_ids(&state).contains(&"arp"));
+        assert!(!visible_ids(&state).contains(&"ip-group"));
         state.set_show_hidden(true);
-        assert!(state.select_id("arp"));
+        assert!(!visible_ids(&state).contains(&"arp"));
+        assert!(!state.select_id("arp"));
         let styles = styles();
         let lines = state.render_lines(false, None, &styles, 32);
-        let arp = lines
+        assert!(
+            lines
+                .iter()
+                .map(line_text)
+                .all(|line| !line.contains("ARP")),
+        );
+    }
+
+    #[test]
+    fn last_visible_ignores_unavailable_leaves() {
+        let mut state = NavState::new(&tree());
+        let mut missing = HashMap::new();
+        missing.insert("dashboard".into(), "package".into());
+        missing.insert("bridges".into(), "package".into());
+        missing.insert("bridge-vlans".into(), "package".into());
+        state.set_unavailable(missing);
+        assert_eq!(state.toggle_hidden("ip-group"), ToggleHidden::LastVisible);
+        assert!(!state.hidden.contains("ip-group"));
+    }
+
+    fn tall_tree() -> Vec<NavItem> {
+        (0..12)
+            .map(|i| NavItem {
+                id: format!("item-{i}"),
+                label: format!("Item {i}"),
+                children: vec![],
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pane_scroll_keeps_focus_in_window() {
+        let mut state = NavState::new(&tall_tree());
+        state.sync_viewport(5);
+        state.select_last();
+        let styles = styles();
+        let lines = state.render_pane(true, None, &styles, 24, 5);
+        assert_eq!(lines.len(), 5);
+        assert!(line_text(&lines[3]).contains("Item 11"));
+        assert_eq!(state.selected, 11);
+        assert_eq!(state.row_offset, 8);
+    }
+
+    #[test]
+    fn pane_scroll_offset_is_sticky_inside_the_window() {
+        let mut state = NavState::new(&tall_tree());
+        state.sync_viewport(5);
+        state.selected = 6;
+        state.ensure_selection_visible();
+        assert_eq!(state.row_offset, 3);
+        state.move_by(-1);
+        assert_eq!(state.selected, 5);
+        assert_eq!(state.row_offset, 3);
+    }
+
+    #[test]
+    fn short_menu_has_no_scroll_hint() {
+        let mut state = NavState::new(&tree());
+        state.sync_viewport(12);
+        let styles = styles();
+        let lines = state.render_pane(true, None, &styles, 24, 12);
+        assert!(lines.iter().all(|line| !line_text(line).contains('▲')));
+        assert!(lines.iter().all(|line| !line_text(line).contains('▼')));
+    }
+
+    #[test]
+    fn overflow_hint_uses_text_when_that_direction_can_scroll() {
+        let mut state = NavState::new(&tall_tree());
+        state.sync_viewport(5);
+        let styles = styles();
+        let top = state.render_pane(true, None, &styles, 24, 5);
+        let hint = top.last().expect("hint row");
+        assert!(line_text(hint).contains('▲'));
+        assert!(line_text(hint).contains('▼'));
+        let up = hint
+            .spans
             .iter()
-            .map(line_text)
-            .find(|line| line.contains("ARP"))
-            .expect("arp");
-        assert!(arp.contains("!hotspot"), "{arp}");
+            .find(|span| span.content.as_ref() == "▲")
+            .expect("up arrow");
+        let down = hint
+            .spans
+            .iter()
+            .find(|span| span.content.as_ref() == "▼")
+            .expect("down arrow");
+        assert_eq!(up.style.fg, styles.muted.fg);
+        assert!(up.style.add_modifier.contains(Modifier::DIM));
+        assert_eq!(down.style.fg, styles.text.fg);
+        assert!(!down.style.add_modifier.contains(Modifier::DIM));
+
+        state.select_last();
+        let bottom = state.render_pane(true, None, &styles, 24, 5);
+        let hint = bottom.last().expect("hint row");
+        let up = hint
+            .spans
+            .iter()
+            .find(|span| span.content.as_ref() == "▲")
+            .expect("up arrow");
+        let down = hint
+            .spans
+            .iter()
+            .find(|span| span.content.as_ref() == "▼")
+            .expect("down arrow");
+        assert_eq!(up.style.fg, styles.text.fg);
+        assert_eq!(down.style.fg, styles.muted.fg);
+        assert!(down.style.add_modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn one_row_pane_shows_the_focused_item() {
+        let mut state = NavState::new(&tall_tree());
+        state.sync_viewport(1);
+        state.select_last();
+        let styles = styles();
+        let lines = state.render_pane(true, None, &styles, 24, 1);
+        assert_eq!(lines.len(), 1);
+        assert!(line_text(&lines[0]).contains("Item 11"));
+        assert!(!line_text(&lines[0]).contains('▲'));
     }
 }

@@ -453,14 +453,15 @@ fn draw_nav(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(block, area);
     let width = usize::from(inner.width);
     let lines = constrain_lines(
-        app.nav.render_lines(
+        app.nav.render_pane(
             app.pane == Pane::Nav,
             Some(app.current_resource.as_str()),
             &styles,
             width,
+            usize::from(inner.height),
         ),
         width,
-        usize::from(inner.height),
+        usize::from(inner.height.max(1)),
     );
     frame.render_widget(Paragraph::new(lines), inner);
 }

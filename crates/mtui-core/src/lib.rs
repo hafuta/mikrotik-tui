@@ -8,6 +8,7 @@ mod access;
 mod actions;
 mod bridge_write;
 mod capabilities;
+mod container_write;
 mod forms;
 mod hotspot_write;
 mod interface_write;
@@ -42,8 +43,9 @@ pub use actions::{
     resolve_actions, truthy,
 };
 pub use capabilities::{
-    BULK_SELECT_RESOURCES, WIFI_PACKAGES, WIRELESS_PACKAGES, installed_package_names,
-    required_packages, supports_bulk_select, unavailable_menus,
+    BULK_SELECT_RESOURCES, CONTAINER_PACKAGES, WIFI_PACKAGES, WIRELESS_PACKAGES,
+    installed_package_names, required_packages, supports_bulk_select, unavailable_menus,
+    unavailable_menus_for_device,
 };
 pub use forms::{
     FieldKind, FieldSpec, FormSchema, FormSection, accepts_number_char, default_writable_value,

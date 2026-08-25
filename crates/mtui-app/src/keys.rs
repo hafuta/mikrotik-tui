@@ -1354,6 +1354,8 @@ impl App {
         } else if self.on_table_content() {
             self.table.page_by(direction);
             self.after_table_cursor();
+        } else if self.pane == Pane::Nav {
+            self.nav.page_by(direction);
         } else if self.pane == Pane::Inspector {
             let visible = self.inspector_visible_rows();
             let page = isize::try_from(visible).unwrap_or(1);
@@ -1368,6 +1370,8 @@ impl App {
         } else if self.on_table_content() {
             self.table.select_first();
             self.after_table_cursor();
+        } else if self.pane == Pane::Nav {
+            self.nav.select_first();
         } else if self.pane == Pane::Inspector {
             self.inspector.select_first();
         }
@@ -1379,6 +1383,8 @@ impl App {
         } else if self.on_table_content() {
             self.table.select_last();
             self.after_table_cursor();
+        } else if self.pane == Pane::Nav {
+            self.nav.select_last();
         } else if self.pane == Pane::Inspector {
             let visible = self.inspector_visible_rows();
             self.inspector.select_last(visible);
@@ -2448,6 +2454,18 @@ mod nav_accordion_tests {
         assert!(app.palette.commands.iter().all(|cmd| cmd.id != "vlan"));
         app.toggle_show_hidden_menus();
         assert!(app.palette.commands.iter().any(|cmd| cmd.id == "vlan"));
+    }
+
+    #[test]
+    fn palette_omits_unavailable_resources_even_when_showing_hidden() {
+        let mut app = main_app();
+        let mut missing = std::collections::HashMap::new();
+        missing.insert("wifi".into(), "wifi-qcom".into());
+        app.nav.set_unavailable(missing);
+        app.rebuild_palette();
+        assert!(app.palette.commands.iter().all(|cmd| cmd.id != "wifi"));
+        app.toggle_show_hidden_menus();
+        assert!(app.palette.commands.iter().all(|cmd| cmd.id != "wifi"));
     }
 }
 

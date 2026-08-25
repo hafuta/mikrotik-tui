@@ -11,7 +11,7 @@ use mtui_config::{
 };
 use mtui_core::{
     ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet, installed_package_names,
-    resource_by_id, unavailable_menus,
+    resource_by_id, unavailable_menus_for_device,
 };
 
 use mtui_routeros::{
@@ -1683,8 +1683,21 @@ impl App {
     }
 
     fn apply_installed_packages(&mut self, rows: &[Resource]) {
-        let names = installed_package_names(rows.iter().map(|row| row.fields.clone()));
-        self.nav.set_unavailable(unavailable_menus(&names));
+        self.installed_packages =
+            installed_package_names(rows.iter().map(|row| row.fields.clone()));
+        self.refresh_unavailable_menus();
+    }
+
+    fn refresh_unavailable_menus(&mut self) {
+        let arch = self
+            .router
+            .fields
+            .get("architecture-name")
+            .cloned()
+            .unwrap_or_default();
+        let cpu = self.router.fields.get("cpu").cloned().unwrap_or_default();
+        let missing = unavailable_menus_for_device(&self.installed_packages, &arch, &cpu);
+        self.nav.set_unavailable(missing);
         self.rebuild_palette();
     }
 
@@ -1769,6 +1782,7 @@ impl App {
     pub(crate) fn sync_table_viewport(&mut self) {
         let (width, height) = self.table_inner_size();
         self.table.sync_viewport(width, height);
+        self.nav.sync_viewport(height);
         let visible = self.inspector_visible_rows();
         self.inspector.clamp_to_visible(visible);
         self.sync_console_viewport();
@@ -2064,8 +2078,15 @@ impl App {
     }
 
     fn apply_system_resource(&mut self, system: Resource) {
+        let prev_arch = self.router.fields.get("architecture-name").cloned();
+        let prev_cpu = self.router.fields.get("cpu").cloned();
         self.dash.update_system(&system);
         self.router = system;
+        let arch = self.router.fields.get("architecture-name");
+        let cpu = self.router.fields.get("cpu");
+        if arch != prev_arch.as_ref() || cpu != prev_cpu.as_ref() {
+            self.refresh_unavailable_menus();
+        }
     }
 
     fn apply_header_telemetry(
@@ -2251,25 +2272,27 @@ fn palette_commands_filtered(
             .with_description(spec.label)
             .with_path(spec.cli_path())
     }));
-    if show_hidden {
-        return commands;
-    }
     commands
         .into_iter()
-        .filter(|command| !palette_target_hidden(&command.id, hidden, unavailable))
+        .filter(|command| {
+            !palette_target_unavailable(&command.id, unavailable)
+                && (show_hidden || !palette_target_user_hidden(&command.id, hidden))
+        })
         .collect()
 }
 
-fn palette_target_hidden(
-    id: &str,
-    hidden: &HashSet<String>,
-    unavailable: &HashMap<String, String>,
-) -> bool {
-    if hidden.contains(id) || unavailable.contains_key(id) {
+fn palette_target_user_hidden(id: &str, hidden: &HashSet<String>) -> bool {
+    if hidden.contains(id) {
         return true;
     }
-    resource_by_id(id)
-        .is_some_and(|spec| hidden.contains(spec.group) || unavailable.contains_key(spec.group))
+    resource_by_id(id).is_some_and(|spec| hidden.contains(spec.group))
+}
+
+fn palette_target_unavailable(id: &str, unavailable: &HashMap<String, String>) -> bool {
+    if unavailable.contains_key(id) {
+        return true;
+    }
+    resource_by_id(id).is_some_and(|spec| unavailable.contains_key(spec.group))
 }
 
 fn nonempty_field<'src>(resource: &'src Resource, key: &str) -> Option<&'src str> {

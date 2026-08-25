@@ -204,7 +204,9 @@ pub fn prepare_lookup_options(
 /// fields only for version `9` or `ipfix`. IGMP Proxy Interfaces show
 /// Alternative Subnets only when Upstream is on. Disks show type-specific RAID,
 /// network, and sharing fields. Inapplicable rows are omitted, not locked.
-/// Check Certificate appears only when protocol is `tls`.
+/// Check Certificate appears only when protocol is `tls`. VETH hides gateways
+/// when DHCP is on. Container create shows Remote Image or File, not both
+/// once one is set.
 #[must_use]
 #[allow(clippy::implicit_hasher)]
 pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, String>) -> bool {
@@ -216,12 +218,31 @@ pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, Stri
         "igmp-proxy-interfaces" => igmp_proxy_interface_field_visible(key, values),
         "lte-apn" => lte_apn_field_visible(key, values),
         "disks" => disk_field_visible(key, values),
+        "veth" => veth_field_visible(key, values),
+        "containers" => container_field_visible(key, values),
         _ => true,
     }
 }
 
 fn flag_on(values: &HashMap<String, String>, key: &str) -> bool {
     crate::actions::truthy(values.get(key).map(String::as_str))
+}
+
+fn veth_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    match key {
+        "gateway" | "gateway6" => !flag_on(values, "dhcp"),
+        _ => true,
+    }
+}
+
+fn container_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    let remote = values.get("remote-image").map_or("", String::as_str).trim();
+    let file = values.get("file").map_or("", String::as_str).trim();
+    match key {
+        "remote-image" => file.is_empty(),
+        "file" => remote.is_empty(),
+        _ => true,
+    }
 }
 
 fn logging_action_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
@@ -953,5 +974,26 @@ mod tests {
             "passthrough-subnet-selection",
             &values
         ));
+    }
+
+    #[test]
+    fn veth_and_container_source_visibility() {
+        let mut values = HashMap::new();
+        values.insert("dhcp".into(), "true".into());
+        assert!(!field_visible("veth", "gateway", &values));
+        assert!(!field_visible("veth", "gateway6", &values));
+        values.insert("dhcp".into(), "false".into());
+        assert!(field_visible("veth", "gateway", &values));
+
+        let mut values = HashMap::new();
+        assert!(field_visible("containers", "remote-image", &values));
+        assert!(field_visible("containers", "file", &values));
+        values.insert("remote-image".into(), "pihole/pihole".into());
+        assert!(field_visible("containers", "remote-image", &values));
+        assert!(!field_visible("containers", "file", &values));
+        values.insert("remote-image".into(), String::new());
+        values.insert("file".into(), "disk1/pihole.tar".into());
+        assert!(!field_visible("containers", "remote-image", &values));
+        assert!(field_visible("containers", "file", &values));
     }
 }
