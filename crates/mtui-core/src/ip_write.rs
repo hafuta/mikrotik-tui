@@ -2242,7 +2242,7 @@ mod tests {
         original.insert("name".into(), "backup".into());
         original.insert("directory".into(), "backup".into());
         original.insert("valid-users".into(), "mtuser".into());
-        original.insert("comment".into(), "".into());
+        original.insert("comment".into(), String::new());
         original.insert("dynamic".into(), "false".into());
         let mut current = original.clone();
         current.insert("valid-users".into(), "mtuser,guest".into());

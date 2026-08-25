@@ -2873,10 +2873,9 @@ mod secret_mask_tests {
             Some(MASKED_VALUE)
         );
         assert!(
-            app.inspector
-                .fields
-                .iter()
-                .all(|(key, value)| { key == "name" || key == "read-only" || value == MASKED_VALUE })
+            app.inspector.fields.iter().all(|(key, value)| {
+                key == "name" || key == "read-only" || value == MASKED_VALUE
+            })
         );
         assert!(
             !app.inspector
@@ -2931,7 +2930,9 @@ mod secret_mask_tests {
             error: None,
         }));
         assert_eq!(
-            app.table.selected_row().and_then(|row| row.get("name").cloned()),
+            app.table
+                .selected_row()
+                .and_then(|row| row.get("name").cloned()),
             Some("backup".into())
         );
         let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
@@ -2945,7 +2946,9 @@ mod secret_mask_tests {
         assert!(cmds.is_empty());
         assert!(app.status.contains("Refresh failed"));
         assert_eq!(
-            app.table.selected_row().and_then(|row| row.get("name").cloned()),
+            app.table
+                .selected_row()
+                .and_then(|row| row.get("name").cloned()),
             Some("backup".into())
         );
     }
