@@ -1976,7 +1976,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("interface-name", "If name", 16),
         ],
         refresh: Duration::from_secs(10),
-        actions: crate::actions::DISCONNECT_ACTIONS,
+        actions: crate::actions::NEIGHBOR_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -5203,7 +5203,22 @@ mod tests {
         assert!(resource_by_id("dns").is_some_and(ResourceSpec::is_singleton));
         assert!(resource_by_id("ipsec-settings").is_some_and(ResourceSpec::is_singleton));
         assert!(resource_by_id("routes").is_some_and(|spec| spec.form.is_some()));
-        assert!(resource_by_id("neighbors").is_some_and(|spec| spec.form.is_none()));
+        let neighbors = resource_by_id("neighbors").expect("neighbors");
+        assert!(neighbors.form.is_none());
+        assert_eq!(
+            neighbors
+                .actions
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>(),
+            ["connect", "remove"]
+        );
+        assert!(matches!(
+            neighbors.actions[0].kind,
+            crate::actions::ActionKind::Overlay {
+                id: "connect-neighbor"
+            }
+        ));
         assert!(resource_by_id("ipsec-installed-sa").is_some_and(|spec| spec.form.is_none()));
         assert!(
             !column_keys("ipsec-installed-sa")

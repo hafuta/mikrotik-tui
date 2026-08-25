@@ -25,7 +25,7 @@ System.
 
 ## Features
 
-- Several device tabs at once, each with its own live session
+- Several device tabs at once, each with its own live session. IP Neighbors can open a new tab from a discovered address.
 - Live dashboard for CPU, memory, WAN throughput, and firewall activity
 - Tables for the common WebFig operator menus, with search, sort, and a detail pane
 - Named device profiles, last-used reconnect, optional saved password, and TOTP at connect

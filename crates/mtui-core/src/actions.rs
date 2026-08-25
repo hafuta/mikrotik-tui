@@ -613,6 +613,68 @@ pub const FILE_ACTIONS: &[ActionSpec] = &[
 /// Disconnect a live session or drop an FDB/lease row.
 pub const DISCONNECT_ACTIONS: &[ActionSpec] = &[ACTION_REMOVE_SELECTED];
 
+/// Open a new device tab from an `/ip/neighbor` row (WinBox Neighbors → Connect).
+pub const ACTION_CONNECT_NEIGHBOR: ActionSpec = ActionSpec {
+    id: "connect",
+    label: "Connect",
+    key: Some('c'),
+    enter: true,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Overlay {
+        id: "connect-neighbor",
+    },
+    when: ActionWhen::HasSelection,
+};
+
+/// IP neighbors: connect a new tab, or drop a discovery row.
+pub const NEIGHBOR_ACTIONS: &[ActionSpec] = &[ACTION_CONNECT_NEIGHBOR, ACTION_REMOVE_SELECTED];
+
+/// Prefill for a new device tab from an `/ip/neighbor` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NeighborConnectTarget {
+    pub host: String,
+    pub name: String,
+}
+
+/// Host from `address` / `address6`, name from identity or MAC.
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn neighbor_connect_target(row: &HashMap<String, String>) -> Option<NeighborConnectTarget> {
+    let host = neighbor_host(row).unwrap_or_default();
+    let name = first_row_value(row, &["identity", "mac-address"]).unwrap_or_else(|| host.clone());
+    if host.is_empty() && name.is_empty() {
+        return None;
+    }
+    Some(NeighborConnectTarget { host, name })
+}
+
+fn neighbor_host(row: &HashMap<String, String>) -> Option<String> {
+    for key in ["address", "address4", "address6"] {
+        if let Some(host) = row.get(key).and_then(|raw| first_host_token(raw)) {
+            return Some(host);
+        }
+    }
+    None
+}
+
+fn first_row_value(row: &HashMap<String, String>, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        row.get(*key)
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+    })
+}
+
+fn first_host_token(raw: &str) -> Option<String> {
+    raw.split([',', ' ', '\t', ';'])
+        .map(str::trim)
+        .find(|part| !part.is_empty())
+        .map(|part| part.split('/').next().unwrap_or(part).trim().to_string())
+        .filter(|part| !part.is_empty())
+}
+
 /// Hardware switch chip: edit only (no add/remove).
 pub const HARDWARE_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT];
 
@@ -981,6 +1043,81 @@ mod tests {
         assert!(!ids.contains(&"remove"));
         assert!(ids.contains(&"edit"));
         assert!(ids.contains(&"torch"));
+    }
+
+    #[test]
+    fn neighbor_connect_target_table() {
+        let cases: &[(&str, &[(&str, &str)], Option<(&str, &str)>)] = &[
+            (
+                "ipv4_and_identity",
+                &[
+                    ("address", "192.168.88.2,fe80::1"),
+                    ("identity", "core-sw"),
+                    ("mac-address", "4C:5E:0C:00:00:01"),
+                ],
+                Some(("192.168.88.2", "core-sw")),
+            ),
+            (
+                "address6_cidr_mac_name",
+                &[
+                    ("address6", "2001:db8::2/64"),
+                    ("mac-address", "4C:5E:0C:00:00:02"),
+                ],
+                Some(("2001:db8::2", "4C:5E:0C:00:00:02")),
+            ),
+            (
+                "address4_key",
+                &[("address4", "10.0.0.9"), ("identity", "ap")],
+                Some(("10.0.0.9", "ap")),
+            ),
+            (
+                "whitespace_and_semicolon",
+                &[("address", "  ;  10.1.1.1  "), ("identity", " edge ")],
+                Some(("10.1.1.1", "edge")),
+            ),
+            (
+                "ipv6_flag_is_not_a_host",
+                &[("ipv6", "true"), ("mac-address", "AA:BB:CC:DD:EE:FF")],
+                Some(("", "AA:BB:CC:DD:EE:FF")),
+            ),
+            ("empty", &[], None),
+            (
+                "blank_fields",
+                &[("address", "   "), ("identity", ""), ("mac-address", "\t")],
+                None,
+            ),
+            ("malformed_slashes_only", &[("address", "///")], None),
+        ];
+        for (name, fields, expected) in cases {
+            let mut row = HashMap::new();
+            for (key, value) in *fields {
+                row.insert((*key).to_string(), (*value).to_string());
+            }
+            let got = neighbor_connect_target(&row);
+            match expected {
+                None => assert!(got.is_none(), "{name}: {got:?}"),
+                Some((host, ident)) => {
+                    assert_eq!(
+                        got,
+                        Some(NeighborConnectTarget {
+                            host: (*host).into(),
+                            name: (*ident).into(),
+                        }),
+                        "{name}"
+                    );
+                }
+            }
+        }
+        let ids: Vec<_> = NEIGHBOR_ACTIONS.iter().map(|action| action.id).collect();
+        assert_eq!(ids, ["connect", "remove"]);
+        assert!(ACTION_CONNECT_NEIGHBOR.enter);
+        assert_eq!(ACTION_CONNECT_NEIGHBOR.key, Some('c'));
+        assert_eq!(
+            ACTION_CONNECT_NEIGHBOR.kind,
+            ActionKind::Overlay {
+                id: "connect-neighbor"
+            }
+        );
     }
 
     #[test]

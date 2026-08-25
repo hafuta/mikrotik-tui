@@ -233,6 +233,35 @@ mod tests {
     }
 
     #[test]
+    fn neighbors_help_lists_connect_when_a_row_is_selected() {
+        use mtui_routeros::Resource;
+        use std::collections::HashMap;
+
+        use crate::event::{AppEvent, WorkerMsg};
+
+        let mut app = main_app("neighbors");
+        let mut fields = HashMap::new();
+        fields.insert("address".into(), "192.168.88.2".into());
+        fields.insert("identity".into(), "core-sw".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "neighbors".into(),
+            rows: vec![Resource {
+                id: "*1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let text = keyboard_help(&app);
+        assert!(text.contains("Neighbors"), "{text}");
+        assert!(text.contains("Connect"), "{text}");
+        assert!(text.contains("Remove") || text.contains("remove"), "{text}");
+    }
+
+    #[test]
     fn login_help_stays_on_device_list_keys() {
         let app = App::new(false).expect("app");
         let text = keyboard_help(&app);

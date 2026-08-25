@@ -767,8 +767,9 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "neighbors",
         "Neighbor discovery (MNDP/CDP/LLDP): other MikroTik (and some vendor) devices seen \
          on the wire.",
-        "Find adjacent routers and their addresses/identity. Read-only discovery, not a config \
-         list you add to.",
+        "Find adjacent routers and their addresses/identity. Connect opens a new device tab \
+         using the neighbor address (identity or MAC for the tab name). Discovery is not a \
+         config list you add to.",
         "identity, address, mac-address, interface, platform, version, unpacked."
     ),
     guide!(
@@ -1710,6 +1711,16 @@ mod tests {
                 spec.id
             );
         }
+    }
+
+    #[test]
+    fn neighbors_guide_mentions_connect_tab() {
+        let guide = screen_guide("neighbors").expect("neighbors");
+        assert!(guide.use_when.contains("Connect"), "{}", guide.use_when);
+        assert!(guide.use_when.contains("device tab"), "{}", guide.use_when);
+        let copy = about_copy("neighbors").expect("copy");
+        assert!(copy.kicker.contains("/ip/neighbor"));
+        assert!(!copy.body.contains('\u{2014}'));
     }
 
     #[test]

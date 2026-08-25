@@ -8,11 +8,13 @@ use mtui_core::{
     AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
     CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, IMPORT_CONFIG_PROMPT,
     INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, RESET_CONFIG_PROMPT, SMS_PROMPT, WOL_PROMPT,
-    action_label, field_enabled, patch_body, resource_by_id, supports_bulk_select, truthy,
+    action_label, field_enabled, neighbor_connect_target, patch_body, resource_by_id,
+    supports_bulk_select, truthy,
 };
 use mtui_routeros::MASKED_VALUE;
 use mtui_ui::{
-    ActionMenuItem, ActionMenuState, COPY_FORM, FormSession, ProbeKind, ProbeState, Row, TorchState,
+    ActionMenuItem, ActionMenuState, COPY_FORM, FormSession, LoginField, LoginPane, ProbeKind,
+    ProbeState, Row, TorchState,
 };
 
 use crate::app::{App, AppCommand, Overlay, Pane};
@@ -286,6 +288,9 @@ impl App {
             ActionKind::Overlay { id: "profiler" } => self.open_probe(ProbeKind::Profiler),
             ActionKind::Overlay { id: "wifi-scan" } => self.open_wifi_scan(),
             ActionKind::Overlay { id: "create-type" } => self.open_type_picker(),
+            ActionKind::Overlay {
+                id: "connect-neighbor",
+            } => self.open_neighbor_connect(),
             ActionKind::Overlay { .. } => Vec::new(),
         }
     }
@@ -672,6 +677,48 @@ impl App {
         let mut probe = ProbeState::new(ProbeKind::WifiScan, self.probe_generation);
         probe.src = name;
         self.overlay = Overlay::Probe(probe);
+        Vec::new()
+    }
+
+    fn open_neighbor_connect(&mut self) -> Vec<AppCommand> {
+        let Some(row) = self.table.selected_row() else {
+            return Vec::new();
+        };
+        let Some(target) = neighbor_connect_target(row) else {
+            self.status = "Neighbor has no address or identity".into();
+            return Vec::new();
+        };
+        let username = self.login.username.clone();
+        let use_tls = self.login.use_tls;
+        if self.new_session().is_none() {
+            return Vec::new();
+        }
+        self.login.name.clone_from(&target.name);
+        self.login.url.clone_from(&target.host);
+        self.login.username = username;
+        self.login.use_tls = use_tls;
+        self.login.password.clear();
+        self.login.totp.clear();
+        self.login.pane = LoginPane::Form;
+        self.login.focus = if target.host.is_empty() {
+            LoginField::Url
+        } else if self.login.username.trim().is_empty() {
+            LoginField::Username
+        } else {
+            LoginField::Password
+        };
+        self.status = if target.host.is_empty() {
+            format!(
+                "Neighbor {} has no IP address; enter the host",
+                if target.name.is_empty() {
+                    "row"
+                } else {
+                    target.name.as_str()
+                }
+            )
+        } else {
+            format!("Connect to {} · enter credentials", target.name)
+        };
         Vec::new()
     }
 
@@ -3490,5 +3537,247 @@ mod tests {
         }));
         assert_eq!(app.table.row_count(), 1);
         assert!(app.status.contains("Refresh failed"));
+    }
+
+    fn neighbor_resource(id: &str, address: &str, identity: &str, mac: &str) -> Resource {
+        let mut fields = HashMap::new();
+        if !address.is_empty() {
+            fields.insert("address".into(), address.into());
+        }
+        if !identity.is_empty() {
+            fields.insert("identity".into(), identity.into());
+        }
+        if !mac.is_empty() {
+            fields.insert("mac-address".into(), mac.into());
+        }
+        Resource {
+            id: id.into(),
+            fields,
+        }
+    }
+
+    #[test]
+    fn neighbor_connect_opens_new_login_tab() {
+        let mut app = load_named_rows(
+            "neighbors",
+            vec![neighbor_resource(
+                "*1",
+                "192.168.88.2",
+                "core-sw",
+                "4C:5E:0C:00:00:01",
+            )],
+        );
+        let source = app.test_session();
+        app.login.username = "admin".into();
+        app.login.password = "secret-a".into();
+        app.login.use_tls = false;
+        app.screen = Screen::Main;
+        let ids: Vec<_> = app
+            .current_actions()
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(ids, ["connect", "remove"]);
+
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.sessions.len(), 2);
+        assert_ne!(app.active, source);
+        assert_eq!(app.screen, Screen::Login);
+        assert_eq!(app.login.url, "192.168.88.2");
+        assert_eq!(app.login.name, "core-sw");
+        assert_eq!(app.login.username, "admin");
+        assert!(app.login.password.is_empty());
+        assert!(!app.login.use_tls);
+        assert_eq!(app.login.pane, LoginPane::Form);
+        assert_eq!(app.login.focus, LoginField::Password);
+        assert!(app.status.contains("core-sw"));
+        assert_eq!(
+            app.session(source).expect("source").login.password,
+            "secret-a"
+        );
+        assert_eq!(app.session(source).expect("source").screen, Screen::Main);
+    }
+
+    #[test]
+    fn neighbor_connect_c_key_and_mac_name_without_address() {
+        let mut app = load_named_rows(
+            "neighbors",
+            vec![neighbor_resource("*2", "", "", "4C:5E:0C:00:00:09")],
+        );
+        app.screen = Screen::Main;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('c'))));
+        assert!(cmds.is_empty());
+        assert_eq!(app.sessions.len(), 2);
+        assert_eq!(app.login.name, "4C:5E:0C:00:00:09");
+        assert!(app.login.url.is_empty());
+        assert_eq!(app.login.focus, LoginField::Url);
+        assert!(app.status.contains("no IP address"));
+    }
+
+    #[test]
+    fn neighbor_connect_honors_tab_limit() {
+        let mut app = load_named_rows(
+            "neighbors",
+            vec![neighbor_resource("*1", "10.0.0.2", "edge", "")],
+        );
+        app.screen = Screen::Main;
+        for _ in 0..7 {
+            assert!(app.new_session().is_some());
+        }
+        app.active = app.sessions[0].id;
+        app.screen = Screen::Main;
+        app.pane = Pane::Content;
+        let cmds = app.dispatch_named_action("connect");
+        assert!(cmds.is_empty());
+        assert_eq!(app.sessions.len(), 8);
+        assert!(app.status.contains("Tab limit"));
+    }
+
+    #[test]
+    fn neighbor_connect_works_in_read_mode() {
+        let mut app = load_named_rows(
+            "neighbors",
+            vec![neighbor_resource("*1", "10.0.0.8", "ap-1", "")],
+        );
+        app.access = mtui_core::SessionAccess::from_policies("ops", "read", ["read", "api"]);
+        app.screen = Screen::Main;
+        let cmds = app.dispatch_named_action("connect");
+        assert!(cmds.is_empty());
+        assert_eq!(app.sessions.len(), 2);
+        assert_eq!(app.login.url, "10.0.0.8");
+        assert_eq!(app.login.name, "ap-1");
+    }
+
+    fn canvas(app: &App, width: u16, height: u16) -> String {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| crate::render::draw(frame, app))
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+        rendered
+    }
+
+    #[test]
+    fn neighbor_connect_login_renders_host_at_fixed_size() {
+        let mut app = load_named_rows(
+            "neighbors",
+            vec![neighbor_resource("*1", "192.168.88.2", "core-sw", "")],
+        );
+        app.terminal_width = 80;
+        app.terminal_height = 24;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        app.terminal_width = 80;
+        app.terminal_height = 24;
+        let rendered = canvas(&app, 80, 24);
+        assert!(rendered.contains("core-sw"), "{rendered}");
+        assert!(rendered.contains("192.168.88.2"), "{rendered}");
+        assert!(rendered.contains("Host"), "{rendered}");
+        let narrow = canvas(&app, 40, 12);
+        assert!(!narrow.is_empty());
+    }
+
+    #[test]
+    fn neighbors_table_renders_connect_hint() {
+        let mut app = load_named_rows(
+            "neighbors",
+            vec![neighbor_resource("*1", "10.0.0.2", "edge", "")],
+        );
+        app.terminal_width = 80;
+        app.terminal_height = 24;
+        let hints = app.footer_action_hints();
+        assert!(
+            hints
+                .iter()
+                .any(|(key, label)| key == "c" && label == "Connect"),
+            "{hints:?}"
+        );
+        let rendered = canvas(&app, 80, 24);
+        assert!(
+            rendered.to_ascii_lowercase().contains("connect"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("edge") || rendered.contains("10.0.0.2"),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn neighbor_remove_confirm_deletes_discovery_row() {
+        let mut app = load_named_rows(
+            "neighbors",
+            vec![neighbor_resource("*1", "192.168.88.2", "core-sw", "")],
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected remove confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Remove);
+        assert_eq!(session.record_id, "*1");
+        assert_eq!(session.endpoint, "/rest/ip/neighbor");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Delete { endpoint, id } => {
+                assert_eq!(endpoint, "/rest/ip/neighbor");
+                assert_eq!(id, "*1");
+            }
+            other => panic!("expected delete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn neighbor_action_menu_connect_opens_tab() {
+        let mut app = load_named_rows(
+            "neighbors",
+            vec![neighbor_resource("*1", "10.1.1.1", "sw1", "")],
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('a'))));
+        let Overlay::ActionMenu(menu) = &app.overlay else {
+            panic!("expected action menu, got {:?}", app.overlay);
+        };
+        assert_eq!(menu.items[0].id, "connect");
+        assert_eq!(menu.items[0].label, "Connect");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(cmds.is_empty());
+        assert_eq!(app.sessions.len(), 2);
+        assert_eq!(app.screen, Screen::Login);
+        assert_eq!(app.login.url, "10.1.1.1");
+    }
+
+    #[test]
+    fn neighbor_connect_without_selection_is_a_noop() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("neighbors");
+        app.pane = Pane::Content;
+        assert!(app.table.selected_row().is_none());
+        let cmds = app.dispatch_named_action("connect");
+        assert!(cmds.is_empty());
+        assert_eq!(app.sessions.len(), 1);
+        assert_eq!(app.screen, Screen::Main);
+    }
+
+    #[test]
+    fn neighbor_enter_on_nav_does_not_open_a_tab() {
+        let mut app = load_named_rows(
+            "neighbors",
+            vec![neighbor_resource("*1", "10.0.0.2", "edge", "")],
+        );
+        app.pane = Pane::Nav;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert_eq!(app.sessions.len(), 1);
+        assert_eq!(app.screen, Screen::Main);
     }
 }

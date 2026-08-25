@@ -194,6 +194,7 @@ fn overlay_policy(id: &str) -> Option<&'static str> {
         "torch" => Some(POLICY_SNIFF),
         "ping" | "traceroute" | "bandwidth-test" | "flood-ping" | "mac-scan" | "ip-scan"
         | "profiler" | "wifi-scan" => Some(POLICY_TEST),
+        "connect-neighbor" => None,
         _ => None,
     }
 }
@@ -255,7 +256,25 @@ fn trap_policy_name(message: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actions::{ACTION_EDIT, ACTION_REBOOT, ACTION_TORCH};
+    use crate::actions::{
+        ACTION_CONNECT_NEIGHBOR, ACTION_EDIT, ACTION_REBOOT, ACTION_REMOVE_SELECTED, ACTION_TORCH,
+    };
+
+    #[test]
+    fn neighbor_connect_needs_no_write_policy() {
+        let access = SessionAccess::from_policies("ops", "read", ["read", "web", "api"]);
+        assert!(
+            access
+                .action_block_reason("neighbors", &ACTION_CONNECT_NEIGHBOR)
+                .is_none()
+        );
+        assert!(
+            access
+                .action_block_reason("neighbors", &ACTION_REMOVE_SELECTED)
+                .is_some()
+        );
+        assert!(required_policy("neighbors", &ACTION_CONNECT_NEIGHBOR).is_none());
+    }
 
     #[test]
     fn unknown_access_allows_writes() {
