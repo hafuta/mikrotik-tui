@@ -1,0 +1,29 @@
+# Local RouterOS CHR via evilfreelancer/docker-routeros.
+# Two networks are required: without eth1, QEMU does not enable host port
+# forwarding and mapped API/SSH ports on the host will hang.
+services:
+  routeros:
+    image: evilfreelancer/docker-routeros:latest
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    ports:
+      - "2222:22"
+      - "2223:23"
+      - "8728:8728"
+      - "8729:8729"
+      - "5900:5900"
+    volumes:
+      - routeros_data:/data
+    networks:
+      - default
+      - routeros_net
+
+networks:
+  routeros_net:
+    driver: bridge
+
+volumes:
+  routeros_data:
