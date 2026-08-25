@@ -37,8 +37,9 @@ pub use actions::{
     ACTION_ADD, ACTION_BACKUP_LOAD, ACTION_BACKUP_SAVE, ACTION_COPY, ACTION_EDIT, ACTION_REBOOT,
     ACTION_REMOVE, ACTION_RESET, ACTION_SHUTDOWN, ACTION_TOGGLE, ACTION_TORCH, ActionCommand,
     ActionKind, ActionSpec, ActionWhen, CERTIFICATE_ACTIONS, ETHERNET_ACTIONS, FILE_ACTIONS,
-    INTERFACE_CREATE_TARGETS, INTERFACE_LIST_ACTIONS, RESOURCE_LIFECYCLE_ACTIONS, action_label,
-    is_backup_file, resolve_actions, truthy,
+    INTERFACE_CREATE_TARGETS, INTERFACE_LIST_ACTIONS, NEIGHBOR_ACTIONS, NeighborConnectTarget,
+    RESOURCE_LIFECYCLE_ACTIONS, action_label, is_backup_file, neighbor_connect_target,
+    resolve_actions, truthy,
 };
 pub use capabilities::{
     BULK_SELECT_RESOURCES, WIFI_PACKAGES, WIRELESS_PACKAGES, installed_package_names,

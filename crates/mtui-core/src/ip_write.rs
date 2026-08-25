@@ -29,7 +29,7 @@
 //!         col!("interface-name", "If name", 16),
 //!     ],
 //!     refresh: Duration::from_secs(10),
-//!     actions: crate::actions::DISCONNECT_ACTIONS, // inspect/remove only; no form
+//!     actions: crate::actions::NEIGHBOR_ACTIONS, // connect tab + remove; no form
 //!     form: None,
 //! }
 //! ResourceSpec {

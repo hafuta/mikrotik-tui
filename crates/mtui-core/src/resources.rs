@@ -1976,7 +1976,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("interface-name", "If name", 16),
         ],
         refresh: Duration::from_secs(10),
-        actions: crate::actions::DISCONNECT_ACTIONS,
+        actions: crate::actions::NEIGHBOR_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -5409,6 +5409,27 @@ mod tests {
         assert_eq!(
             port_actions,
             ["add", "edit", "toggle-disabled", "copy", "remove"]
+        );
+    }
+
+    #[test]
+    fn neighbors_connect_is_overlay_without_a_form() {
+        let neighbors = resource_by_id("neighbors").expect("neighbors");
+        assert!(neighbors.form.is_none());
+        assert_eq!(neighbors.endpoint(), "/rest/ip/neighbor");
+        assert_eq!(
+            neighbors
+                .actions
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>(),
+            ["connect", "remove"]
+        );
+        assert_eq!(
+            neighbors.actions[0].kind,
+            crate::actions::ActionKind::Overlay {
+                id: "connect-neighbor"
+            }
         );
     }
 
