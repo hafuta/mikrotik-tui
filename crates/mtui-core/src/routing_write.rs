@@ -192,7 +192,7 @@ pub static OSPF_INTERFACE_TEMPLATE_FORM: FormSchema = FormSchema {
     }],
 };
 
-/// Live `/routing/ospf/interface` rows. RouterOS marks this menu read-only.
+/// Live `/routing/ospf/interface` rows. `RouterOS` marks this menu read-only.
 pub static OSPF_INTERFACE_FORM: FormSchema = FormSchema {
     title_key: "address",
     subtitle_keys: &["state"],
