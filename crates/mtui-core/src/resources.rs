@@ -5203,22 +5203,7 @@ mod tests {
         assert!(resource_by_id("dns").is_some_and(ResourceSpec::is_singleton));
         assert!(resource_by_id("ipsec-settings").is_some_and(ResourceSpec::is_singleton));
         assert!(resource_by_id("routes").is_some_and(|spec| spec.form.is_some()));
-        let neighbors = resource_by_id("neighbors").expect("neighbors");
-        assert!(neighbors.form.is_none());
-        assert_eq!(
-            neighbors
-                .actions
-                .iter()
-                .map(|action| action.id)
-                .collect::<Vec<_>>(),
-            ["connect", "remove"]
-        );
-        assert!(matches!(
-            neighbors.actions[0].kind,
-            crate::actions::ActionKind::Overlay {
-                id: "connect-neighbor"
-            }
-        ));
+        assert!(resource_by_id("neighbors").is_some_and(|spec| spec.form.is_none()));
         assert!(resource_by_id("ipsec-installed-sa").is_some_and(|spec| spec.form.is_none()));
         assert!(
             !column_keys("ipsec-installed-sa")
@@ -5424,6 +5409,27 @@ mod tests {
         assert_eq!(
             port_actions,
             ["add", "edit", "toggle-disabled", "copy", "remove"]
+        );
+    }
+
+    #[test]
+    fn neighbors_connect_is_overlay_without_a_form() {
+        let neighbors = resource_by_id("neighbors").expect("neighbors");
+        assert!(neighbors.form.is_none());
+        assert_eq!(neighbors.endpoint(), "/rest/ip/neighbor");
+        assert_eq!(
+            neighbors
+                .actions
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>(),
+            ["connect", "remove"]
+        );
+        assert_eq!(
+            neighbors.actions[0].kind,
+            crate::actions::ActionKind::Overlay {
+                id: "connect-neighbor"
+            }
         );
     }
 

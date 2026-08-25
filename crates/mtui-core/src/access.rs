@@ -194,7 +194,6 @@ fn overlay_policy(id: &str) -> Option<&'static str> {
         "torch" => Some(POLICY_SNIFF),
         "ping" | "traceroute" | "bandwidth-test" | "flood-ping" | "mac-scan" | "ip-scan"
         | "profiler" | "wifi-scan" => Some(POLICY_TEST),
-        "connect-neighbor" => None,
         _ => None,
     }
 }

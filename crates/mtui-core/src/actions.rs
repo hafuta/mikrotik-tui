@@ -613,7 +613,7 @@ pub const FILE_ACTIONS: &[ActionSpec] = &[
 /// Disconnect a live session or drop an FDB/lease row.
 pub const DISCONNECT_ACTIONS: &[ActionSpec] = &[ACTION_REMOVE_SELECTED];
 
-/// Open a new device tab from an `/ip/neighbor` row (WinBox Neighbors → Connect).
+/// Open a new device tab from an `/ip/neighbor` row (`WinBox` Neighbors → Connect).
 pub const ACTION_CONNECT_NEIGHBOR: ActionSpec = ActionSpec {
     id: "connect",
     label: "Connect",
@@ -1047,70 +1047,85 @@ mod tests {
 
     #[test]
     fn neighbor_connect_target_table() {
-        let cases: &[(&str, &[(&str, &str)], Option<(&str, &str)>)] = &[
-            (
-                "ipv4_and_identity",
-                &[
+        struct Case {
+            name: &'static str,
+            fields: &'static [(&'static str, &'static str)],
+            want: Option<NeighborConnectTarget>,
+        }
+        let cases = [
+            Case {
+                name: "ipv4_and_identity",
+                fields: &[
                     ("address", "192.168.88.2,fe80::1"),
                     ("identity", "core-sw"),
                     ("mac-address", "4C:5E:0C:00:00:01"),
                 ],
-                Some(("192.168.88.2", "core-sw")),
-            ),
-            (
-                "address6_cidr_mac_name",
-                &[
+                want: Some(NeighborConnectTarget {
+                    host: "192.168.88.2".into(),
+                    name: "core-sw".into(),
+                }),
+            },
+            Case {
+                name: "address6_cidr_mac_name",
+                fields: &[
                     ("address6", "2001:db8::2/64"),
                     ("mac-address", "4C:5E:0C:00:00:02"),
                 ],
-                Some(("2001:db8::2", "4C:5E:0C:00:00:02")),
-            ),
-            (
-                "address4_key",
-                &[("address4", "10.0.0.9"), ("identity", "ap")],
-                Some(("10.0.0.9", "ap")),
-            ),
-            (
-                "whitespace_and_semicolon",
-                &[("address", "  ;  10.1.1.1  "), ("identity", " edge ")],
-                Some(("10.1.1.1", "edge")),
-            ),
-            (
-                "ipv6_flag_is_not_a_host",
-                &[("ipv6", "true"), ("mac-address", "AA:BB:CC:DD:EE:FF")],
-                Some(("", "AA:BB:CC:DD:EE:FF")),
-            ),
-            ("empty", &[], None),
-            (
-                "blank_fields",
-                &[("address", "   "), ("identity", ""), ("mac-address", "\t")],
-                None,
-            ),
-            ("malformed_slashes_only", &[("address", "///")], None),
+                want: Some(NeighborConnectTarget {
+                    host: "2001:db8::2".into(),
+                    name: "4C:5E:0C:00:00:02".into(),
+                }),
+            },
+            Case {
+                name: "address4_key",
+                fields: &[("address4", "10.0.0.9"), ("identity", "ap")],
+                want: Some(NeighborConnectTarget {
+                    host: "10.0.0.9".into(),
+                    name: "ap".into(),
+                }),
+            },
+            Case {
+                name: "whitespace_and_semicolon",
+                fields: &[("address", "  ;  10.1.1.1  "), ("identity", " edge ")],
+                want: Some(NeighborConnectTarget {
+                    host: "10.1.1.1".into(),
+                    name: "edge".into(),
+                }),
+            },
+            Case {
+                name: "ipv6_flag_is_not_a_host",
+                fields: &[("ipv6", "true"), ("mac-address", "AA:BB:CC:DD:EE:FF")],
+                want: Some(NeighborConnectTarget {
+                    host: String::new(),
+                    name: "AA:BB:CC:DD:EE:FF".into(),
+                }),
+            },
+            Case {
+                name: "empty",
+                fields: &[],
+                want: None,
+            },
+            Case {
+                name: "blank_fields",
+                fields: &[("address", "   "), ("identity", ""), ("mac-address", "\t")],
+                want: None,
+            },
+            Case {
+                name: "malformed_slashes_only",
+                fields: &[("address", "///")],
+                want: None,
+            },
         ];
-        for (name, fields, expected) in cases {
+        for case in cases {
             let mut row = HashMap::new();
-            for (key, value) in *fields {
+            for (key, value) in case.fields {
                 row.insert((*key).to_string(), (*value).to_string());
             }
-            let got = neighbor_connect_target(&row);
-            match expected {
-                None => assert!(got.is_none(), "{name}: {got:?}"),
-                Some((host, ident)) => {
-                    assert_eq!(
-                        got,
-                        Some(NeighborConnectTarget {
-                            host: (*host).into(),
-                            name: (*ident).into(),
-                        }),
-                        "{name}"
-                    );
-                }
-            }
+            assert_eq!(neighbor_connect_target(&row), case.want, "{}", case.name);
         }
         let ids: Vec<_> = NEIGHBOR_ACTIONS.iter().map(|action| action.id).collect();
         assert_eq!(ids, ["connect", "remove"]);
-        assert!(ACTION_CONNECT_NEIGHBOR.enter);
+        const { assert!(ACTION_CONNECT_NEIGHBOR.enter) };
         assert_eq!(ACTION_CONNECT_NEIGHBOR.key, Some('c'));
         assert_eq!(
             ACTION_CONNECT_NEIGHBOR.kind,
