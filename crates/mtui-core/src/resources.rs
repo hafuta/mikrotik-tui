@@ -5564,6 +5564,25 @@ mod tests {
             ]
         );
         assert_eq!(group_ids("radius-group"), ["radius", "radius-incoming"]);
+        for group in [
+            "ipv6-group",
+            "routing-group",
+            "queue-group",
+            "files-group",
+            "tools-group",
+            "radius-group",
+        ] {
+            assert_unique_endpoints(group);
+        }
+        let tree = navigation_tree();
+        let labels: Vec<_> = tree.iter().map(|item| item.id.as_str()).collect();
+        assert!(labels.contains(&"ipv6-group"));
+        assert!(labels.contains(&"radius-group"));
+        assert_eq!(labels.last().copied(), Some("system-group"));
+    }
+
+    #[test]
+    fn container_group_exists() {
         assert_eq!(
             group_ids("container-group"),
             [
@@ -5574,23 +5593,10 @@ mod tests {
                 "apps",
             ]
         );
-        for group in [
-            "ipv6-group",
-            "routing-group",
-            "queue-group",
-            "files-group",
-            "tools-group",
-            "radius-group",
-            "container-group",
-        ] {
-            assert_unique_endpoints(group);
-        }
+        assert_unique_endpoints("container-group");
         let tree = navigation_tree();
         let labels: Vec<_> = tree.iter().map(|item| item.id.as_str()).collect();
-        assert!(labels.contains(&"ipv6-group"));
-        assert!(labels.contains(&"radius-group"));
         assert!(labels.contains(&"container-group"));
-        assert_eq!(labels.last().copied(), Some("system-group"));
     }
 
     #[test]
