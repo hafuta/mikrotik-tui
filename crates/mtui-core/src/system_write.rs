@@ -54,6 +54,11 @@ const LOOKUP_FILE: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_VRF: FieldKind = FieldKind::Lookup {
+    resource_id: "vrf",
+    value_key: "name",
+    multiple: false,
+};
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
@@ -65,6 +70,108 @@ const GROUP: FieldSpec = f!("group", "Group", LOOKUP_USER_GROUP);
 const ON_EVENT: FieldSpec = f!("on-event", "On event", LOOKUP_SCRIPT);
 const CA: FieldSpec = f!("ca", "CA", LOOKUP_CERTIFICATE);
 const FILE_NAME: FieldSpec = f!("file-name", "File name", LOOKUP_FILE);
+
+/// Type combo for `/system/logging/action` (API key `target`).
+const LOGGING_ACTION_TYPES: &[&str] = &["memory", "disk", "echo", "remote", "email", "script"];
+const LOGGING_ACTION_TYPE: FieldSpec = f!(
+    "target",
+    "Type",
+    FieldKind::Enum {
+        values: LOGGING_ACTION_TYPES,
+    }
+);
+const REMOTE_PROTOCOLS: &[&str] = &["udp", "tcp", "tls"];
+const REMOTE_PROTOCOL: FieldSpec = f!(
+    "remote-protocol",
+    "Remote Protocol",
+    FieldKind::Enum {
+        values: REMOTE_PROTOCOLS,
+    }
+);
+const REMOTE_LOG_FORMATS: &[&str] = &["default", "syslog", "cef"];
+const REMOTE_LOG_FORMAT: FieldSpec = f!(
+    "remote-log-format",
+    "Remote Log Format",
+    FieldKind::Enum {
+        values: REMOTE_LOG_FORMATS,
+    }
+);
+const SYSLOG_FACILITIES: &[&str] = &[
+    "daemon", "kern", "user", "mail", "auth", "syslog", "lpr", "news", "uucp", "cron", "authpriv",
+    "ftp", "ntp", "local0", "local1", "local2", "local3", "local4", "local5", "local6", "local7",
+];
+const SYSLOG_FACILITY: FieldSpec = f!(
+    "syslog-facility",
+    "Syslog Facility",
+    FieldKind::Enum {
+        values: SYSLOG_FACILITIES,
+    }
+);
+const SYSLOG_SEVERITIES: &[&str] = &[
+    "auto",
+    "emergency",
+    "alert",
+    "critical",
+    "error",
+    "warning",
+    "notice",
+    "info",
+    "debug",
+];
+const SYSLOG_SEVERITY: FieldSpec = f!(
+    "syslog-severity",
+    "Syslog Severity",
+    FieldKind::Enum {
+        values: SYSLOG_SEVERITIES,
+    }
+);
+const SYSLOG_TIME_FORMATS: &[&str] = &["bsd-syslog", "iso8601"];
+const SYSLOG_TIME_FORMAT: FieldSpec = f!(
+    "syslog-time-format",
+    "Timestamp Format",
+    FieldKind::Enum {
+        values: SYSLOG_TIME_FORMATS,
+    }
+);
+const LOGGING_ACTION_GENERAL: &[FieldSpec] = &[
+    NAME,
+    LOGGING_ACTION_TYPE,
+    f!("memory-lines", "Memory Lines", FieldKind::Number),
+    f!(
+        "memory-stop-on-full",
+        "Memory Stop On Full",
+        FieldKind::Toggle
+    ),
+    f!("remember", "Remember", FieldKind::Toggle),
+    f!("disk-file-name", "Disk File Name", FieldKind::Text),
+    f!(
+        "disk-lines-per-file",
+        "Disk Lines Per File",
+        FieldKind::Number
+    ),
+    f!("disk-file-count", "Disk File Count", FieldKind::Number),
+    f!("disk-stop-on-full", "Disk Stop On Full", FieldKind::Toggle),
+    f!("remote", "Remote Address", FieldKind::Text),
+    f!("remote-port", "Remote Port", FieldKind::Number),
+    f!("src-address", "Src Address", FieldKind::Text),
+    REMOTE_LOG_FORMAT,
+    REMOTE_PROTOCOL,
+    SYSLOG_FACILITY,
+    SYSLOG_SEVERITY,
+    SYSLOG_TIME_FORMAT,
+    f!(
+        "cef-event-delimiter",
+        "CEF Event Delimiter",
+        FieldKind::Text
+    ),
+    f!("check-certificate", "Check Certificate", FieldKind::Toggle),
+    f!("vrf", "VRF", LOOKUP_VRF),
+    f!("add-topics-string", "Add Topics String", FieldKind::Toggle),
+    f!("email-to", "Email To", FieldKind::Text),
+    f!("email-cc", "Email CC", FieldKind::Text),
+    f!("email-start-tls", "Email STARTTLS", FieldKind::Toggle),
+    f!("script", "Script", LOOKUP_SCRIPT),
+];
 
 pub static USER_FORM: FormSchema = FormSchema {
     title_key: "name",
@@ -309,52 +416,17 @@ pub static LOGGING_FORM: FormSchema = FormSchema {
 pub static LOGGING_ACTION_FORM: FormSchema = FormSchema {
     title_key: "name",
     subtitle_keys: &["target"],
-    sections: &[
-        FormSection {
-            id: "general",
-            label: "General",
-            read_only: false,
-            fields: &[
-                NAME,
-                f!("target", "Target", FieldKind::Text),
-                f!("remote", "Remote", FieldKind::Text),
-                f!("remote-port", "Remote port", FieldKind::Number),
-                f!("src-address", "Src address", FieldKind::Text),
-                f!("remote-protocol", "Protocol", FieldKind::Text),
-                f!("remote-log-format", "Log format", FieldKind::Text),
-                f!("syslog-facility", "Facility", FieldKind::Text),
-                f!("syslog-severity", "Severity", FieldKind::Text),
-                f!("syslog-time-format", "Time format", FieldKind::Text),
-                f!("check-certificate", "Check cert", FieldKind::Toggle),
-                f!("vrf", "VRF", FieldKind::Text),
-            ],
-        },
-        FormSection {
-            id: "advanced",
-            label: "Advanced",
-            read_only: false,
-            fields: &[
-                f!("memory-lines", "Memory lines", FieldKind::Number),
-                f!("memory-stop-on-full", "Mem stop full", FieldKind::Toggle),
-                f!("disk-file-name", "Disk file", FieldKind::Text),
-                f!("disk-lines-per-file", "Disk lines", FieldKind::Number),
-                f!("disk-file-count", "Disk files", FieldKind::Number),
-                f!("disk-stop-on-full", "Disk stop full", FieldKind::Toggle),
-                f!("email-to", "Email to", FieldKind::Text),
-                f!("email-cc", "Email CC", FieldKind::Text),
-                f!("email-start-tls", "Email STARTTLS", FieldKind::Toggle),
-                f!("script", "Script", LOOKUP_SCRIPT),
-                f!("remember", "Remember", FieldKind::Toggle),
-                f!("add-topics-string", "Add topics", FieldKind::Toggle),
-                f!("cef-event-delimiter", "CEF delimiter", FieldKind::Text),
-            ],
-        },
-    ],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: LOGGING_ACTION_GENERAL,
+    }],
     create_sections: &[FormSection {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, f!("target", "Target", FieldKind::Text)],
+        fields: LOGGING_ACTION_GENERAL,
     }],
 };
 
@@ -749,6 +821,17 @@ mod tests {
             .collect()
     }
 
+    fn assert_enum(schema: &FormSchema, key: &str, values: &'static [&'static str]) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Enum { values })
+        );
+    }
+
+    fn assert_label(schema: &FormSchema, key: &str, label: &str) {
+        assert_eq!(schema.field(key).map(|field| field.label), Some(label));
+    }
+
     fn assert_lookup(
         schema: &FormSchema,
         key: &str,
@@ -914,18 +997,60 @@ mod tests {
 
     #[test]
     fn logging_action_form_covers_remote_syslog() {
-        assert_eq!(create_keys(&LOGGING_ACTION_FORM), ["name", "target"]);
-        let writable = LOGGING_ACTION_FORM.writable_keys();
-        assert!(writable.contains(&"remote"));
-        assert!(writable.contains(&"remote-port"));
-        let advanced = LOGGING_ACTION_FORM
-            .sections
-            .iter()
-            .find(|section| section.id == "advanced")
-            .expect("advanced");
-        assert!(!advanced.read_only);
-        assert!(!advanced.fields.is_empty());
+        assert_eq!(
+            create_keys(&LOGGING_ACTION_FORM),
+            [
+                "name",
+                "target",
+                "memory-lines",
+                "memory-stop-on-full",
+                "remember",
+                "disk-file-name",
+                "disk-lines-per-file",
+                "disk-file-count",
+                "disk-stop-on-full",
+                "remote",
+                "remote-port",
+                "src-address",
+                "remote-log-format",
+                "remote-protocol",
+                "syslog-facility",
+                "syslog-severity",
+                "syslog-time-format",
+                "cef-event-delimiter",
+                "check-certificate",
+                "vrf",
+                "add-topics-string",
+                "email-to",
+                "email-cc",
+                "email-start-tls",
+                "script",
+            ]
+        );
+        assert!(no_advanced(&LOGGING_ACTION_FORM));
         assert_lookup(&LOGGING_ACTION_FORM, "script", "scripts", "name");
+        assert_label(&LOGGING_ACTION_FORM, "target", "Type");
+        assert_label(&LOGGING_ACTION_FORM, "syslog-facility", "Syslog Facility");
+        assert_label(&LOGGING_ACTION_FORM, "syslog-severity", "Syslog Severity");
+        assert_enum(&LOGGING_ACTION_FORM, "target", LOGGING_ACTION_TYPES);
+        assert_enum(&LOGGING_ACTION_FORM, "syslog-facility", SYSLOG_FACILITIES);
+        assert_enum(&LOGGING_ACTION_FORM, "syslog-severity", SYSLOG_SEVERITIES);
+        assert_enum(
+            &LOGGING_ACTION_FORM,
+            "syslog-time-format",
+            SYSLOG_TIME_FORMATS,
+        );
+        assert_enum(&LOGGING_ACTION_FORM, "remote-protocol", REMOTE_PROTOCOLS);
+        assert_eq!(REMOTE_PROTOCOLS, ["udp", "tcp", "tls"]);
+        assert_eq!(REMOTE_PROTOCOLS[0], "udp");
+        assert_eq!(SYSLOG_FACILITIES[0], "daemon");
+        assert_eq!(SYSLOG_SEVERITIES[0], "auto");
+        assert_enum(
+            &LOGGING_ACTION_FORM,
+            "remote-log-format",
+            REMOTE_LOG_FORMATS,
+        );
+        assert_lookup(&LOGGING_ACTION_FORM, "vrf", "vrf", "name");
     }
 
     #[test]

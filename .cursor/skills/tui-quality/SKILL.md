@@ -44,6 +44,9 @@ description: Build and review ratatui TUI behavior for correctness, responsivene
 - Text inputs must accept only printable runes. Windows terminal backends can
   report modifier-only keys such as Caps Lock as zero/control runes; never
   append raw key characters without filtering them.
+- `FieldKind::Number` accepts ASCII digits only. Keys named `port` or
+  `*-port` (not `*-ports`) stop at five digits. Drop extra keystrokes;
+  do not show an error banner.
 - Add a regression test whenever addressing flicker, bleed, stale redraws, or
   viewport jumps; visual stability is part of correctness.
 
@@ -51,7 +54,9 @@ description: Build and review ratatui TUI behavior for correctness, responsivene
 
 Use numbered in-modal tabs (not a left rail, not an accordion). Arrow keys:
 Up/Down move fields and clamp at the ends; Left/Right change tabs and clamp
-at the first/last tab. Field grouping (General / type-specific / Advanced /
-Status, create vs edit) is defined in
+at the first/last tab. Enum and Lookup fields open a nested Select/Lookup
+dialog (dimmed canvas, centered, bounded height, internally scrolled).
+Do not cycle enum values in place. Field grouping (General / type-specific /
+Advanced / Status, create vs edit) is defined in
 `.cursor/skills/routeros-resource-development/SKILL.md` — follow that skill
 when adding or reshaping entity forms so screens stay consistent.

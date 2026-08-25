@@ -45,7 +45,8 @@ pub use capabilities::{
     required_packages, supports_bulk_select, unavailable_menus,
 };
 pub use forms::{
-    FieldKind, FieldSpec, FormSchema, FormSection, extra_status_fields, patch_body, preview_changes,
+    FieldKind, FieldSpec, FormSchema, FormSection, accepts_number_char, extra_status_fields,
+    field_enabled, field_visible, patch_body, preview_changes,
 };
 pub use resources::{
     ALL_RESOURCES, ColumnSpec, DASHBOARD_ID, FetchKind, NAVIGATION, NavGroup, NavItem,

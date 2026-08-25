@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
+use mtui_core::accepts_number_char;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
@@ -84,6 +85,9 @@ impl TorchState {
 
     pub fn insert_char(&mut self, ch: char) {
         if !is_printable_char(ch) {
+            return;
+        }
+        if self.focus == TorchField::Port && !accepts_number_char("port", &self.port, ch) {
             return;
         }
         self.focused_mut().push(ch);
@@ -226,5 +230,19 @@ mod tests {
         torch.insert_char('\0');
         torch.insert_char('a');
         assert_eq!(torch.src, "a");
+    }
+
+    #[test]
+    fn port_filter_takes_five_digits_only() {
+        let mut torch = TorchState::new("ether1", "*1", 1);
+        torch.focus = TorchField::Port;
+        torch.insert_char('a');
+        torch.insert_char('8');
+        torch.insert_char('0');
+        torch.insert_char('8');
+        torch.insert_char('0');
+        torch.insert_char('1');
+        torch.insert_char('9');
+        assert_eq!(torch.port, "80801");
     }
 }

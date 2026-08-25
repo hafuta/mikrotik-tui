@@ -937,7 +937,7 @@ impl App {
         }
 
         if matches!(&self.overlay, Overlay::Form(session) if session.lookup_open()) {
-            return self.keys_lookup(key);
+            return self.keys_lookup(key, schema);
         }
 
         match key.code {
@@ -1011,13 +1011,27 @@ impl App {
         Vec::new()
     }
 
-    fn keys_lookup(&mut self, key: KeyEvent) -> Vec<AppCommand> {
+    fn keys_lookup(&mut self, key: KeyEvent, schema: &mtui_core::FormSchema) -> Vec<AppCommand> {
         match key.code {
             KeyCode::Esc => self.with_form(FormSession::close_lookup),
             KeyCode::Up => self.with_form(|session| session.lookup_move(-1)),
             KeyCode::Down => self.with_form(|session| session.lookup_move(1)),
-            KeyCode::Enter => self.with_form(FormSession::lookup_confirm),
-            KeyCode::Char(' ') => self.with_form(FormSession::lookup_toggle_focused),
+            KeyCode::Enter => self.with_form(|session| {
+                session.lookup_confirm();
+                session.clamp(schema);
+            }),
+            KeyCode::Char(' ') => self.with_form(|session| {
+                if session
+                    .lookup
+                    .as_ref()
+                    .is_some_and(|picker| picker.multiple)
+                {
+                    session.lookup_toggle_focused();
+                } else {
+                    session.lookup_confirm();
+                    session.clamp(schema);
+                }
+            }),
             KeyCode::Backspace | KeyCode::Delete => {
                 self.with_form(FormSession::lookup_backspace);
             }
@@ -1036,7 +1050,7 @@ impl App {
         let Some(picker) = &session.lookup else {
             return Vec::new();
         };
-        if !picker.loading || picker.request_id != 0 {
+        if picker.resource_id.is_empty() || !picker.loading || picker.request_id != 0 {
             return Vec::new();
         }
         let resource_id = picker.resource_id.to_string();

@@ -8,7 +8,7 @@ use mtui_core::{
     AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
     CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, IMPORT_CONFIG_PROMPT,
     INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, RESET_CONFIG_PROMPT, SMS_PROMPT, WOL_PROMPT,
-    action_label, patch_body, resource_by_id, supports_bulk_select, truthy,
+    action_label, field_enabled, patch_body, resource_by_id, supports_bulk_select, truthy,
 };
 use mtui_routeros::MASKED_VALUE;
 use mtui_ui::{
@@ -802,6 +802,7 @@ impl App {
             return Vec::new();
         };
         let mut body = patch_body(schema, &session.original, &session.values, MASKED_VALUE);
+        body.retain(|key, _| field_enabled(&session.resource_id, key, &session.values));
         if session.mode == mtui_ui::FormMode::Create {
             body.retain(|_, value| !value.is_empty());
             if body.is_empty() {
@@ -835,6 +836,7 @@ impl App {
             return Vec::new();
         };
         let mut body = patch_body(schema, &session.original, &session.values, MASKED_VALUE);
+        body.retain(|key, _| field_enabled(&session.resource_id, key, &session.values));
         if session.mode == mtui_ui::FormMode::Create {
             body.retain(|_, value| !value.is_empty());
             if body.is_empty() {

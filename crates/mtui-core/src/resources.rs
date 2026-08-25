@@ -3045,7 +3045,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         },
         columns: &[
             col!("name", "Name", 14),
-            col!("target", "Target", 10),
+            col!("target", "Type", 10),
             col!("remote", "Remote", 16),
             col!("remote-port", "Port", 6),
             col!("remote-protocol", "Proto", 8),

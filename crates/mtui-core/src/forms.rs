@@ -54,9 +54,8 @@ impl FieldKind {
         match self {
             Self::Text | Self::Number | Self::Secret => "type value",
             Self::Toggle => "space toggle",
-            Self::Enum { .. } => "space cycle",
+            Self::Enum { .. } | Self::Lookup { .. } => "space pick",
             Self::Readonly => "read only",
-            Self::Lookup { .. } => "space pick",
         }
     }
 
@@ -66,6 +65,90 @@ impl FieldKind {
     pub fn takes_typed_input(self) -> bool {
         matches!(self, Self::Text | Self::Number | Self::Secret)
     }
+
+    /// Whether `ch` may be appended to `current` for this control.
+    ///
+    /// Number fields take ASCII digits only. TCP/UDP port keys (`port`,
+    /// `*-port`) stop at five digits. Extra or non-digit keys are ignored,
+    /// not reported as an error.
+    #[must_use]
+    pub fn accepts_char(self, key: &str, current: &str, ch: char) -> bool {
+        match self {
+            Self::Number => accepts_number_char(key, current, ch),
+            Self::Text | Self::Secret => true,
+            _ => false,
+        }
+    }
+}
+
+/// TCP/UDP port fields (1-65535) are five digits at most.
+pub const TCP_UDP_PORT_DIGIT_CAP: usize = 5;
+
+/// `port` and `*-port`, but not list keys such as `*-ports`.
+#[must_use]
+pub fn is_tcp_udp_port_key(key: &str) -> bool {
+    let key = key.trim();
+    key == "port" || (key.ends_with("-port") && !key.ends_with("-ports"))
+}
+
+/// Digit-only typing for `FieldKind::Number` (and Torch port).
+#[must_use]
+pub fn accepts_number_char(key: &str, current: &str, ch: char) -> bool {
+    if !ch.is_ascii_digit() {
+        return false;
+    }
+    if is_tcp_udp_port_key(key)
+        && current.chars().filter(char::is_ascii_digit).count() >= TCP_UDP_PORT_DIGIT_CAP
+    {
+        return false;
+    }
+    true
+}
+
+/// Whether a sheet field should appear given current values.
+///
+/// Logging Actions show only the knobs that belong to Type (`target`) and, for
+/// remote, to Remote Log Format and Remote Protocol. Inapplicable rows are
+/// omitted, not locked. Check Certificate appears only when protocol is `tls`.
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, String>) -> bool {
+    if resource_id != "logging-actions" {
+        return true;
+    }
+    let target = values.get("target").map_or("", String::as_str);
+    let format = values
+        .get("remote-log-format")
+        .map_or("default", String::as_str);
+    let format = if format.is_empty() { "default" } else { format };
+    let protocol = values.get("remote-protocol").map_or("udp", String::as_str);
+    let protocol = if protocol.is_empty() { "udp" } else { protocol };
+    match key {
+        "memory-lines" | "memory-stop-on-full" => target == "memory",
+        "disk-file-name" | "disk-lines-per-file" | "disk-file-count" | "disk-stop-on-full" => {
+            target == "disk"
+        }
+        "remote" | "remote-port" | "src-address" | "remote-protocol" | "remote-log-format"
+        | "vrf" | "add-topics-string" => target == "remote",
+        "check-certificate" => target == "remote" && protocol == "tls",
+        "syslog-facility" | "syslog-severity" => target == "remote" && format == "syslog",
+        "syslog-time-format" => target == "remote" && matches!(format, "syslog" | "cef"),
+        "cef-event-delimiter" => target == "remote" && format == "cef",
+        "email-to" | "email-cc" | "email-start-tls" => target == "email",
+        "script" => target == "script",
+        "remember" => matches!(target, "memory" | "echo"),
+        _ => true,
+    }
+}
+
+/// Whether a visible sheet field can be edited.
+///
+/// Association is handled by [`field_visible`]. Locked (read-only styling)
+/// is not a stand-in for hiding fields that do not belong to the selection.
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn field_enabled(resource_id: &str, key: &str, values: &HashMap<String, String>) -> bool {
+    field_visible(resource_id, key, values)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,12 +288,14 @@ fn crate_changed(
 #[must_use]
 #[allow(clippy::implicit_hasher)]
 pub fn preview_changes(
+    resource_id: &str,
     schema: &FormSchema,
     original: &HashMap<String, String>,
     current: &HashMap<String, String>,
     masked_token: &str,
 ) -> Vec<(String, String)> {
-    let body = patch_body(schema, original, current, masked_token);
+    let mut body = patch_body(schema, original, current, masked_token);
+    body.retain(|key, _| field_enabled(resource_id, key, current));
     body.into_iter()
         .map(|(key, value)| {
             let spec = schema.field(&key);
@@ -305,7 +390,7 @@ mod tests {
         let mut current = original.clone();
         current.insert("comment".into(), "office".into());
         current.insert("running".into(), "false".into());
-        let lines = preview_changes(&SAMPLE, &original, &current, "********");
+        let lines = preview_changes("interfaces", &SAMPLE, &original, &current, "********");
         assert_eq!(lines, vec![("Comment".into(), "office".into())]);
     }
 
@@ -334,10 +419,7 @@ mod tests {
         );
         assert_eq!(FieldKind::Text.edit_hint(), "type value");
         assert_eq!(FieldKind::Toggle.edit_hint(), "space toggle");
-        assert_eq!(
-            FieldKind::Enum { values: &["a"] }.edit_hint(),
-            "space cycle"
-        );
+        assert_eq!(FieldKind::Enum { values: &["a"] }.edit_hint(), "space pick");
         assert_eq!(
             FieldKind::Lookup {
                 resource_id: "interfaces",
@@ -365,5 +447,118 @@ mod tests {
             .writable()
         );
         assert!(!FieldKind::Toggle.takes_typed_input());
+    }
+
+    #[test]
+    fn number_fields_reject_non_digits_and_cap_ports() {
+        assert!(FieldKind::Number.accepts_char("vlan-id", "10", '1'));
+        assert!(!FieldKind::Number.accepts_char("vlan-id", "10", 'a'));
+        assert!(!FieldKind::Number.accepts_char("vlan-id", "10", '-'));
+        assert!(FieldKind::Number.accepts_char("remote-port", "6553", '5'));
+        assert!(!FieldKind::Number.accepts_char("remote-port", "65535", '0'));
+        assert!(FieldKind::Number.accepts_char("memory-lines", "65535", '0'));
+        assert!(!is_tcp_udp_port_key("src-ports"));
+        assert!(is_tcp_udp_port_key("remote-port"));
+        assert!(is_tcp_udp_port_key("port"));
+    }
+
+    #[test]
+    fn logging_action_fields_follow_type_and_log_format() {
+        let mut values = HashMap::new();
+        values.insert("target".into(), "memory".into());
+        assert!(field_visible("logging-actions", "name", &values));
+        assert!(field_visible("logging-actions", "memory-lines", &values));
+        assert!(field_visible("logging-actions", "remember", &values));
+        assert!(!field_visible("logging-actions", "remote", &values));
+        assert!(!field_visible("logging-actions", "disk-file-name", &values));
+        assert!(!field_visible("logging-actions", "email-to", &values));
+        assert!(!field_visible("logging-actions", "script", &values));
+
+        values.insert("target".into(), "disk".into());
+        assert!(field_visible("logging-actions", "disk-file-name", &values));
+        assert!(!field_visible("logging-actions", "memory-lines", &values));
+
+        values.insert("target".into(), "email".into());
+        assert!(field_visible("logging-actions", "email-to", &values));
+        assert!(!field_visible("logging-actions", "remote", &values));
+
+        values.insert("target".into(), "script".into());
+        assert!(field_visible("logging-actions", "script", &values));
+
+        values.insert("target".into(), "echo".into());
+        assert!(field_visible("logging-actions", "remember", &values));
+        assert!(!field_visible("logging-actions", "memory-lines", &values));
+
+        values.insert("target".into(), "remote".into());
+        values.insert("remote-log-format".into(), "default".into());
+        assert!(field_visible("logging-actions", "remote", &values));
+        assert!(field_visible(
+            "logging-actions",
+            "remote-log-format",
+            &values
+        ));
+        assert!(!field_visible(
+            "logging-actions",
+            "syslog-facility",
+            &values
+        ));
+        assert!(!field_visible(
+            "logging-actions",
+            "syslog-time-format",
+            &values
+        ));
+        assert!(!field_visible(
+            "logging-actions",
+            "cef-event-delimiter",
+            &values
+        ));
+        assert!(!field_visible("logging-actions", "memory-lines", &values));
+        assert!(!field_visible(
+            "logging-actions",
+            "check-certificate",
+            &values
+        ));
+        values.insert("remote-protocol".into(), "tcp".into());
+        assert!(!field_visible(
+            "logging-actions",
+            "check-certificate",
+            &values
+        ));
+        values.insert("remote-protocol".into(), "tls".into());
+        assert!(field_visible(
+            "logging-actions",
+            "check-certificate",
+            &values
+        ));
+
+        values.insert("remote-log-format".into(), "syslog".into());
+        assert!(field_visible("logging-actions", "syslog-facility", &values));
+        assert!(field_visible(
+            "logging-actions",
+            "syslog-time-format",
+            &values
+        ));
+        assert!(!field_visible(
+            "logging-actions",
+            "cef-event-delimiter",
+            &values
+        ));
+
+        values.insert("remote-log-format".into(), "cef".into());
+        assert!(!field_visible(
+            "logging-actions",
+            "syslog-facility",
+            &values
+        ));
+        assert!(field_visible(
+            "logging-actions",
+            "syslog-time-format",
+            &values
+        ));
+        assert!(field_visible(
+            "logging-actions",
+            "cef-event-delimiter",
+            &values
+        ));
     }
 }

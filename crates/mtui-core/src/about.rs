@@ -1100,8 +1100,12 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "Log destinations: memory, disk, console echo, remote syslog, email, or a script. \
          Built-in names (memory, disk, echo, remote, email) exist on typical routers.",
         "Configure the destination here, then point a Logging rule at it. An action is unused \
-         until a rule uses its name. Remote syslog is target=remote plus server, port, and protocol.",
-        "name, target, remote, remote-port, remote-protocol, remote-log-format, syslog facility/severity.",
+         until a rule uses its name. Fields follow Type: memory, disk, echo, remote, email, or \
+         script. Remote syslog adds address, port, protocol (udp, tcp, or tls), format, and VRF. \
+         Check Certificate appears only for TLS. Syslog Facility and Syslog Severity appear only \
+         for BSD syslog; CEF Event Delimiter only for CEF.",
+        "name, Type, then fields for the selected Type (memory lines, disk file, remote syslog, \
+         email, or script).",
         "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/log/"
     ),
     guide!(
