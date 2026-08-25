@@ -1782,6 +1782,7 @@ impl App {
     pub(crate) fn sync_table_viewport(&mut self) {
         let (width, height) = self.table_inner_size();
         self.table.sync_viewport(width, height);
+        self.nav.sync_viewport(height);
         let visible = self.inspector_visible_rows();
         self.inspector.clamp_to_visible(visible);
         self.sync_console_viewport();
