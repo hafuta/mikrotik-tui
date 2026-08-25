@@ -690,6 +690,68 @@ mod scroll_tests {
     }
 
     #[test]
+    fn empty_table_toggle_checked_is_a_noop() {
+        let mut state = TableState::new(&columns());
+        state.toggle_checked();
+        assert_eq!(state.checked_count(), 0);
+        state.check_all_filtered();
+        assert_eq!(state.checked_count(), 0);
+    }
+
+    #[test]
+    fn check_all_filtered_skips_hidden_rows_and_prunes_stale_ids() {
+        let mut state = TableState::new(&columns());
+        let rows: Vec<Row> = (0..3)
+            .map(|i| {
+                let mut row = HashMap::new();
+                row.insert("name".into(), format!("row-{i:02}"));
+                row.insert(".id".into(), format!("*{i}"));
+                row
+            })
+            .collect();
+        state.set_rows(rows);
+        state.set_filter("row-01".into());
+        state.check_all_filtered();
+        assert_eq!(state.checked_ids(), vec!["*1".to_string()]);
+        state.set_rows({
+            let mut kept = HashMap::new();
+            kept.insert("name".into(), "row-02".into());
+            kept.insert(".id".into(), "*2".into());
+            vec![kept]
+        });
+        assert_eq!(state.checked_count(), 0);
+    }
+
+    #[test]
+    fn checked_unselected_row_uses_focus_style_at_fixed_width() {
+        let mut state = TableState::new(&columns());
+        let mut first = HashMap::new();
+        first.insert("name".into(), "ether1".into());
+        first.insert(".id".into(), "*1".into());
+        let mut second = HashMap::new();
+        second.insert("name".into(), "ether2".into());
+        second.insert(".id".into(), "*2".into());
+        state.set_rows(vec![first, second]);
+        state.toggle_checked();
+        state.move_selection(1);
+        let styles = styles();
+        let line = state.row_line(&state.rows[0], false, &styles, 24);
+        let plain = crate::layout::line_plain(&line);
+        assert!(plain.contains("ether1"), "{plain}");
+        assert_eq!(crate::layout::line_width(&line), 24);
+        assert!(
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("ether1") && span.style.fg == styles.focus.fg),
+            "checked row should use focus fg: {line:?}"
+        );
+        assert!(
+            line.spans.iter().all(|span| span.style.bg.is_none()),
+            "checked mark must not paint an unbounded background: {line:?}"
+        );
+    }
+
+    #[test]
     fn header_shows_sort_indicator() {
         let mut state = TableState::new(&columns());
         state.cycle_sort();

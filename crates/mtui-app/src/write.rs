@@ -2877,4 +2877,124 @@ mod tests {
                 .any(|(key, _)| key == "space")
         );
     }
+
+    #[test]
+    fn space_on_empty_interfaces_does_not_check() {
+        let mut app = load_named_rows("interfaces", Vec::new());
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        assert_eq!(app.table.checked_count(), 0);
+        assert_eq!(app.status, "0 selected");
+    }
+
+    #[test]
+    fn space_toggles_off_and_star_checks_filtered_interfaces() {
+        let mut app = load_named_rows(
+            "interfaces",
+            vec![
+                named_row("*1", "ether1"),
+                named_row("*2", "ether2"),
+                named_row("*3", "vlan10"),
+            ],
+        );
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        assert_eq!(app.table.checked_count(), 1);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        assert_eq!(app.table.checked_count(), 0);
+        app.table.set_filter("ether".into());
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('*'))));
+        assert_eq!(
+            app.table.checked_ids(),
+            vec!["*1".to_string(), "*2".to_string()]
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert_eq!(app.status, "Filter cleared");
+        assert_eq!(app.table.checked_count(), 2);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert_eq!(app.table.checked_count(), 0);
+        assert_eq!(app.status, "Selection cleared");
+    }
+
+    #[test]
+    fn space_is_ignored_while_typing_a_table_filter() {
+        let mut app = load_named_rows(
+            "routes",
+            vec![named_row("*1", "one"), named_row("*2", "two")],
+        );
+        app.pane = Pane::Content;
+        app.status = "Filter: ".into();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        assert_eq!(app.table.checked_count(), 0);
+    }
+
+    #[test]
+    fn bulk_remove_confirms_then_batches_deletes() {
+        let mut app = load_named_rows(
+            "users",
+            vec![named_row("*1", "alice"), named_row("*2", "bob")],
+        );
+        bulk_check_two_rows(&mut app);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected bulk remove confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Remove);
+        assert_eq!(session.record_ids.len(), 2);
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Batch { ops } => {
+                assert_eq!(ops.len(), 2);
+                assert!(
+                    ops.iter().all(|op| matches!(op, MutationOp::Delete { .. })),
+                    "{ops:?}"
+                );
+            }
+            other => panic!("expected batch delete, got {other:?}"),
+        }
+        assert_eq!(app.table.checked_count(), 0);
+    }
+
+    #[test]
+    fn bulk_confirm_n_cancels_without_mutate() {
+        let mut app = load_named_rows(
+            "address-list",
+            vec![named_row("*1", "one"), named_row("*2", "two")],
+        );
+        bulk_check_two_rows(&mut app);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('d'))));
+        assert!(matches!(app.overlay, Overlay::Confirm(_)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('n'))));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+        assert_eq!(app.table.checked_count(), 2);
+    }
+
+    #[test]
+    fn bulk_toggle_enable_and_disable_per_row() {
+        let mut off = named_row("*1", "one");
+        off.fields.insert("disabled".into(), "true".into());
+        let on = named_row("*2", "two");
+        let mut app = load_named_rows("ipv6-routes", vec![off, on]);
+        bulk_check_two_rows(&mut app);
+        let cmds = {
+            let _ = app.update(AppEvent::Input(press(KeyCode::Char('d'))));
+            app.update(AppEvent::Input(press(KeyCode::Char('y'))))
+        };
+        match command_op(&cmds) {
+            MutationOp::Batch { ops } => {
+                let names: Vec<_> = ops
+                    .iter()
+                    .map(|op| match op {
+                        MutationOp::Command {
+                            command, fields, ..
+                        } => (command.as_str(), fields.get(".id").map(String::as_str)),
+                        other => panic!("expected commands, got {other:?}"),
+                    })
+                    .collect();
+                assert_eq!(names, vec![("enable", Some("*1")), ("disable", Some("*2"))]);
+            }
+            other => panic!("expected batch, got {other:?}"),
+        }
+    }
 }

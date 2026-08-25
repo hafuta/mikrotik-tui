@@ -149,20 +149,34 @@ mod tests {
 
     #[test]
     fn bulk_select_covers_operator_lists() {
-        assert!(supports_bulk_select("firewall-filter"));
-        assert!(supports_bulk_select("dhcp-leases"));
-        assert!(supports_bulk_select("queue-simple"));
-        assert!(supports_bulk_select("interfaces"));
-        assert!(supports_bulk_select("ethernet"));
-        assert!(supports_bulk_select("vlan"));
-        assert!(supports_bulk_select("routes"));
-        assert!(supports_bulk_select("ipv6-routes"));
-        assert!(supports_bulk_select("address-list"));
-        assert!(supports_bulk_select("ipv6-address-list"));
-        assert!(supports_bulk_select("users"));
-        assert!(!supports_bulk_select("logs"));
-        assert!(!supports_bulk_select("user-groups"));
-        assert!(!supports_bulk_select("dns-static"));
+        for id in [
+            "firewall-filter",
+            "dhcp-leases",
+            "queue-simple",
+            "interfaces",
+            "ethernet",
+            "vlan",
+            "routes",
+            "ipv6-routes",
+            "address-list",
+            "ipv6-address-list",
+            "users",
+        ] {
+            assert!(supports_bulk_select(id), "{id}");
+        }
+        for id in ["logs", "user-groups", "dns-static", "dashboard"] {
+            assert!(!supports_bulk_select(id), "{id}");
+        }
+    }
+
+    #[test]
+    fn bulk_select_ids_are_catalogued_resources() {
+        for id in BULK_SELECT_RESOURCES {
+            assert!(
+                ALL_RESOURCES.iter().any(|spec| spec.id == *id),
+                "unknown bulk-select resource {id}"
+            );
+        }
     }
 
     #[test]
