@@ -249,13 +249,13 @@ pub static NTP_SERVER_FORM: FormSchema = FormSchema {
         fields: &[
             f!("enabled", "Enabled", FieldKind::Toggle),
             f!("broadcast", "Broadcast", FieldKind::Toggle),
-            f!("multicast", "Multicast", FieldKind::Toggle),
-            f!("manycast", "Manycast", FieldKind::Toggle),
             f!(
                 "broadcast-addresses",
                 "Broadcast Addresses",
-                FieldKind::Text
+                FieldKind::Repeat
             ),
+            f!("multicast", "Multicast", FieldKind::Toggle),
+            f!("manycast", "Manycast", FieldKind::Toggle),
             f!("vrf", "VRF", LOOKUP_VRF),
             f!("use-local-clock", "Use Local Clock", FieldKind::Toggle),
             f!(
@@ -919,9 +919,9 @@ mod tests {
             [
                 "enabled",
                 "broadcast",
+                "broadcast-addresses",
                 "multicast",
                 "manycast",
-                "broadcast-addresses",
                 "vrf",
                 "use-local-clock",
                 "local-clock-stratum",
@@ -930,6 +930,12 @@ mod tests {
         );
         assert!(no_advanced(&NTP_SERVER_FORM));
         assert_lookup(&NTP_SERVER_FORM, "vrf", "vrf", "name");
+        assert_eq!(
+            NTP_SERVER_FORM
+                .field("broadcast-addresses")
+                .map(|field| field.kind),
+            Some(FieldKind::Repeat)
+        );
         assert_eq!(
             NTP_SERVER_FORM
                 .field("local-clock-stratum")

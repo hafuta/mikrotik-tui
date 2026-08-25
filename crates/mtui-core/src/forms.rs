@@ -26,6 +26,8 @@ pub enum FieldKind {
         value_key: &'static str,
         multiple: bool,
     },
+    /// Comma-separated API list edited as add/remove rows.
+    Repeat,
 }
 
 impl FieldKind {
@@ -45,6 +47,7 @@ impl FieldKind {
             Self::Readonly => "read",
             Self::Secret => "secret",
             Self::Lookup { .. } => "lookup",
+            Self::Repeat => "list",
         }
     }
 
@@ -52,7 +55,7 @@ impl FieldKind {
     #[must_use]
     pub fn edit_hint(self) -> &'static str {
         match self {
-            Self::Text | Self::Number | Self::Secret => "type value",
+            Self::Text | Self::Number | Self::Secret | Self::Repeat => "type value",
             Self::Toggle => "space toggle",
             Self::Enum { .. } | Self::Lookup { .. } => "space pick",
             Self::Readonly => "read only",
@@ -63,7 +66,10 @@ impl FieldKind {
     /// Lookup typing happens only inside the picker filter, not on the sheet.
     #[must_use]
     pub fn takes_typed_input(self) -> bool {
-        matches!(self, Self::Text | Self::Number | Self::Secret)
+        matches!(
+            self,
+            Self::Text | Self::Number | Self::Secret | Self::Repeat
+        )
     }
 
     /// Whether `ch` may be appended to `current` for this control.
@@ -75,7 +81,7 @@ impl FieldKind {
     pub fn accepts_char(self, key: &str, current: &str, ch: char) -> bool {
         match self {
             Self::Number => accepts_number_char(key, current, ch),
-            Self::Text | Self::Secret => true,
+            Self::Text | Self::Secret | Self::Repeat => true,
             _ => false,
         }
     }
@@ -103,6 +109,33 @@ pub fn accepts_number_char(key: &str, current: &str, ch: char) -> bool {
         return false;
     }
     true
+}
+
+/// Split a comma-separated API list, skipping blanks and keeping first-seen order.
+#[must_use]
+pub fn split_ros_list(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for part in raw.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if !out.iter().any(|item| item == trimmed) {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
+}
+
+/// Join list items for a PATCH body. Empty entries are dropped.
+#[must_use]
+pub fn join_ros_list(values: &[String]) -> String {
+    values
+        .iter()
+        .map(String::as_str)
+        .filter(|item| !item.is_empty())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Whether a sheet field should appear given current values.
@@ -436,6 +469,7 @@ mod tests {
             .tag(),
             "lookup"
         );
+        assert_eq!(FieldKind::Repeat.tag(), "list");
         assert_eq!(FieldKind::Text.edit_hint(), "type value");
         assert_eq!(FieldKind::Toggle.edit_hint(), "space toggle");
         assert_eq!(FieldKind::Enum { values: &["a"] }.edit_hint(), "space pick");
@@ -466,6 +500,19 @@ mod tests {
             .writable()
         );
         assert!(!FieldKind::Toggle.takes_typed_input());
+        assert!(FieldKind::Repeat.takes_typed_input());
+    }
+
+    #[test]
+    fn ros_list_split_skips_blanks_and_join_drops_empty() {
+        assert_eq!(
+            split_ros_list(" 10.0.0.255, ,10.0.1.255,10.0.0.255 "),
+            vec!["10.0.0.255".to_string(), "10.0.1.255".to_string()]
+        );
+        assert_eq!(
+            join_ros_list(&["10.0.0.255".into(), String::new(), "10.0.1.255".into()]),
+            "10.0.0.255,10.0.1.255"
+        );
     }
 
     #[test]

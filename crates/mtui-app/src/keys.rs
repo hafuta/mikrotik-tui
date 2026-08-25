@@ -1081,9 +1081,7 @@ impl App {
         let Overlay::Form(session) = &self.overlay else {
             return false;
         };
-        session
-            .focused_spec(schema)
-            .is_some_and(|field| field.kind.takes_typed_input())
+        session.focused_takes_typed_input(schema)
     }
 
     fn keys_action_menu(&mut self, key: KeyEvent, type_picker: bool) -> Vec<AppCommand> {

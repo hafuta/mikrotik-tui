@@ -37,6 +37,7 @@ API key is not the control: `/system logging action` stores Type as
 | Number spinner | `Number` (ASCII digits only; `port` / `*-port` cap at 5 digits) |
 | Password / secret | `Secret` |
 | Free text | `Text` |
+| Repeater (`+` rows: addresses, VLAN IDs, servers) | `Repeat` (stored as a comma list) |
 | Runtime / not editable | `Readonly` |
 
 Assert the kind in tests (`FieldKind::Enum { values: … }`, `assert_lookup`).
@@ -64,8 +65,8 @@ Severity appear only for BSD syslog (`syslog`); Timestamp Format for
 exists on RouterOS 7.23 and newer. NTP Server shows Broadcast Addresses
 only when Broadcast is on, and Local Clock Stratum only when Use Local
 Clock is on (modes stay independent toggles, not a Type combo). VRF is a
-Lookup; Local Clock Stratum is Number; Auth. Key stays Text (key id, not
-the secret).
+Lookup; Local Clock Stratum is Number; Broadcast Addresses is a Repeat
+under Broadcast; Auth. Key stays Text (key id, not the secret).
 
 Enum **display** may differ from the API string (`syslog` → `BSD syslog`)
 while the Select list and PATCH still use the API value. Space/Enter on an

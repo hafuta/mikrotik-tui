@@ -47,6 +47,9 @@ description: Build and review ratatui TUI behavior for correctness, responsivene
 - `FieldKind::Number` accepts ASCII digits only. Keys named `port` or
   `*-port` (not `*-ports`) stop at five digits. Drop extra keystrokes;
   do not show an error banner.
+- `FieldKind::Repeat` expands into one row per value plus an add row.
+  Enter on add (or on a filled item) appends a row. Backspace on an empty
+  item removes it. The API value stays a comma-separated RouterOS list.
 - Add a regression test whenever addressing flicker, bleed, stale redraws, or
   viewport jumps; visual stability is part of correctness.
 
