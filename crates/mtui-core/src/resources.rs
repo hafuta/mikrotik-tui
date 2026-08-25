@@ -1913,6 +1913,36 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::system_write::NTP_CLIENT_FORM),
     },
     ResourceSpec {
+        id: "ntp-server",
+        group: "system-group",
+        label: "NTP Server",
+        fetch: FetchKind::System {
+            endpoint: "/rest/system/ntp/server",
+        },
+        columns: &[
+            col!("enabled", "Enabled", 8),
+            col!("broadcast", "Broadcast", 10),
+            col!("multicast", "Multicast", 10),
+            col!("manycast", "Manycast", 10),
+            col!("vrf", "VRF", 12),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::NTP_SERVER_FORM),
+    },
+    ResourceSpec {
+        id: "ntp-keys",
+        group: "system-group",
+        label: "NTP Keys",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/ntp/key",
+        },
+        columns: &[col!("key-id", "Key ID", 10)],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::system_write::NTP_KEY_FORM),
+    },
+    ResourceSpec {
         id: "clock",
         group: "system-group",
         label: "Clock",
@@ -3019,6 +3049,24 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::system_write::LOGGING_FORM),
     },
     ResourceSpec {
+        id: "logging-actions",
+        group: "system-group",
+        label: "Logging Actions",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/logging/action",
+        },
+        columns: &[
+            col!("name", "Name", 14),
+            col!("target", "Type", 10),
+            col!("remote", "Remote", 16),
+            col!("remote-port", "Port", 6),
+            col!("remote-protocol", "Proto", 8),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::system_write::LOGGING_ACTION_FORM),
+    },
+    ResourceSpec {
         id: "snmp",
         group: "system-group",
         label: "SNMP",
@@ -4100,6 +4148,64 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), ALL_RESOURCES.len());
+    }
+
+    #[test]
+    fn logging_actions_is_list_not_singleton() {
+        let spec = resource_by_id("logging-actions").expect("logging-actions");
+        assert!(!spec.is_singleton());
+        assert_eq!(spec.endpoint(), "/rest/system/logging/action");
+        assert_eq!(spec.cli_path(), "/system/logging/action");
+        assert_eq!(spec.group, "system-group");
+        assert_eq!(spec.label, "Logging Actions");
+        assert!(spec.form.is_some());
+        let action_ids: Vec<_> = spec.actions.iter().map(|action| action.id).collect();
+        assert_eq!(
+            action_ids,
+            crate::actions::LIST_ACTIONS
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>()
+        );
+        assert!(matches!(
+            spec.fetch,
+            FetchKind::List {
+                endpoint: "/rest/system/logging/action"
+            }
+        ));
+        assert_eq!(
+            column_keys("logging-actions"),
+            ["name", "target", "remote", "remote-port", "remote-protocol"]
+        );
+        let logging = resource_by_id("logging").expect("logging");
+        assert_eq!(logging.endpoint(), "/rest/system/logging");
+        let logging_ids: Vec<_> = logging.actions.iter().map(|action| action.id).collect();
+        assert_ne!(logging_ids, action_ids);
+    }
+
+    #[test]
+    fn ntp_server_is_system_singleton() {
+        let spec = resource_by_id("ntp-server").expect("ntp-server");
+        assert!(spec.is_singleton());
+        assert_eq!(spec.endpoint(), "/rest/system/ntp/server");
+        assert_eq!(spec.cli_path(), "/system/ntp/server");
+        assert!(spec.form.is_some());
+        assert_eq!(spec.group, "system-group");
+        assert_eq!(spec.label, "NTP Server");
+        assert!(matches!(
+            spec.fetch,
+            FetchKind::System {
+                endpoint: "/rest/system/ntp/server"
+            }
+        ));
+        let ntp = resource_by_id("ntp").expect("ntp");
+        assert_eq!(ntp.label, "NTP Client");
+        assert_eq!(ntp.endpoint(), "/rest/system/ntp/client");
+        let keys = resource_by_id("ntp-keys").expect("ntp-keys");
+        assert!(!keys.is_singleton());
+        assert_eq!(keys.endpoint(), "/rest/system/ntp/key");
+        assert_eq!(column_keys("ntp-keys"), ["key-id"]);
+        assert!(keys.form.is_some());
     }
 
     #[test]

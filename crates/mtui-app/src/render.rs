@@ -67,8 +67,11 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                     );
                     render_form_sheet(frame, full, session, schema, &styles);
                 }
-                Overlay::ActionMenu(ref menu) | Overlay::TypePicker(ref menu) => {
-                    render_action_menu(frame, full, menu, &styles);
+                Overlay::ActionMenu(ref menu) => {
+                    render_action_menu(frame, full, menu, &styles, "Actions");
+                }
+                Overlay::TypePicker(ref menu) => {
+                    render_action_menu(frame, full, menu, &styles, "New interface");
                 }
                 Overlay::Torch(ref torch) => {
                     render_torch(frame, full, torch, &styles);

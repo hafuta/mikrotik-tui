@@ -20,6 +20,7 @@ mod overlay;
 mod paint;
 mod palette;
 mod probe;
+mod scroll;
 mod styles;
 mod table;
 mod torch;

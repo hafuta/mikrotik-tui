@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 
-use mtui_core::{FieldKind, FieldSpec, FormSchema, FormSection, extra_status_fields};
+use mtui_core::{
+    FieldKind, FieldSpec, FormSchema, FormSection, default_writable_value, extra_status_fields,
+    field_visible, join_ros_list, split_ros_list, with_leading_none,
+};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -14,8 +17,11 @@ use crate::login::is_printable_char;
 use crate::overlay::{
     Modal, ModalButton, ModalButtonKind, compact_modal_rect, dim_canvas, render_modal,
 };
+use crate::scroll::ScrollView;
 use crate::styles::Styles;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+const SHEET_HINT_ROWS: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormMode {
@@ -41,9 +47,62 @@ pub struct FormSession {
     pub prompt_command: Option<&'static str>,
     pub prompt_schema: Option<&'static FormSchema>,
     pub lookup: Option<Box<LookupPicker>>,
+    /// In-progress repeater rows (may include empty drafts not yet in `values`).
+    pub repeat: HashMap<String, Vec<String>>,
 }
 
-/// Nested live-lookup picker sitting on a form sheet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormRow<'a> {
+    Field {
+        locked: bool,
+        field: &'a FieldSpec,
+    },
+    RepeatItem {
+        locked: bool,
+        field: &'a FieldSpec,
+        index: usize,
+    },
+    RepeatAdd {
+        locked: bool,
+        field: &'a FieldSpec,
+    },
+}
+
+impl<'a> FormRow<'a> {
+    fn field(self) -> &'a FieldSpec {
+        match self {
+            Self::Field { field, .. }
+            | Self::RepeatItem { field, .. }
+            | Self::RepeatAdd { field, .. } => field,
+        }
+    }
+
+    fn locked(self) -> bool {
+        match self {
+            Self::Field { locked, .. }
+            | Self::RepeatItem { locked, .. }
+            | Self::RepeatAdd { locked, .. } => locked,
+        }
+    }
+}
+
+fn repeat_from_schema(
+    schema: &FormSchema,
+    values: &HashMap<String, String>,
+) -> HashMap<String, Vec<String>> {
+    let mut out = HashMap::new();
+    for section in schema.sections.iter().chain(schema.create_sections.iter()) {
+        for field in section.fields {
+            if matches!(field.kind, FieldKind::Repeat) {
+                let raw = values.get(field.key).map_or("", String::as_str);
+                out.insert(field.key.to_string(), split_ros_list(raw));
+            }
+        }
+    }
+    out
+}
+
+/// Nested picker sitting on a form sheet (live lookup or static enum).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LookupPicker {
     pub field_key: String,
@@ -68,6 +127,26 @@ impl FormSession {
         row: &HashMap<String, String>,
         schema: &FormSchema,
     ) -> Self {
+        let mut values = row.clone();
+        let mut original = row.clone();
+        for field in schema
+            .sections
+            .iter()
+            .chain(schema.create_sections.iter())
+            .flat_map(|section| section.fields)
+        {
+            let empty = values.get(field.key).is_none_or(String::is_empty);
+            if !empty {
+                continue;
+            }
+            let default = default_writable_value(field.kind);
+            if default.is_empty() {
+                continue;
+            }
+            values.insert(field.key.to_string(), default.clone());
+            original.insert(field.key.to_string(), default);
+        }
+        let repeat = repeat_from_schema(schema, &values);
         Self {
             resource_id: resource_id.into(),
             record_id: record_id.into(),
@@ -75,8 +154,8 @@ impl FormSession {
             section: 0,
             focus: 0,
             offset: 0,
-            values: row.clone(),
-            original: row.clone(),
+            values,
+            original,
             extras: extra_status_fields(schema, row),
             error: None,
             saving: false,
@@ -85,6 +164,7 @@ impl FormSession {
             prompt_command: None,
             prompt_schema: None,
             lookup: None,
+            repeat,
         }
     }
 
@@ -95,9 +175,10 @@ impl FormSession {
             for field in section.fields {
                 values
                     .entry(field.key.to_string())
-                    .or_insert_with(String::new);
+                    .or_insert_with(|| default_writable_value(field.kind));
             }
         }
+        let repeat = repeat_from_schema(schema, &values);
         Self {
             resource_id: resource_id.into(),
             record_id: String::new(),
@@ -115,6 +196,7 @@ impl FormSession {
             prompt_command: None,
             prompt_schema: None,
             lookup: None,
+            repeat,
         }
     }
 
@@ -143,6 +225,7 @@ impl FormSession {
                 values.entry(field.key.to_string()).or_default();
             }
         }
+        let repeat = repeat_from_schema(schema, &values);
         Self {
             resource_id: resource_id.into(),
             record_id: record_id.into(),
@@ -160,6 +243,7 @@ impl FormSession {
             prompt_command: Some(command),
             prompt_schema: Some(schema),
             lookup: None,
+            repeat,
         }
     }
 
@@ -171,6 +255,7 @@ impl FormSession {
         schema: &'static FormSchema,
         values: HashMap<String, String>,
     ) -> Self {
+        let repeat = repeat_from_schema(schema, &values);
         Self {
             resource_id: resource_id.into(),
             record_id: record_id.into(),
@@ -188,6 +273,7 @@ impl FormSession {
             prompt_command: Some(command),
             prompt_schema: Some(schema),
             lookup: None,
+            repeat,
         }
     }
 
@@ -223,7 +309,7 @@ impl FormSession {
             return;
         }
         self.section = self.section.min(sections.len() - 1);
-        let len = self.visible_fields(schema).len().max(1);
+        let len = self.visible_rows(schema).len().max(1);
         self.focus = self.focus.min(len - 1);
         let max_off = len.saturating_sub(1);
         self.offset = self.offset.min(max_off);
@@ -238,17 +324,37 @@ impl FormSession {
         let Some(section) = sections.get(self.section) else {
             return Vec::new();
         };
-        let fields: Vec<(bool, &FieldSpec)> = section
+        section
             .fields
             .iter()
+            .filter(|field| field_visible(&self.resource_id, field.key, &self.values))
             .map(|field| {
                 (
                     section.read_only || matches!(field.kind, FieldKind::Readonly),
                     field,
                 )
             })
-            .collect();
-        fields
+            .collect()
+    }
+
+    fn visible_rows<'a>(&self, schema: &'a FormSchema) -> Vec<FormRow<'a>> {
+        let mut rows = Vec::new();
+        for (locked, field) in self.visible_fields(schema) {
+            if matches!(field.kind, FieldKind::Repeat) {
+                let n = self.repeat.get(field.key).map_or(0, Vec::len);
+                for index in 0..n {
+                    rows.push(FormRow::RepeatItem {
+                        locked,
+                        field,
+                        index,
+                    });
+                }
+                rows.push(FormRow::RepeatAdd { locked, field });
+            } else {
+                rows.push(FormRow::Field { locked, field });
+            }
+        }
+        rows
     }
 
     pub fn move_section(&mut self, schema: &FormSchema, delta: isize) {
@@ -272,7 +378,7 @@ impl FormSession {
     }
 
     pub fn move_field(&mut self, schema: &FormSchema, delta: isize) {
-        let len = self.visible_fields(schema).len();
+        let len = self.visible_rows(schema).len();
         if len == 0 {
             return;
         }
@@ -281,36 +387,130 @@ impl FormSession {
         self.focus = usize::try_from((cur + delta).clamp(0, max)).unwrap_or(0);
     }
 
+    #[must_use]
+    pub fn focused_takes_typed_input(&self, schema: &FormSchema) -> bool {
+        match self.visible_rows(schema).get(self.focus).copied() {
+            Some(FormRow::RepeatItem { locked, .. }) => !locked,
+            Some(FormRow::Field { locked, field }) => !locked && field.kind.takes_typed_input(),
+            Some(FormRow::RepeatAdd { .. }) | None => false,
+        }
+    }
+
     pub fn insert_char(&mut self, schema: &FormSchema, ch: char) {
         if !is_printable_char(ch) {
             return;
         }
-        let Some(field) = self.focused_spec(schema) else {
+        let Some(row) = self.visible_rows(schema).get(self.focus).copied() else {
             return;
         };
-        if !field.kind.takes_typed_input() {
-            return;
+        match row {
+            FormRow::RepeatItem {
+                locked,
+                field,
+                index,
+            } if !locked => {
+                let current = self
+                    .repeat
+                    .get(field.key)
+                    .and_then(|items| items.get(index))
+                    .map_or("", String::as_str);
+                if !field.kind.accepts_char(field.key, current, ch) {
+                    return;
+                }
+                if let Some(item) = self
+                    .repeat
+                    .entry(field.key.to_string())
+                    .or_default()
+                    .get_mut(index)
+                {
+                    item.push(ch);
+                }
+                self.write_repeat(field.key);
+            }
+            FormRow::Field { locked, field } if !locked && field.kind.takes_typed_input() => {
+                let current = self.values.get(field.key).map_or("", String::as_str);
+                if !field.kind.accepts_char(field.key, current, ch) {
+                    return;
+                }
+                self.values
+                    .entry(field.key.to_string())
+                    .or_default()
+                    .push(ch);
+            }
+            _ => {}
         }
-        self.values
-            .entry(field.key.to_string())
-            .or_default()
-            .push(ch);
     }
 
     pub fn backspace(&mut self, schema: &FormSchema) {
-        let Some(field) = self.focused_spec(schema) else {
+        let Some(row) = self.visible_rows(schema).get(self.focus).copied() else {
             return;
         };
-        if !field.kind.takes_typed_input() {
-            return;
+        match row {
+            FormRow::RepeatItem {
+                locked,
+                field,
+                index,
+            } if !locked => {
+                let empty = self
+                    .repeat
+                    .get(field.key)
+                    .and_then(|items| items.get(index))
+                    .is_none_or(String::is_empty);
+                if empty {
+                    if let Some(items) = self.repeat.get_mut(field.key)
+                        && index < items.len()
+                    {
+                        items.remove(index);
+                    }
+                    self.write_repeat(field.key);
+                    self.focus_repeat_after_remove(schema, field.key, index);
+                } else if let Some(item) = self
+                    .repeat
+                    .get_mut(field.key)
+                    .and_then(|items| items.get_mut(index))
+                {
+                    item.pop();
+                    self.write_repeat(field.key);
+                }
+            }
+            FormRow::Field { locked, field } if !locked && field.kind.takes_typed_input() => {
+                self.values.entry(field.key.to_string()).or_default().pop();
+            }
+            _ => {}
         }
-        self.values.entry(field.key.to_string()).or_default().pop();
     }
 
     pub fn activate(&mut self, schema: &FormSchema) {
-        let Some(field) = self.focused_spec(schema).copied() else {
+        let Some(row) = self.visible_rows(schema).get(self.focus).copied() else {
             return;
         };
+        if row.locked() {
+            return;
+        }
+        match row {
+            FormRow::RepeatAdd { field, .. } => {
+                self.repeat_push_empty(field.key);
+                let index = self.last_repeat_index(field.key);
+                self.focus_repeat_item(schema, field.key, index);
+            }
+            FormRow::RepeatItem { field, index, .. } => {
+                let filled = self
+                    .repeat
+                    .get(field.key)
+                    .and_then(|items| items.get(index))
+                    .is_some_and(|item| !item.is_empty());
+                if filled {
+                    self.repeat_push_empty(field.key);
+                    let last = self.last_repeat_index(field.key);
+                    self.focus_repeat_item(schema, field.key, last);
+                }
+            }
+            FormRow::Field { field, .. } => self.activate_scalar(field),
+        }
+        self.clamp(schema);
+    }
+
+    fn activate_scalar(&mut self, field: &FieldSpec) {
         match field.kind {
             FieldKind::Toggle => {
                 let now = self.values.get(field.key).map_or("false", String::as_str);
@@ -323,9 +523,30 @@ impl FormSession {
             }
             FieldKind::Enum { values } => {
                 let now = self.values.get(field.key).cloned().unwrap_or_default();
-                let idx = values.iter().position(|v| *v == now).unwrap_or(0);
-                let next = values[(idx + 1) % values.len()];
-                self.values.insert(field.key.to_string(), next.to_string());
+                let options: Vec<String> =
+                    values.iter().map(|value| (*value).to_string()).collect();
+                let focus = options
+                    .iter()
+                    .position(|option| option == &now)
+                    .unwrap_or(0);
+                let generation = self
+                    .lookup
+                    .as_ref()
+                    .map_or(1, |picker| picker.generation.wrapping_add(1));
+                self.lookup = Some(Box::new(LookupPicker {
+                    field_key: field.key.to_string(),
+                    resource_id: "",
+                    value_key: "",
+                    multiple: false,
+                    filter: String::new(),
+                    options,
+                    selected: Vec::new(),
+                    focus,
+                    loading: false,
+                    error: None,
+                    request_id: 0,
+                    generation,
+                }));
             }
             FieldKind::Lookup {
                 resource_id,
@@ -357,11 +578,72 @@ impl FormSession {
         }
     }
 
+    fn last_repeat_index(&self, key: &str) -> usize {
+        self.repeat
+            .get(key)
+            .map_or(0, |items| items.len().saturating_sub(1))
+    }
+
+    fn write_repeat(&mut self, key: &str) {
+        let joined = self
+            .repeat
+            .get(key)
+            .map_or_else(String::new, |items| join_ros_list(items));
+        self.values.insert(key.to_string(), joined);
+    }
+
+    fn repeat_push_empty(&mut self, key: &str) {
+        self.repeat
+            .entry(key.to_string())
+            .or_default()
+            .push(String::new());
+        self.write_repeat(key);
+    }
+
+    fn focus_repeat_item(&mut self, schema: &FormSchema, key: &str, index: usize) {
+        if let Some(focus) = self.visible_rows(schema).iter().position(|row| {
+            matches!(
+                row,
+                FormRow::RepeatItem {
+                    field,
+                    index: item,
+                    ..
+                } if field.key == key && *item == index
+            )
+        }) {
+            self.focus = focus;
+        }
+    }
+
+    fn focus_repeat_after_remove(&mut self, schema: &FormSchema, key: &str, index: usize) {
+        let rows = self.visible_rows(schema);
+        let target = if self.repeat.get(key).is_some_and(|items| !items.is_empty()) {
+            let item = index.min(self.last_repeat_index(key));
+            rows.iter().position(|row| {
+                matches!(
+                    row,
+                    FormRow::RepeatItem {
+                        field,
+                        index: found,
+                        ..
+                    } if field.key == key && *found == item
+                )
+            })
+        } else {
+            rows.iter()
+                .position(|row| matches!(row, FormRow::RepeatAdd { field, .. } if field.key == key))
+        };
+        if let Some(focus) = target {
+            self.focus = focus;
+        }
+        self.clamp(schema);
+    }
+
     #[must_use]
     pub fn focused_spec<'a>(&self, schema: &'a FormSchema) -> Option<&'a FieldSpec> {
-        self.visible_fields(schema)
+        self.visible_rows(schema)
             .get(self.focus)
-            .map(|(_, field)| *field)
+            .map(|row| row.field())
     }
 
     #[must_use]
@@ -394,8 +676,12 @@ impl FormSession {
         let picker = self.lookup.as_mut().expect("lookup still open");
         picker.loading = false;
         picker.error = error;
-        picker.options = options;
-        let filtered = filtered_lookup_options(&picker.options, &picker.filter);
+        picker.options = if picker.resource_id == "ntp-keys" {
+            with_leading_none(options)
+        } else {
+            options
+        };
+        let filtered = filtered_lookup_options(&picker.options, &picker.filter, &picker.field_key);
         if picker.focus >= filtered.len() {
             picker.focus = filtered.len().saturating_sub(1);
         }
@@ -411,7 +697,7 @@ impl FormSession {
         let Some(picker) = self.lookup.as_mut() else {
             return;
         };
-        let len = filtered_lookup_options(&picker.options, &picker.filter).len();
+        let len = filtered_lookup_options(&picker.options, &picker.filter, &picker.field_key).len();
         if len == 0 {
             picker.focus = 0;
             return;
@@ -447,9 +733,10 @@ impl FormSession {
         if !picker.multiple {
             return;
         }
-        let Some(value) = filtered_lookup_options(&picker.options, &picker.filter)
-            .get(picker.focus)
-            .cloned()
+        let Some(value) =
+            filtered_lookup_options(&picker.options, &picker.filter, &picker.field_key)
+                .get(picker.focus)
+                .cloned()
         else {
             return;
         };
@@ -470,7 +757,7 @@ impl FormSession {
                 .insert(picker.field_key, join_ros_list(&picker.selected));
             return;
         }
-        let filtered = filtered_lookup_options(&picker.options, &picker.filter);
+        let filtered = filtered_lookup_options(&picker.options, &picker.filter, &picker.field_key);
         let Some(value) = filtered.get(picker.focus) else {
             self.lookup = Some(Box::new(picker));
             return;
@@ -639,29 +926,19 @@ pub const LOOKUP_TEST_FORM: FormSchema = FormSchema {
     create_sections: LOOKUP_TEST_SECTIONS,
 };
 
-fn split_ros_list(raw: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for part in raw.split(',') {
-        let trimmed = part.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if !out.iter().any(|item| item == trimmed) {
-            out.push(trimmed.to_string());
-        }
-    }
-    out
-}
-
-fn join_ros_list(values: &[String]) -> String {
-    values.join(",")
-}
-
-fn filtered_lookup_options(options: &[String], filter: &str) -> Vec<String> {
+fn filtered_lookup_options(options: &[String], filter: &str, field_key: &str) -> Vec<String> {
     let q = filter.to_ascii_lowercase();
     options
         .iter()
-        .filter(|option| q.is_empty() || option.to_ascii_lowercase().contains(&q))
+        .filter(|option| {
+            if q.is_empty() {
+                return true;
+            }
+            option.to_ascii_lowercase().contains(&q)
+                || enum_display_value(field_key, option)
+                    .to_ascii_lowercase()
+                    .contains(&q)
+        })
         .cloned()
         .collect()
 }
@@ -675,8 +952,25 @@ pub fn render_form_sheet(
     styles: &Styles,
 ) {
     dim_canvas(frame, area, styles);
+    let sections = session.schema_sections(schema);
+    let show_tabs = sections.len() > 1;
+    let tab_height = u16::from(show_tabs) * 2;
+    let extra = if sections.get(session.section).is_some_and(|s| s.read_only) {
+        session.extras.len().min(6)
+    } else {
+        0
+    };
+    let field_n = session.visible_rows(schema).len();
     let width = area.width.saturating_sub(4).clamp(48, 92);
-    let height = area.height.saturating_sub(2).clamp(12, 28);
+    let max_h = area.height.saturating_sub(2).max(12);
+    let chrome = 2u16
+        .saturating_add(tab_height)
+        .saturating_add(SHEET_HINT_ROWS);
+    let needed = chrome
+        .saturating_add(u16::try_from(field_n.saturating_add(extra).max(3)).unwrap_or(u16::MAX));
+    let height = needed.clamp(12, max_h);
+    let list_h = usize::from(height.saturating_sub(chrome)).max(1);
+    let field_view = ScrollView::around_focus(session.focus, list_h.saturating_sub(extra), field_n);
     let rect = compact_modal_rect(area, width, height);
     frame.render_widget(Clear, rect);
 
@@ -686,8 +980,13 @@ pub fn render_form_sheet(
     } else {
         styles.border
     };
+    let mut title_spans = vec![Span::styled(format!(" {title} "), styles.title)];
+    let range = field_view.range_label();
+    if !range.is_empty() {
+        title_spans.push(Span::styled(format!("{range} "), styles.muted));
+    }
     let block = Block::default()
-        .title(Span::styled(format!(" {title} "), styles.title))
+        .title(Line::from(title_spans))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border)
@@ -696,15 +995,12 @@ pub fn render_form_sheet(
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
 
-    let sections = session.schema_sections(schema);
-    let show_tabs = sections.len() > 1;
-    let tab_height = if show_tabs { 2 } else { 0 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(tab_height),
             Constraint::Min(3),
-            Constraint::Length(2),
+            Constraint::Length(SHEET_HINT_ROWS),
         ])
         .split(inner);
 
@@ -739,7 +1035,10 @@ pub fn render_form_sheet(
         styles.muted
     };
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(hint, hint_style))),
+        Paragraph::new(Line::from(Span::styled(
+            clip_line(&hint, usize::from(chunks[2].width.max(1))),
+            hint_style,
+        ))),
         chunks[2],
     );
 
@@ -759,22 +1058,29 @@ fn sheet_field_lines(
     height: usize,
     styles: &Styles,
 ) -> Vec<Line<'static>> {
-    let fields = session.visible_fields(schema);
+    let rows = session.visible_rows(schema);
     let extra_rows = if sections.get(session.section).is_some_and(|s| s.read_only) {
         session.extras.len().min(6)
     } else {
         0
     };
-    let visible_h = height.saturating_sub(extra_rows);
-    let start = session.offset.min(fields.len().saturating_sub(1));
+    let visible_h = height.saturating_sub(extra_rows).max(1);
+    let view = ScrollView::around_focus(session.focus, visible_h, rows.len());
     let mut lines = Vec::new();
-    for (idx, (locked, field)) in fields.iter().enumerate().skip(start).take(visible_h.max(1)) {
-        lines.push(field_line(
+    for (window_i, (idx, row)) in rows
+        .iter()
+        .enumerate()
+        .skip(view.offset)
+        .take(view.visible)
+        .enumerate()
+    {
+        let gutter = view.gutter(window_i);
+        lines.push(row_line(
             session,
-            field,
-            *locked,
+            *row,
             idx == session.focus,
             width,
+            gutter,
             styles,
         ));
     }
@@ -792,7 +1098,7 @@ fn sheet_field_lines(
 fn sheet_hint(
     session: &FormSession,
     schema: &FormSchema,
-    sections: &[FormSection],
+    _sections: &[FormSection],
     show_tabs: bool,
 ) -> String {
     if session.confirm_discard {
@@ -807,21 +1113,23 @@ fn sheet_hint(
     if let Some(err) = &session.error {
         return err.clone();
     }
-    let field_hint = session.focused_spec(schema).map_or("tab field", |field| {
-        if sections
-            .get(session.section)
-            .is_some_and(|section| section.read_only)
-            || matches!(field.kind, FieldKind::Readonly)
-        {
-            FieldKind::Readonly.edit_hint()
-        } else {
-            field.kind.edit_hint()
-        }
-    });
+    let field_hint = session
+        .visible_rows(schema)
+        .get(session.focus)
+        .copied()
+        .map_or("tab field", |row| {
+            if row.locked() {
+                FieldKind::Readonly.edit_hint()
+            } else {
+                match row {
+                    FormRow::RepeatAdd { .. } => "enter add",
+                    FormRow::RepeatItem { .. } => "type value   enter add   bksp empty removes",
+                    FormRow::Field { field, .. } => field.kind.edit_hint(),
+                }
+            }
+        });
     if show_tabs {
-        let typing = session
-            .focused_spec(schema)
-            .is_some_and(|field| field.kind.takes_typed_input());
+        let typing = session.focused_takes_typed_input(schema);
         let tab_jump = if typing { "" } else { "1-9 jump   " };
         format!("[ / ] tabs   {tab_jump}↑↓ field   tab field   {field_hint}   ctrl+s save   esc")
     } else {
@@ -838,8 +1146,13 @@ fn render_save_preview(
     schema: &FormSchema,
     styles: &Styles,
 ) {
-    let changes =
-        mtui_core::preview_changes(schema, &session.original, &session.values, PREVIEW_MASK);
+    let changes = mtui_core::preview_changes(
+        &session.resource_id,
+        schema,
+        &session.original,
+        &session.values,
+        PREVIEW_MASK,
+    );
     let body = if changes.is_empty() {
         "No writable fields changed.".to_string()
     } else {
@@ -880,7 +1193,9 @@ fn render_lookup_picker(frame: &mut Frame<'_>, area: Rect, picker: &LookupPicker
     let rect = compact_modal_rect(area, width, height);
     frame.render_widget(Clear, rect);
 
-    let title = if picker.multiple {
+    let title = if picker.resource_id.is_empty() {
+        " Select "
+    } else if picker.multiple {
         " Lookup (multi) "
     } else {
         " Lookup "
@@ -957,7 +1272,7 @@ fn lookup_picker_lines(
             styles.signal,
         )));
     }
-    let filtered = filtered_lookup_options(&picker.options, &picker.filter);
+    let filtered = filtered_lookup_options(&picker.options, &picker.filter, &picker.field_key);
     if filtered.is_empty() && lines.len() < height {
         lines.push(Line::from(Span::styled("no matches", styles.muted)));
         return lines;
@@ -976,7 +1291,8 @@ fn lookup_picker_lines(
         } else {
             ""
         };
-        let body = format!("{caret} {mark}{option}");
+        let label = enum_display_value(&picker.field_key, option);
+        let body = format!("{caret} {mark}{label}");
         let style = if idx == picker.focus {
             styles.focus
         } else {
@@ -1138,20 +1454,39 @@ fn sheet_title(session: &FormSession, schema: &FormSchema) -> String {
     bits.join(" · ")
 }
 
-const LABEL_COLS: usize = 14;
+const LABEL_COLS: usize = 22;
 const TAG_COLS: usize = 6;
 
-fn field_line(
+fn enum_display_value(key: &str, raw: &str) -> String {
+    match (key, raw) {
+        ("remote-log-format", "syslog") | ("syslog-time-format", "bsd-syslog") => {
+            "BSD syslog".into()
+        }
+        ("remote-log-format", "cef") => "CEF".into(),
+        ("remote-protocol", "tls") => "TLS".into(),
+        ("syslog-time-format", "iso8601") => "ISO 8601".into(),
+        _ => raw.to_string(),
+    }
+}
+
+fn row_line(
     session: &FormSession,
-    field: &FieldSpec,
-    locked: bool,
+    row: FormRow<'_>,
     focused: bool,
     width: usize,
+    gutter: char,
     styles: &Styles,
 ) -> Line<'static> {
+    let field = row.field();
+    let locked = row.locked();
     let caret = if focused { ">" } else { " " };
-    let label = pad_visual(field.label, LABEL_COLS);
-    let tag = pad_visual(field.kind.tag(), TAG_COLS);
+    let (label, tag) = match row {
+        FormRow::RepeatItem { index, .. } if index > 0 => ("", ""),
+        FormRow::RepeatAdd { .. } => ("", "list"),
+        _ => (field.label, field.kind.tag()),
+    };
+    let label = pad_visual(label, LABEL_COLS);
+    let tag = pad_visual(tag, TAG_COLS);
     let label_style = if focused { styles.focus } else { styles.muted };
     let tag_style = if focused { styles.key } else { styles.quiet };
     let mut spans = vec![
@@ -1163,20 +1498,50 @@ fn field_line(
         .iter()
         .map(|span| span.content.as_ref().width())
         .sum::<usize>();
-    let rest = width.saturating_sub(used);
-    spans.extend(field_control(
-        field.kind,
-        session.values.get(field.key).map_or("", String::as_str),
-        locked,
-        focused,
-        rest,
-        styles,
-    ));
+    let gutter_w = usize::from(gutter != ' ');
+    let rest = width.saturating_sub(used).saturating_sub(gutter_w);
+    let raw = match row {
+        FormRow::RepeatItem { index, .. } => session
+            .repeat
+            .get(field.key)
+            .and_then(|items| items.get(index))
+            .map_or("", String::as_str),
+        FormRow::RepeatAdd { .. } => "",
+        FormRow::Field { .. } => session.values.get(field.key).map_or("", String::as_str),
+    };
+    if matches!(row, FormRow::RepeatAdd { .. }) {
+        spans.extend(repeat_add_control(locked, focused, rest, styles));
+    } else {
+        spans.extend(field_control(field, raw, locked, focused, rest, styles));
+    }
+    if gutter_w == 1 {
+        let gutter_style = if gutter == '▐' {
+            styles.key
+        } else {
+            styles.quiet
+        };
+        spans.push(Span::styled(gutter.to_string(), gutter_style));
+    }
     Line::from(spans)
 }
 
+fn repeat_add_control(
+    locked: bool,
+    focused: bool,
+    width: usize,
+    styles: &Styles,
+) -> Vec<Span<'static>> {
+    let style = if focused && !locked {
+        styles.focus
+    } else {
+        styles.muted
+    };
+    let body = pad_visual("+ add", width);
+    vec![Span::styled(body, style)]
+}
+
 fn field_control(
-    kind: FieldKind,
+    field: &FieldSpec,
     raw: &str,
     locked: bool,
     focused: bool,
@@ -1195,19 +1560,26 @@ fn field_control(
     } else {
         styles.border
     };
-    match kind {
+    match field.kind {
         FieldKind::Toggle => toggle_control(raw, locked, focused, width, styles),
-        FieldKind::Enum { .. } | FieldKind::Lookup { .. } => slot_control(
-            if raw.is_empty() { "—" } else { raw },
-            '<',
-            '▾',
-            '>',
-            focused && !locked,
-            locked,
-            width,
-            chrome,
-            value_style,
-        ),
+        FieldKind::Enum { .. } | FieldKind::Lookup { .. } => {
+            let shown = if raw.is_empty() {
+                "—".to_string()
+            } else {
+                enum_display_value(field.key, raw)
+            };
+            slot_control(
+                &shown,
+                '<',
+                '▾',
+                '>',
+                focused && !locked,
+                locked,
+                width,
+                chrome,
+                value_style,
+            )
+        }
         FieldKind::Secret => {
             let shown = if raw.is_empty() {
                 String::new()
@@ -1230,7 +1602,7 @@ fn field_control(
             let body = pad_visual(raw, width);
             vec![Span::styled(body, styles.muted)]
         }
-        FieldKind::Text | FieldKind::Number => slot_control(
+        FieldKind::Text | FieldKind::Number | FieldKind::Repeat => slot_control(
             raw,
             '[',
             ' ',
@@ -1430,6 +1802,463 @@ mod tests {
         assert_eq!(
             session.values.get("name").map(String::as_str),
             Some("ether1-")
+        );
+    }
+
+    #[test]
+    fn repeat_field_adds_types_and_removes_rows() {
+        let schema = FormSchema {
+            title_key: "broadcast-addresses",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[
+                    FieldSpec {
+                        key: "broadcast",
+                        label: "Broadcast",
+                        kind: FieldKind::Toggle,
+                    },
+                    FieldSpec {
+                        key: "broadcast-addresses",
+                        label: "Broadcast Addresses",
+                        kind: FieldKind::Repeat,
+                    },
+                ],
+            }],
+            create_sections: &[],
+        };
+        let mut row = HashMap::new();
+        row.insert("broadcast".into(), "true".into());
+        row.insert("broadcast-addresses".into(), "10.0.0.255,10.0.1.255".into());
+        let mut session = FormSession::edit("ntp-server", "*0", &row, &schema);
+        assert_eq!(session.visible_rows(&schema).len(), 4);
+
+        session.focus = 3;
+        session.activate(&schema);
+        session.insert_char(&schema, '9');
+        assert_eq!(
+            session
+                .values
+                .get("broadcast-addresses")
+                .map(String::as_str),
+            Some("10.0.0.255,10.0.1.255,9")
+        );
+
+        session.backspace(&schema);
+        session.backspace(&schema);
+        assert_eq!(
+            session
+                .values
+                .get("broadcast-addresses")
+                .map(String::as_str),
+            Some("10.0.0.255,10.0.1.255")
+        );
+        assert_eq!(session.visible_rows(&schema).len(), 4);
+        assert!(session.focused_takes_typed_input(&schema));
+        session.focus = 3;
+        assert!(!session.focused_takes_typed_input(&schema));
+    }
+
+    #[test]
+    fn form_sheet_scrolls_repeat_rows_and_pins_hints() {
+        let schema = FormSchema {
+            title_key: "addrs",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "addrs",
+                    label: "Addresses",
+                    kind: FieldKind::Repeat,
+                }],
+            }],
+            create_sections: &[],
+        };
+        let list = (0..20)
+            .map(|i| format!("198.51.100.{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut row = HashMap::new();
+        row.insert("addrs".into(), list);
+        let mut session = FormSession::edit("interfaces", "*1", &row, &schema);
+        let tail = session.visible_rows(&schema).len().saturating_sub(1);
+        session.focus = tail;
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(64, 14);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(
+            rendered.contains("198.51.100.19") || rendered.contains("+ add"),
+            "focused tail missing: {rendered}"
+        );
+        assert!(
+            !rendered.contains("[198.51.100.0]"),
+            "scrolled sheet still showed the first address: {rendered}"
+        );
+        assert!(
+            rendered.contains("ctrl+s") || rendered.contains("enter add"),
+            "hint must stay pinned: {rendered}"
+        );
+        assert!(
+            rendered.contains("/21") || rendered.contains('▐') || rendered.contains('│'),
+            "missing scroll chrome: {rendered}"
+        );
+    }
+
+    #[test]
+    fn number_fields_ignore_letters_and_sixth_port_digit() {
+        let schema = FormSchema {
+            title_key: "name",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[
+                    FieldSpec {
+                        key: "remote-port",
+                        label: "Remote Port",
+                        kind: FieldKind::Number,
+                    },
+                    FieldSpec {
+                        key: "memory-lines",
+                        label: "Memory Lines",
+                        kind: FieldKind::Number,
+                    },
+                ],
+            }],
+            create_sections: &[],
+        };
+        let mut session = FormSession::create("radius", &schema);
+        session.focus = 0;
+        session.insert_char(&schema, 'a');
+        session.insert_char(&schema, '-');
+        for ch in ['6', '5', '5', '3', '5', '9'] {
+            session.insert_char(&schema, ch);
+        }
+        assert_eq!(
+            session.values.get("remote-port").map(String::as_str),
+            Some("65535")
+        );
+        session.focus = 1;
+        session.insert_char(&schema, 'x');
+        session.insert_char(&schema, '1');
+        session.insert_char(&schema, '2');
+        assert_eq!(
+            session.values.get("memory-lines").map(String::as_str),
+            Some("12")
+        );
+    }
+
+    #[test]
+    fn empty_enum_defaults_to_first_value_without_dirtying() {
+        let schema = FormSchema {
+            title_key: "name",
+            subtitle_keys: &["remote-protocol"],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[
+                    FieldSpec {
+                        key: "name",
+                        label: "Name",
+                        kind: FieldKind::Text,
+                    },
+                    FieldSpec {
+                        key: "remote-protocol",
+                        label: "Protocol",
+                        kind: FieldKind::Enum {
+                            values: &["udp", "tcp"],
+                        },
+                    },
+                ],
+            }],
+            create_sections: &[],
+        };
+        let mut row = HashMap::new();
+        row.insert("name".into(), "remote".into());
+        let session = FormSession::edit("logging-actions", "*1", &row, &schema);
+        assert_eq!(
+            session.values.get("remote-protocol").map(String::as_str),
+            Some("udp")
+        );
+        assert!(!session.is_dirty());
+    }
+
+    #[test]
+    fn empty_ntp_auth_key_defaults_to_none_without_dirtying() {
+        let schema = FormSchema {
+            title_key: "enabled",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "auth-key",
+                    label: "Auth. Key",
+                    kind: FieldKind::Lookup {
+                        resource_id: "ntp-keys",
+                        value_key: "key-id",
+                        multiple: false,
+                    },
+                }],
+            }],
+            create_sections: &[],
+        };
+        let mut session = FormSession::edit("ntp-server", "", &HashMap::new(), &schema);
+        assert_eq!(
+            session.values.get("auth-key").map(String::as_str),
+            Some("none")
+        );
+        assert!(!session.is_dirty());
+        session.activate(&schema);
+        let (request_id, generation) = session
+            .lookup
+            .as_ref()
+            .map(|picker| (picker.request_id, picker.generation))
+            .expect("picker");
+        assert!(session.apply_lookup_result(request_id, generation, vec!["1".into()], None));
+        assert_eq!(
+            session.lookup.as_ref().unwrap().options,
+            vec!["none".to_string(), "1".into()]
+        );
+    }
+
+    #[test]
+    fn logging_action_shows_fields_for_selected_type() {
+        let schema = FormSchema {
+            title_key: "name",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[
+                    FieldSpec {
+                        key: "target",
+                        label: "Type",
+                        kind: FieldKind::Enum {
+                            values: &["memory", "remote"],
+                        },
+                    },
+                    FieldSpec {
+                        key: "memory-lines",
+                        label: "Memory Lines",
+                        kind: FieldKind::Number,
+                    },
+                    FieldSpec {
+                        key: "remote-log-format",
+                        label: "Remote Log Format",
+                        kind: FieldKind::Enum {
+                            values: &["default", "syslog", "cef"],
+                        },
+                    },
+                    FieldSpec {
+                        key: "syslog-facility",
+                        label: "Syslog Facility",
+                        kind: FieldKind::Enum {
+                            values: &["daemon", "kern"],
+                        },
+                    },
+                    FieldSpec {
+                        key: "remote",
+                        label: "Remote Address",
+                        kind: FieldKind::Text,
+                    },
+                ],
+            }],
+            create_sections: &[],
+        };
+        let mut session = FormSession::create("logging-actions", &schema);
+        let keys = |session: &FormSession, schema: &FormSchema| {
+            session
+                .visible_fields(schema)
+                .into_iter()
+                .map(|(_, field)| field.key)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(keys(&session, &schema), ["target", "memory-lines"]);
+        assert!(
+            session
+                .visible_fields(&schema)
+                .iter()
+                .all(|(locked, _)| !*locked)
+        );
+
+        session.values.insert("target".into(), "remote".into());
+        session
+            .values
+            .insert("remote-log-format".into(), "default".into());
+        assert_eq!(
+            keys(&session, &schema),
+            ["target", "remote-log-format", "remote"]
+        );
+
+        session
+            .values
+            .insert("remote-log-format".into(), "syslog".into());
+        session
+            .values
+            .insert("syslog-facility".into(), "daemon".into());
+        assert_eq!(
+            keys(&session, &schema),
+            ["target", "remote-log-format", "syslog-facility", "remote"]
+        );
+        session.focus = 2;
+        session.activate(&schema);
+        assert!(session.lookup_open());
+        session.lookup_move(1);
+        session.lookup_confirm();
+        assert_eq!(
+            session.values.get("syslog-facility").map(String::as_str),
+            Some("kern")
+        );
+        session.focus = 3;
+        session.insert_char(&schema, 'x');
+        assert_eq!(session.values.get("remote").map(String::as_str), Some("x"));
+
+        session.values.insert("target".into(), "memory".into());
+        session.clamp(&schema);
+        assert_eq!(keys(&session, &schema), ["target", "memory-lines"]);
+        session.focus = 1;
+        session.insert_char(&schema, '8');
+        assert_eq!(
+            session.values.get("memory-lines").map(String::as_str),
+            Some("8")
+        );
+        assert_eq!(session.values.get("remote").map(String::as_str), Some("x"));
+    }
+
+    #[test]
+    fn enum_picker_opens_selects_and_filters_display_names() {
+        let schema = FormSchema {
+            title_key: "name",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "remote-log-format",
+                    label: "Remote Log Format",
+                    kind: FieldKind::Enum {
+                        values: &["default", "syslog", "cef"],
+                    },
+                }],
+            }],
+            create_sections: &[],
+        };
+        let mut session = FormSession::create("interfaces", &schema);
+        session.activate(&schema);
+        let picker = session.lookup.as_ref().expect("picker");
+        assert!(!picker.loading);
+        assert!(picker.resource_id.is_empty());
+        assert_eq!(picker.options, ["default", "syslog", "cef"]);
+        assert_eq!(picker.focus, 0);
+
+        session.lookup_insert_char('b');
+        session.lookup_insert_char('s');
+        session.lookup_insert_char('d');
+        let picker = session.lookup.as_ref().expect("picker");
+        assert_eq!(picker.focus, 0);
+        session.lookup_confirm();
+        assert!(session.lookup.is_none());
+        assert_eq!(
+            session.values.get("remote-log-format").map(String::as_str),
+            Some("syslog")
+        );
+    }
+
+    #[test]
+    fn enum_picker_keeps_a_scrollable_viewport() {
+        const OPTIONS: &[&str] = &[
+            "opt00", "opt01", "opt02", "opt03", "opt04", "opt05", "opt06", "opt07", "opt08",
+            "opt09", "opt10", "opt11", "opt12", "opt13", "opt14", "opt15", "opt16", "opt17",
+            "opt18", "opt19",
+        ];
+        let schema = FormSchema {
+            title_key: "name",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "choice",
+                    label: "Choice",
+                    kind: FieldKind::Enum { values: OPTIONS },
+                }],
+            }],
+            create_sections: &[],
+        };
+        let mut session = FormSession::create("interfaces", &schema);
+        session.activate(&schema);
+        for _ in 0..19 {
+            session.lookup_move(1);
+        }
+        assert_eq!(session.lookup.as_ref().expect("picker").focus, 19);
+
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(36, 10);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(rendered.contains("Select"));
+        assert!(rendered.contains("opt19"));
+    }
+
+    #[test]
+    fn create_enum_defaults_protocol_to_first_value() {
+        let schema = FormSchema {
+            title_key: "name",
+            subtitle_keys: &[],
+            sections: &[],
+            create_sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "remote-protocol",
+                    label: "Protocol",
+                    kind: FieldKind::Enum {
+                        values: &["udp", "tcp"],
+                    },
+                }],
+            }],
+        };
+        let session = FormSession::create("logging-actions", &schema);
+        assert_eq!(
+            session.values.get("remote-protocol").map(String::as_str),
+            Some("udp")
         );
     }
 
@@ -1689,6 +2518,10 @@ mod tests {
             !rendered.contains("space toggle"),
             "hints follow the focused field"
         );
+        assert_eq!(
+            session.values.get("arp").map(String::as_str),
+            Some("enabled")
+        );
     }
 
     #[test]
@@ -1911,7 +2744,9 @@ mod tests {
         }
         assert!(rendered.contains("ether1"));
         assert!(rendered.contains("Lookup"));
-        assert!(rendered.contains("lookup"));
-        assert!(rendered.contains("space pick"));
+        assert!(
+            rendered.contains("type filter") || rendered.contains("enter select"),
+            "picker hint must stay pinned: {rendered}"
+        );
     }
 }

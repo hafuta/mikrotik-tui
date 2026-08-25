@@ -1028,9 +1028,27 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "ntp",
-        "NTP client/server: how the clock is synchronized.",
-        "Point at reliable NTP. Many features (certs, logs) need a sane clock.",
-        "enabled, servers, mode, freq-error (status)."
+        "NTP client: how this router synchronizes its clock from NTP servers.",
+        "Point the client at reliable NTP sources. Certificates, logs, and many services need a \
+         sane clock.",
+        "enabled, servers, mode, status.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/40992869/NTP"
+    ),
+    guide!(
+        "ntp-server",
+        "NTP server: this router as an NTP source for LAN clients.",
+        "Enable the server so clients can unicast to the router. Broadcast needs \
+         broadcast-addresses. Set local-clock-stratum when use-local-clock is on.",
+        "enabled, broadcast, multicast, manycast, broadcast-addresses, vrf, use-local-clock, \
+         local-clock-stratum, auth-key.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/40992869/NTP"
+    ),
+    guide!(
+        "ntp-keys",
+        "NTP symmetric keys: numeric key ids and their secret values.",
+        "Create a key here, then pick its id as Auth. Key on NTP Server (or leave none).",
+        "key-id, key-val.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/40992869/NTP"
     ),
     guide!(
         "clock",
@@ -1079,9 +1097,23 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "logging",
-        "Log rules: which topics go to memory, disk, email, or remote syslog.",
-        "Tune noise vs audit. The Logs screen is the memory/file tail, not this config.",
+        "Log rules: which topics go to an action (memory, disk, echo, email, or remote syslog).",
+        "Tune noise vs audit. Each rule picks an action from Logging Actions. The Logs screen \
+         is the memory/file tail, not this config.",
         "topics, action, prefix, disabled."
+    ),
+    guide!(
+        "logging-actions",
+        "Log destinations: memory, disk, console echo, remote syslog, email, or a script. \
+         Built-in names (memory, disk, echo, remote, email) exist on typical routers.",
+        "Configure the destination here, then point a Logging rule at it. An action is unused \
+         until a rule uses its name. Fields follow Type: memory, disk, echo, remote, email, or \
+         script. Remote syslog adds address, port, protocol (udp, tcp, or tls), format, and VRF. \
+         Check Certificate appears only for TLS. Syslog Facility and Syslog Severity appear only \
+         for BSD syslog; CEF Event Delimiter only for CEF.",
+        "name, Type, then fields for the selected Type (memory lines, disk file, remote syslog, \
+         email, or script).",
+        "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/log/"
     ),
     guide!(
         "snmp",

@@ -8,6 +8,9 @@
 //! - `/rest/system/scheduler`
 //! - `/rest/system/script`
 //! - `/rest/system/logging`
+//! - `/rest/system/logging/action`
+//! - `/rest/system/ntp/server`
+//! - `/rest/system/ntp/key`
 //! - `/rest/snmp`
 //! - `/rest/snmp/community`
 //! - `/rest/certificate`
@@ -52,6 +55,16 @@ const LOOKUP_FILE: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_VRF: FieldKind = FieldKind::Lookup {
+    resource_id: "vrf",
+    value_key: "name",
+    multiple: false,
+};
+const LOOKUP_NTP_KEY: FieldKind = FieldKind::Lookup {
+    resource_id: "ntp-keys",
+    value_key: "key-id",
+    multiple: false,
+};
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
@@ -63,6 +76,108 @@ const GROUP: FieldSpec = f!("group", "Group", LOOKUP_USER_GROUP);
 const ON_EVENT: FieldSpec = f!("on-event", "On event", LOOKUP_SCRIPT);
 const CA: FieldSpec = f!("ca", "CA", LOOKUP_CERTIFICATE);
 const FILE_NAME: FieldSpec = f!("file-name", "File name", LOOKUP_FILE);
+
+/// Type combo for `/system/logging/action` (API key `target`).
+const LOGGING_ACTION_TYPES: &[&str] = &["memory", "disk", "echo", "remote", "email", "script"];
+const LOGGING_ACTION_TYPE: FieldSpec = f!(
+    "target",
+    "Type",
+    FieldKind::Enum {
+        values: LOGGING_ACTION_TYPES,
+    }
+);
+const REMOTE_PROTOCOLS: &[&str] = &["udp", "tcp", "tls"];
+const REMOTE_PROTOCOL: FieldSpec = f!(
+    "remote-protocol",
+    "Remote Protocol",
+    FieldKind::Enum {
+        values: REMOTE_PROTOCOLS,
+    }
+);
+const REMOTE_LOG_FORMATS: &[&str] = &["default", "syslog", "cef"];
+const REMOTE_LOG_FORMAT: FieldSpec = f!(
+    "remote-log-format",
+    "Remote Log Format",
+    FieldKind::Enum {
+        values: REMOTE_LOG_FORMATS,
+    }
+);
+const SYSLOG_FACILITIES: &[&str] = &[
+    "daemon", "kern", "user", "mail", "auth", "syslog", "lpr", "news", "uucp", "cron", "authpriv",
+    "ftp", "ntp", "local0", "local1", "local2", "local3", "local4", "local5", "local6", "local7",
+];
+const SYSLOG_FACILITY: FieldSpec = f!(
+    "syslog-facility",
+    "Syslog Facility",
+    FieldKind::Enum {
+        values: SYSLOG_FACILITIES,
+    }
+);
+const SYSLOG_SEVERITIES: &[&str] = &[
+    "auto",
+    "emergency",
+    "alert",
+    "critical",
+    "error",
+    "warning",
+    "notice",
+    "info",
+    "debug",
+];
+const SYSLOG_SEVERITY: FieldSpec = f!(
+    "syslog-severity",
+    "Syslog Severity",
+    FieldKind::Enum {
+        values: SYSLOG_SEVERITIES,
+    }
+);
+const SYSLOG_TIME_FORMATS: &[&str] = &["bsd-syslog", "iso8601"];
+const SYSLOG_TIME_FORMAT: FieldSpec = f!(
+    "syslog-time-format",
+    "Timestamp Format",
+    FieldKind::Enum {
+        values: SYSLOG_TIME_FORMATS,
+    }
+);
+const LOGGING_ACTION_GENERAL: &[FieldSpec] = &[
+    NAME,
+    LOGGING_ACTION_TYPE,
+    f!("memory-lines", "Memory Lines", FieldKind::Number),
+    f!(
+        "memory-stop-on-full",
+        "Memory Stop On Full",
+        FieldKind::Toggle
+    ),
+    f!("remember", "Remember", FieldKind::Toggle),
+    f!("disk-file-name", "Disk File Name", FieldKind::Text),
+    f!(
+        "disk-lines-per-file",
+        "Disk Lines Per File",
+        FieldKind::Number
+    ),
+    f!("disk-file-count", "Disk File Count", FieldKind::Number),
+    f!("disk-stop-on-full", "Disk Stop On Full", FieldKind::Toggle),
+    f!("remote", "Remote Address", FieldKind::Text),
+    f!("remote-port", "Remote Port", FieldKind::Number),
+    f!("src-address", "Src Address", FieldKind::Text),
+    REMOTE_LOG_FORMAT,
+    REMOTE_PROTOCOL,
+    SYSLOG_FACILITY,
+    SYSLOG_SEVERITY,
+    SYSLOG_TIME_FORMAT,
+    f!(
+        "cef-event-delimiter",
+        "CEF Event Delimiter",
+        FieldKind::Text
+    ),
+    f!("check-certificate", "Check Certificate", FieldKind::Toggle),
+    f!("vrf", "VRF", LOOKUP_VRF),
+    f!("add-topics-string", "Add Topics String", FieldKind::Toggle),
+    f!("email-to", "Email To", FieldKind::Text),
+    f!("email-cc", "Email CC", FieldKind::Text),
+    f!("email-start-tls", "Email STARTTLS", FieldKind::Toggle),
+    f!("script", "Script", LOOKUP_SCRIPT),
+];
 
 pub static USER_FORM: FormSchema = FormSchema {
     title_key: "name",
@@ -128,6 +243,59 @@ pub static NTP_CLIENT_FORM: FormSchema = FormSchema {
         },
     ],
     create_sections: &[],
+};
+
+pub static NTP_SERVER_FORM: FormSchema = FormSchema {
+    title_key: "enabled",
+    subtitle_keys: &["vrf"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("enabled", "Enabled", FieldKind::Toggle),
+            f!("broadcast", "Broadcast", FieldKind::Toggle),
+            f!(
+                "broadcast-addresses",
+                "Broadcast Addresses",
+                FieldKind::Repeat
+            ),
+            f!("multicast", "Multicast", FieldKind::Toggle),
+            f!("manycast", "Manycast", FieldKind::Toggle),
+            f!("vrf", "VRF", LOOKUP_VRF),
+            f!("use-local-clock", "Use Local Clock", FieldKind::Toggle),
+            f!(
+                "local-clock-stratum",
+                "Local Clock Stratum",
+                FieldKind::Number
+            ),
+            f!("auth-key", "Auth. Key", LOOKUP_NTP_KEY),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static NTP_KEY_FORM: FormSchema = FormSchema {
+    title_key: "key-id",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("key-id", "Key ID", FieldKind::Number),
+            f!("key-val", "Key", FieldKind::Secret),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("key-id", "Key ID", FieldKind::Number),
+            f!("key-val", "Key", FieldKind::Secret),
+        ],
+    }],
 };
 
 pub static CLOCK_FORM: FormSchema = FormSchema {
@@ -241,7 +409,15 @@ pub static LOGGING_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("topics", "Topics", FieldKind::Text),
-            f!("action", "Action", FieldKind::Text),
+            f!(
+                "action",
+                "Action",
+                FieldKind::Lookup {
+                    resource_id: "logging-actions",
+                    value_key: "name",
+                    multiple: false,
+                }
+            ),
             f!("prefix", "Prefix", FieldKind::Text),
             COMMENT,
             DISABLED,
@@ -253,8 +429,33 @@ pub static LOGGING_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("topics", "Topics", FieldKind::Text),
-            f!("action", "Action", FieldKind::Text),
+            f!(
+                "action",
+                "Action",
+                FieldKind::Lookup {
+                    resource_id: "logging-actions",
+                    value_key: "name",
+                    multiple: false,
+                }
+            ),
         ],
+    }],
+};
+
+pub static LOGGING_ACTION_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["target"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: LOGGING_ACTION_GENERAL,
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: LOGGING_ACTION_GENERAL,
     }],
 };
 
@@ -649,6 +850,17 @@ mod tests {
             .collect()
     }
 
+    fn assert_enum(schema: &FormSchema, key: &str, values: &'static [&'static str]) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Enum { values })
+        );
+    }
+
+    fn assert_label(schema: &FormSchema, key: &str, label: &str) {
+        assert_eq!(schema.field(key).map(|field| field.label), Some(label));
+    }
+
     fn assert_lookup(
         schema: &FormSchema,
         key: &str,
@@ -729,6 +941,61 @@ mod tests {
     }
 
     #[test]
+    fn ntp_server_is_singleton_without_advanced() {
+        assert!(NTP_SERVER_FORM.create_sections.is_empty());
+        assert_eq!(
+            NTP_SERVER_FORM.writable_keys(),
+            [
+                "enabled",
+                "broadcast",
+                "broadcast-addresses",
+                "multicast",
+                "manycast",
+                "vrf",
+                "use-local-clock",
+                "local-clock-stratum",
+                "auth-key",
+            ]
+        );
+        assert!(no_advanced(&NTP_SERVER_FORM));
+        assert_lookup(&NTP_SERVER_FORM, "vrf", "vrf", "name");
+        assert_eq!(
+            NTP_SERVER_FORM
+                .field("broadcast-addresses")
+                .map(|field| field.kind),
+            Some(FieldKind::Repeat)
+        );
+        assert_eq!(
+            NTP_SERVER_FORM
+                .field("local-clock-stratum")
+                .map(|field| field.kind),
+            Some(FieldKind::Number)
+        );
+        assert_label(
+            &NTP_SERVER_FORM,
+            "broadcast-addresses",
+            "Broadcast Addresses",
+        );
+        assert_label(&NTP_SERVER_FORM, "use-local-clock", "Use Local Clock");
+        assert_label(
+            &NTP_SERVER_FORM,
+            "local-clock-stratum",
+            "Local Clock Stratum",
+        );
+        assert_label(&NTP_SERVER_FORM, "auth-key", "Auth. Key");
+        assert_lookup(&NTP_SERVER_FORM, "auth-key", "ntp-keys", "key-id");
+        assert_ne!(
+            NTP_SERVER_FORM.field("auth-key").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(
+            NTP_KEY_FORM.field("key-val").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(create_keys(&NTP_KEY_FORM), ["key-id", "key-val"]);
+    }
+
+    #[test]
     fn clock_keeps_timezone_writable() {
         assert!(CLOCK_FORM.create_sections.is_empty());
         assert_eq!(
@@ -781,6 +1048,65 @@ mod tests {
             LOGGING_FORM.writable_keys(),
             ["topics", "action", "prefix", "comment", "disabled"]
         );
+        assert_lookup(&LOGGING_FORM, "action", "logging-actions", "name");
+    }
+
+    #[test]
+    fn logging_action_form_covers_remote_syslog() {
+        assert_eq!(
+            create_keys(&LOGGING_ACTION_FORM),
+            [
+                "name",
+                "target",
+                "memory-lines",
+                "memory-stop-on-full",
+                "remember",
+                "disk-file-name",
+                "disk-lines-per-file",
+                "disk-file-count",
+                "disk-stop-on-full",
+                "remote",
+                "remote-port",
+                "src-address",
+                "remote-log-format",
+                "remote-protocol",
+                "syslog-facility",
+                "syslog-severity",
+                "syslog-time-format",
+                "cef-event-delimiter",
+                "check-certificate",
+                "vrf",
+                "add-topics-string",
+                "email-to",
+                "email-cc",
+                "email-start-tls",
+                "script",
+            ]
+        );
+        assert!(no_advanced(&LOGGING_ACTION_FORM));
+        assert_lookup(&LOGGING_ACTION_FORM, "script", "scripts", "name");
+        assert_label(&LOGGING_ACTION_FORM, "target", "Type");
+        assert_label(&LOGGING_ACTION_FORM, "syslog-facility", "Syslog Facility");
+        assert_label(&LOGGING_ACTION_FORM, "syslog-severity", "Syslog Severity");
+        assert_enum(&LOGGING_ACTION_FORM, "target", LOGGING_ACTION_TYPES);
+        assert_enum(&LOGGING_ACTION_FORM, "syslog-facility", SYSLOG_FACILITIES);
+        assert_enum(&LOGGING_ACTION_FORM, "syslog-severity", SYSLOG_SEVERITIES);
+        assert_enum(
+            &LOGGING_ACTION_FORM,
+            "syslog-time-format",
+            SYSLOG_TIME_FORMATS,
+        );
+        assert_enum(&LOGGING_ACTION_FORM, "remote-protocol", REMOTE_PROTOCOLS);
+        assert_eq!(REMOTE_PROTOCOLS, ["udp", "tcp", "tls"]);
+        assert_eq!(REMOTE_PROTOCOLS[0], "udp");
+        assert_eq!(SYSLOG_FACILITIES[0], "daemon");
+        assert_eq!(SYSLOG_SEVERITIES[0], "auto");
+        assert_enum(
+            &LOGGING_ACTION_FORM,
+            "remote-log-format",
+            REMOTE_LOG_FORMATS,
+        );
+        assert_lookup(&LOGGING_ACTION_FORM, "vrf", "vrf", "name");
     }
 
     #[test]
