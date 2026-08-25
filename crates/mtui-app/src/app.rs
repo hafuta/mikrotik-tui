@@ -2899,6 +2899,13 @@ mod secret_mask_tests {
     use crate::event::{AppEvent, WorkerMsg};
     use mtui_routeros::{MASKED_VALUE, Resource};
 
+    fn assert_inspector_hides_markers(fields: &[(String, String)]) {
+        assert!(
+            !fields.iter().any(|(_, value)| value.contains("MARKER")),
+            "{fields:?}"
+        );
+    }
+
     #[test]
     fn resource_rows_mask_marker_secrets_before_table_and_inspector() {
         let mut app = App::new(false).expect("app");
@@ -2934,17 +2941,22 @@ mod secret_mask_tests {
             table_row.get("preshared-key").map(String::as_str),
             Some(MASKED_VALUE)
         );
+        assert_inspector_hides_markers(&app.inspector.fields);
         assert!(
             app.inspector
                 .fields
                 .iter()
-                .all(|(key, value)| { key == "name" || value == MASKED_VALUE })
+                .any(|(label, value)| { label == "Private key" && value == MASKED_VALUE }),
+            "{:?}",
+            app.inspector.fields
         );
         assert!(
-            !app.inspector
+            app.inspector
                 .fields
                 .iter()
-                .any(|(_, value)| value.contains("MARKER"))
+                .any(|(label, value)| { label == "preshared-key" && value == MASKED_VALUE }),
+            "{:?}",
+            app.inspector.fields
         );
     }
 
@@ -2979,16 +2991,14 @@ mod secret_mask_tests {
             table_row.get("password").map(String::as_str),
             Some(MASKED_VALUE)
         );
+        assert_inspector_hides_markers(&app.inspector.fields);
         assert!(
-            app.inspector.fields.iter().all(|(key, value)| {
-                key == "name" || key == "read-only" || value == MASKED_VALUE
-            })
-        );
-        assert!(
-            !app.inspector
+            app.inspector
                 .fields
                 .iter()
-                .any(|(_, value)| value.contains("MARKER"))
+                .any(|(label, value)| { label == "Password" && value == MASKED_VALUE }),
+            "{:?}",
+            app.inspector.fields
         );
     }
 
