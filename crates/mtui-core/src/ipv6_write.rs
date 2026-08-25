@@ -13,6 +13,7 @@
 //! - `ipv6-nd-prefix` → `/rest/ipv6/nd/prefix` (`IPV6_ND_PREFIX_FORM`, `MEMBER_ACTIONS`)
 //! - `ipv6-firewall-nat` → `/rest/ipv6/firewall/nat` (`IPV6_FIREWALL_NAT_FORM`, `FILTER_ACTIONS`)
 //! - `ipv6-address-list` → `/rest/ipv6/firewall/address-list` (`IPV6_ADDRESS_LIST_FORM`, `MEMBER_ACTIONS`)
+//! - `ipv6-firewall-connections` → `/rest/ipv6/firewall/connection` (inspect/remove only; no form)
 //!
 //! Group id: `ipv6-group`.
 

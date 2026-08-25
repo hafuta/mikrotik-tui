@@ -334,6 +334,41 @@ impl DemoStore {
             )],
         );
         self.rows.insert(
+            "ipv6-firewall-connections".into(),
+            vec![
+                resource(
+                    "*36",
+                    &[
+                        ("src-address", "2001:db8:1::10"),
+                        ("dst-address", "2001:db8:2::1"),
+                        ("protocol", "tcp"),
+                        ("src-port", "53100"),
+                        ("dst-port", "443"),
+                        ("tcp-state", "established"),
+                        ("timeout", "23h59m"),
+                        ("orig-rate", "1200"),
+                        ("repl-rate", "8500"),
+                        ("connection-mark", ""),
+                    ],
+                ),
+                resource(
+                    "*37",
+                    &[
+                        ("src-address", "2001:db8:1::20"),
+                        ("dst-address", "2001:db8::53"),
+                        ("protocol", "udp"),
+                        ("src-port", "53222"),
+                        ("dst-port", "53"),
+                        ("tcp-state", ""),
+                        ("timeout", "10s"),
+                        ("orig-rate", "40"),
+                        ("repl-rate", "80"),
+                        ("connection-mark", ""),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
             "queue-simple".into(),
             vec![resource(
                 "*34",
@@ -767,6 +802,25 @@ mod tests {
             Some("7.18.2 (stable)")
         );
         assert_eq!(store.rows("history").len(), 2);
+        assert_eq!(store.rows("ipv6-firewall-connections").len(), 2);
+        assert_eq!(
+            store.rows("ipv6-firewall-connections")[0].field("src-address"),
+            Some("2001:db8:1::10")
+        );
+    }
+
+    #[test]
+    fn demo_remove_drops_ipv6_firewall_connection() {
+        let mut store = DemoStore::new();
+        store
+            .apply(&MutationOp::Delete {
+                endpoint: "/rest/ipv6/firewall/connection".into(),
+                id: "*36".into(),
+            })
+            .expect("delete");
+        let rows = store.rows("ipv6-firewall-connections");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "*37");
     }
 
     #[test]

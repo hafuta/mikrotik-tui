@@ -3455,6 +3455,29 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::ipv6_write::IPV6_FIREWALL_RAW_FORM),
     },
     ResourceSpec {
+        id: "ipv6-firewall-connections",
+        group: "ipv6-group",
+        label: "Connections",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ipv6/firewall/connection",
+        },
+        columns: &[
+            col!("src-address", "Source", 28),
+            col!("dst-address", "Destination", 28),
+            col!("protocol", "Protocol", 9),
+            col!("src-port", "Src port", 10),
+            col!("dst-port", "Dst port", 10),
+            col!("tcp-state", "TCP state", 12),
+            col!("timeout", "Timeout", 10),
+            col!("orig-rate", "Orig rate", 12),
+            col!("repl-rate", "Repl rate", 12),
+            col!("connection-mark", "Mark", 16),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::DISCONNECT_ACTIONS,
+        form: None,
+    },
+    ResourceSpec {
         id: "routing-tables",
         group: "routing-group",
         label: "Tables",
@@ -4787,6 +4810,35 @@ mod tests {
                 "ipv6-dhcp-bindings",
                 "ipv6-firewall-mangle",
                 "ipv6-firewall-raw",
+                "ipv6-firewall-connections",
+            ]
+        );
+        let ipv6_connections =
+            resource_by_id("ipv6-firewall-connections").expect("ipv6-firewall-connections");
+        assert_eq!(
+            ipv6_connections.endpoint(),
+            "/rest/ipv6/firewall/connection"
+        );
+        assert!(ipv6_connections.form.is_none());
+        let ipv6_connection_actions: Vec<_> = ipv6_connections
+            .actions
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(ipv6_connection_actions, ["remove"]);
+        assert_eq!(
+            column_keys("ipv6-firewall-connections"),
+            [
+                "src-address",
+                "dst-address",
+                "protocol",
+                "src-port",
+                "dst-port",
+                "tcp-state",
+                "timeout",
+                "orig-rate",
+                "repl-rate",
+                "connection-mark",
             ]
         );
         assert_eq!(
