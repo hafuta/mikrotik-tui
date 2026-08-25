@@ -239,4 +239,54 @@ mod tests {
         let not_object: Result<Resource, _> = serde_json::from_str("[1,2]");
         assert!(not_object.is_err());
     }
+
+    #[test]
+    fn smb_rest_payloads_decode_optional_fields_and_reject_malformed() {
+        let cases = [
+            (
+                r#"{".id":"*1","name":"backup","directory":"backup","require-encryption":"false"}"#,
+                "*1",
+                "name",
+                Some("backup"),
+            ),
+            (
+                r#"{".id":"*2","name":"pub","directory":"/pub"}"#,
+                "*2",
+                "valid-users",
+                None,
+            ),
+            (
+                r#"{".id":"*3","name":"mtuser","password":"hunter2","read-only":"yes"}"#,
+                "*3",
+                "password",
+                Some("hunter2"),
+            ),
+        ];
+        for (json, id, key, expected) in cases {
+            let resource: Resource = serde_json::from_str(json).expect(json);
+            assert_eq!(resource.id, id, "{json}");
+            assert_eq!(resource.field(key), expected, "{json}");
+        }
+
+        let list: Vec<Resource> = serde_json::from_str(
+            r#"[{".id":"*1","name":"pub"},{".id":"*2","name":"backup","valid-users":"mtuser"}]"#,
+        )
+        .expect("share list");
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[1].field("valid-users"), Some("mtuser"));
+
+        assert!(serde_json::from_str::<Resource>(r#"{"name":"pub","directory":1}"#).is_err());
+        assert!(
+            serde_json::from_str::<Vec<Resource>>(r#"{"error":"no such command prefix"}"#).is_err()
+        );
+
+        let user: Resource =
+            serde_json::from_str(r#"{".id":"*3","name":"mtuser","password":"hunter2"}"#)
+                .expect("user");
+        assert_eq!(
+            user.display_row().get("password").map(String::as_str),
+            Some(crate::secret::MASKED_VALUE)
+        );
+        assert_eq!(user.field("password"), Some("hunter2"));
+    }
 }

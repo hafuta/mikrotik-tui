@@ -718,6 +718,85 @@ impl DemoStore {
             )],
         );
         self.rows.insert(
+            "smb".into(),
+            vec![resource(
+                "",
+                &[
+                    ("enabled", "auto"),
+                    ("domain", "MSHOME"),
+                    ("comment", "MikrotikSMB"),
+                    ("allow-guests", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "smb-users".into(),
+            vec![
+                resource(
+                    "*smb1",
+                    &[
+                        ("name", "guest"),
+                        ("password", ""),
+                        ("read-only", "true"),
+                        ("disabled", "true"),
+                        ("default", "true"),
+                        ("comment", ""),
+                    ],
+                ),
+                resource(
+                    "*smb2",
+                    &[
+                        ("name", "mtuser"),
+                        ("password", "demo-secret"),
+                        ("read-only", "false"),
+                        ("disabled", "false"),
+                        ("default", "false"),
+                        ("comment", "office"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "smb-shares".into(),
+            vec![
+                resource(
+                    "*smbs1",
+                    &[
+                        ("name", "pub"),
+                        ("directory", "/pub"),
+                        ("require-encryption", "false"),
+                        ("read-only", "false"),
+                        ("valid-users", ""),
+                        ("invalid-users", ""),
+                        ("disabled", "true"),
+                        ("default", "true"),
+                        ("comment", "default share"),
+                    ],
+                ),
+                resource(
+                    "*smbs2",
+                    &[
+                        ("name", "backup"),
+                        ("directory", "backup"),
+                        ("require-encryption", "false"),
+                        ("read-only", "false"),
+                        ("valid-users", "mtuser"),
+                        ("invalid-users", ""),
+                        ("disabled", "false"),
+                        ("default", "false"),
+                        ("comment", ""),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "files".into(),
+            vec![
+                resource("*f1", &[("name", "/pub"), ("type", "directory")]),
+                resource("*f2", &[("name", "backup"), ("type", "directory")]),
+            ],
+        );
+        self.rows.insert(
             "safe-mode".into(),
             vec![resource(
                 "",
@@ -1041,6 +1120,9 @@ mod tests {
             store.rows("ospf-interface-templates")[0].field("interfaces"),
             Some("ether2")
         );
+        assert_eq!(store.rows("smb-users").len(), 2);
+        assert_eq!(store.rows("smb-shares").len(), 2);
+        assert_eq!(store.rows("smb-users")[1].field("name"), Some("mtuser"));
     }
 
     #[test]
