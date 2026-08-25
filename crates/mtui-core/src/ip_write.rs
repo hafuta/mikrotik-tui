@@ -382,6 +382,16 @@ const LOOKUP_DHCP_OPTIONS: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: true,
 };
+const LOOKUP_SMB_USERS: FieldKind = FieldKind::Lookup {
+    resource_id: "smb-users",
+    value_key: "name",
+    multiple: true,
+};
+const LOOKUP_FILES: FieldKind = FieldKind::Lookup {
+    resource_id: "files",
+    value_key: "name",
+    multiple: false,
+};
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
@@ -1179,6 +1189,81 @@ pub static SMB_FORM: FormSchema = FormSchema {
     create_sections: &[],
 };
 
+pub static SMB_SHARE_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["directory"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                NAME,
+                f!("directory", "Directory", LOOKUP_FILES),
+                COMMENT,
+                f!("valid-users", "Valid Users", LOOKUP_SMB_USERS),
+                f!("invalid-users", "Invalid Users", LOOKUP_SMB_USERS),
+                f!("read-only", "Read Only", FieldKind::Toggle),
+                f!(
+                    "require-encryption",
+                    "Require Encryption",
+                    FieldKind::Toggle
+                ),
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("default", "Default", FieldKind::Readonly),
+                f!("dynamic", "Dynamic", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("directory", "Directory", LOOKUP_FILES)],
+    }],
+};
+
+pub static SMB_USER_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["read-only"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                NAME,
+                f!("password", "Password", FieldKind::Secret),
+                COMMENT,
+                f!("read-only", "Read Only", FieldKind::Toggle),
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("default", "Default", FieldKind::Readonly),
+                f!("dynamic", "Dynamic", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("password", "Password", FieldKind::Secret)],
+    }],
+};
+
 pub static UPNP_FORM: FormSchema = FormSchema {
     title_key: "enabled",
     subtitle_keys: &["allow-disable-external-interface"],
@@ -1589,7 +1674,7 @@ pub static IGMP_PROXY_MFC_FORM: FormSchema = FormSchema {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forms::patch_body;
+    use crate::forms::{extra_status_fields, field_visible, patch_body};
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
@@ -2054,5 +2139,143 @@ mod tests {
         );
         assert!(!body.contains_key("cache-entries"));
         assert!(!body.contains_key("packet-sampling"));
+    }
+
+    #[test]
+    fn smb_shares_and_users_match_webfig_kinds() {
+        assert_eq!(
+            SMB_SHARE_FORM.writable_keys(),
+            [
+                "name",
+                "directory",
+                "comment",
+                "valid-users",
+                "invalid-users",
+                "read-only",
+                "require-encryption",
+                "disabled",
+            ]
+        );
+        assert_eq!(
+            SMB_USER_FORM.writable_keys(),
+            ["name", "password", "comment", "read-only", "disabled"]
+        );
+        assert_eq!(
+            field_kind(&SMB_SHARE_FORM, "directory"),
+            lookup("files", "name")
+        );
+        assert_eq!(
+            create_field_kind(&SMB_SHARE_FORM, "directory"),
+            lookup("files", "name")
+        );
+        assert_eq!(
+            field_kind(&SMB_SHARE_FORM, "valid-users"),
+            lookup_multi("smb-users", "name")
+        );
+        assert_eq!(
+            field_kind(&SMB_SHARE_FORM, "invalid-users"),
+            lookup_multi("smb-users", "name")
+        );
+        assert_eq!(field_kind(&SMB_SHARE_FORM, "read-only"), FieldKind::Toggle);
+        assert_eq!(
+            field_kind(&SMB_SHARE_FORM, "require-encryption"),
+            FieldKind::Toggle
+        );
+        assert_eq!(field_kind(&SMB_SHARE_FORM, "disabled"), FieldKind::Toggle);
+        assert_eq!(field_kind(&SMB_USER_FORM, "password"), FieldKind::Secret);
+        assert_eq!(
+            create_field_kind(&SMB_USER_FORM, "password"),
+            FieldKind::Secret
+        );
+        assert_eq!(field_kind(&SMB_USER_FORM, "read-only"), FieldKind::Toggle);
+        assert_eq!(
+            SMB_SHARE_FORM.field("valid-users").map(|f| f.label),
+            Some("Valid Users")
+        );
+        assert_eq!(
+            SMB_SHARE_FORM.field("invalid-users").map(|f| f.label),
+            Some("Invalid Users")
+        );
+        assert_eq!(
+            SMB_SHARE_FORM.field("require-encryption").map(|f| f.label),
+            Some("Require Encryption")
+        );
+        assert_eq!(
+            SMB_SHARE_FORM.field("read-only").map(|f| f.label),
+            Some("Read Only")
+        );
+        assert_eq!(
+            SMB_USER_FORM.field("read-only").map(|f| f.label),
+            Some("Read Only")
+        );
+        status_readonly(&SMB_SHARE_FORM);
+        status_readonly(&SMB_USER_FORM);
+        assert!(!SMB_SHARE_FORM.writable_keys().contains(&"default"));
+        assert!(!SMB_USER_FORM.writable_keys().contains(&"dynamic"));
+        assert!(SMB_SHARE_FORM
+            .sections
+            .iter()
+            .all(|section| section.id != "advanced"));
+        assert!(SMB_USER_FORM
+            .sections
+            .iter()
+            .all(|section| section.id != "advanced"));
+
+        let mut original = HashMap::new();
+        original.insert("name".into(), "mtuser".into());
+        original.insert("password".into(), "********".into());
+        original.insert("read-only".into(), "true".into());
+        original.insert("default".into(), "false".into());
+        let mut current = original.clone();
+        current.insert("read-only".into(), "false".into());
+        current.insert("password".into(), "********".into());
+        current.insert("default".into(), "true".into());
+        let body = patch_body(&SMB_USER_FORM, &original, &current, "********");
+        assert_eq!(body.get("read-only").map(String::as_str), Some("false"));
+        assert!(!body.contains_key("password"));
+        assert!(!body.contains_key("default"));
+    }
+
+    #[test]
+    fn smb_optional_and_unknown_fields_stay_out_of_patch() {
+        let mut original = HashMap::new();
+        original.insert("name".into(), "backup".into());
+        original.insert("directory".into(), "backup".into());
+        original.insert("valid-users".into(), "mtuser".into());
+        original.insert("comment".into(), "".into());
+        original.insert("dynamic".into(), "false".into());
+        let mut current = original.clone();
+        current.insert("valid-users".into(), "mtuser,guest".into());
+        current.insert("unexpected-flag".into(), "yes".into());
+        current.insert("dynamic".into(), "true".into());
+        let body = patch_body(&SMB_SHARE_FORM, &original, &current, "********");
+        assert_eq!(
+            body.get("valid-users").map(String::as_str),
+            Some("mtuser,guest")
+        );
+        assert!(!body.contains_key("directory"));
+        assert!(!body.contains_key("dynamic"));
+        assert!(!body.contains_key("unexpected-flag"));
+
+        let mut row = HashMap::new();
+        row.insert("name".into(), "pub".into());
+        row.insert("directory".into(), "/pub".into());
+        row.insert("unexpected-flag".into(), "yes".into());
+        let extras = extra_status_fields(&SMB_SHARE_FORM, &row);
+        assert_eq!(extras, vec![("unexpected-flag".into(), "yes".into())]);
+
+        let empty = HashMap::new();
+        for key in SMB_SHARE_FORM.known_keys() {
+            assert!(
+                field_visible("smb-shares", key, &empty),
+                "{key} should stay visible"
+            );
+        }
+        for key in SMB_USER_FORM.known_keys() {
+            assert!(
+                field_visible("smb-users", key, &empty),
+                "{key} should stay visible"
+            );
+        }
     }
 }

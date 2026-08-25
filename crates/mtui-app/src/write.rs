@@ -1787,6 +1787,90 @@ mod tests {
     }
 
     #[test]
+    fn smb_users_enter_opens_edit_with_masked_password_and_n_opens_create() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("smb-users");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "mtuser".into());
+        fields.insert("password".into(), "MARKER-SECRET".into());
+        fields.insert("read-only".into(), "false".into());
+        fields.insert("disabled".into(), "false".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "smb-users".into(),
+            rows: vec![Resource {
+                id: "*smb2".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected smb user editor, got {:?}", app.overlay);
+        };
+        assert_eq!(session.resource_id, "smb-users");
+        assert_eq!(session.mode, mtui_ui::FormMode::Edit);
+        assert_eq!(
+            session.values.get("password").map(String::as_str),
+            Some(MASKED_VALUE)
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('n'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected smb user create, got {:?}", app.overlay);
+        };
+        assert_eq!(session.mode, mtui_ui::FormMode::Create);
+        assert_eq!(session.resource_id, "smb-users");
+    }
+
+    #[test]
+    fn smb_share_disable_confirm_uses_shares_endpoint() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("smb-shares");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "backup".into());
+        fields.insert("directory".into(), "backup".into());
+        fields.insert("disabled".into(), "false".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "smb-shares".into(),
+            rows: vec![Resource {
+                id: "*smbs2".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('d'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected disable confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Disable);
+        assert_eq!(session.record_id, "*smbs2");
+        assert_eq!(session.endpoint, "/rest/ip/smb/shares");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Command {
+                endpoint,
+                command,
+                fields,
+            } => {
+                assert_eq!(endpoint, "/rest/ip/smb/shares");
+                assert_eq!(command, "disable");
+                assert_eq!(fields.get(".id").map(String::as_str), Some("*smbs2"));
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    #[test]
     fn wireguard_peer_add_opens_create() {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;

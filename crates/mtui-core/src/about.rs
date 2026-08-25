@@ -1324,8 +1324,27 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "smb",
         "SMB/CIFS service (`/ip smb`).",
-        "Share files from the router; guests and domain are the usual knobs.",
-        "enabled, domain, allow-guests, comment."
+        "Turn the file-sharing listener on for this router. Share paths and accounts are on \
+         SMB Shares and SMB Users. Guest access is the default guest user on SMB Users on current \
+         RouterOS, not a service-wide allow-guests switch.",
+        "enabled, domain, allow-guests, comment.",
+        "https://manual.mikrotik.com/docs/storage/smb/"
+    ),
+    guide!(
+        "smb-shares",
+        "SMB share folders (`/ip smb shares`): names and directories clients can mount.",
+        "Point a share at a router directory (created if missing). Limit access with Valid Users \
+         and Invalid Users. Require Encryption is the usual choice for macOS clients.",
+        "name, directory, valid-users, invalid-users, read-only, require-encryption, disabled.",
+        "https://manual.mikrotik.com/docs/storage/smb/"
+    ),
+    guide!(
+        "smb-users",
+        "SMB accounts (`/ip smb users`) that may open shares on this router.",
+        "Create a login and password here, then allow or deny that name on SMB Shares. The \
+         default guest user can be disabled instead of using a service-wide guest switch.",
+        "name, password, read-only, disabled, comment.",
+        "https://manual.mikrotik.com/docs/storage/smb/"
     ),
     guide!(
         "upnp",

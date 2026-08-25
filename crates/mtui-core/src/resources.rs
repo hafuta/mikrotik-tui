@@ -2527,6 +2527,45 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::ip_write::SMB_FORM),
     },
     ResourceSpec {
+        id: "smb-shares",
+        group: "ip-group",
+        label: "SMB Shares",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/smb/shares",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("directory", "Directory", 24),
+            col!("valid-users", "Valid Users", 16),
+            col!("invalid-users", "Invalid Users", 16),
+            col!("read-only", "Read Only", 10),
+            col!("require-encryption", "Require Encryption", 18),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::SMB_SHARE_FORM),
+    },
+    ResourceSpec {
+        id: "smb-users",
+        group: "ip-group",
+        label: "SMB Users",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/smb/users",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("password", "Password", 10),
+            col!("read-only", "Read Only", 10),
+            col!("disabled", "Off", 5),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::SMB_USER_FORM),
+    },
+    ResourceSpec {
         id: "upnp",
         group: "ip-group",
         label: "UPnP",
@@ -4439,6 +4478,54 @@ mod tests {
     }
 
     #[test]
+    fn smb_shares_and_users_are_lists() {
+        let shares = resource_by_id("smb-shares").expect("smb-shares");
+        let users = resource_by_id("smb-users").expect("smb-users");
+        let service = resource_by_id("smb").expect("smb");
+        assert!(service.is_singleton());
+        assert_eq!(service.endpoint(), "/rest/ip/smb");
+        assert!(!shares.is_singleton());
+        assert!(!users.is_singleton());
+        assert_eq!(shares.endpoint(), "/rest/ip/smb/shares");
+        assert_eq!(users.endpoint(), "/rest/ip/smb/users");
+        assert_eq!(shares.cli_path(), "/ip/smb/shares");
+        assert_eq!(users.cli_path(), "/ip/smb/users");
+        assert_eq!(shares.group, "ip-group");
+        assert_eq!(users.group, "ip-group");
+        assert_eq!(shares.label, "SMB Shares");
+        assert_eq!(users.label, "SMB Users");
+        assert!(shares.form.is_some());
+        assert!(users.form.is_some());
+        assert_eq!(
+            column_keys("smb-shares"),
+            [
+                "name",
+                "directory",
+                "valid-users",
+                "invalid-users",
+                "read-only",
+                "require-encryption",
+                "disabled",
+                "comment",
+            ]
+        );
+        assert_eq!(
+            column_keys("smb-users"),
+            ["name", "password", "read-only", "disabled", "comment"]
+        );
+        let share_actions: Vec<_> = shares.actions.iter().map(|action| action.id).collect();
+        assert_eq!(
+            share_actions,
+            crate::actions::MEMBER_ACTIONS
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>()
+        );
+        let user_actions: Vec<_> = users.actions.iter().map(|action| action.id).collect();
+        assert_eq!(user_actions, share_actions);
+    }
+
+    #[test]
     fn ntp_server_is_system_singleton() {
         let spec = resource_by_id("ntp-server").expect("ntp-server");
         assert!(spec.is_singleton());
@@ -5082,6 +5169,8 @@ mod tests {
                 "kid-control-devices",
                 "socks",
                 "smb",
+                "smb-shares",
+                "smb-users",
                 "upnp",
                 "upnp-interfaces",
                 "dns-cache",

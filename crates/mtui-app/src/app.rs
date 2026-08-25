@@ -2842,6 +2842,115 @@ mod secret_mask_tests {
     }
 
     #[test]
+    fn smb_user_password_is_masked_in_table_and_inspector() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("smb-users");
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("name".into(), "mtuser".into());
+        fields.insert("password".into(), "MARKER-SECRET".into());
+        fields.insert("read-only".into(), "false".into());
+        let row = Resource {
+            id: "*1".into(),
+            fields,
+        };
+
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "smb-users".into(),
+            rows: vec![row],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+
+        let table_row = app.table.selected_row().expect("row");
+        assert_eq!(table_row.get("name").map(String::as_str), Some("mtuser"));
+        assert_eq!(
+            table_row.get("password").map(String::as_str),
+            Some(MASKED_VALUE)
+        );
+        assert!(
+            app.inspector
+                .fields
+                .iter()
+                .all(|(key, value)| { key == "name" || key == "read-only" || value == MASKED_VALUE })
+        );
+        assert!(
+            !app.inspector
+                .fields
+                .iter()
+                .any(|(_, value)| value.contains("MARKER"))
+        );
+    }
+
+    #[test]
+    fn stale_smb_share_result_is_ignored_after_navigation() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("smb-shares");
+        let stale_generation = app.poll_generation;
+        app.select_resource("smb-users");
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("name".into(), "stale-share".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: stale_generation,
+            resource_id: "smb-shares".into(),
+            rows: vec![Resource {
+                id: "*9".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+        assert!(app.table.selected_row().is_none());
+        assert_eq!(app.current_resource, "smb-users");
+    }
+
+    #[test]
+    fn smb_share_refresh_error_keeps_status_and_does_not_panic() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("smb-shares");
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("name".into(), "backup".into());
+        fields.insert("directory".into(), "backup".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "smb-shares".into(),
+            rows: vec![Resource {
+                id: "*2".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        assert_eq!(
+            app.table.selected_row().and_then(|row| row.get("name").cloned()),
+            Some("backup".into())
+        );
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "smb-shares".into(),
+            rows: Vec::new(),
+            error: Some("failure: no such command prefix (6)".into()),
+        }));
+        assert!(cmds.is_empty());
+        assert!(app.status.contains("Refresh failed"));
+        assert_eq!(
+            app.table.selected_row().and_then(|row| row.get("name").cloned()),
+            Some("backup".into())
+        );
+    }
+
+    #[test]
     fn macsec_cak_is_masked_in_table_and_inspector() {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;
