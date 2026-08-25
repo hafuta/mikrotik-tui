@@ -1554,9 +1554,9 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "history",
-        "Configuration history (`/system history`). Read-only.",
-        "See recent local changes. Rows tagged F (floating-undo) are Safe Mode work that unrolls if that session dies. This table does not take or release Safe Mode; use F4.",
-        "floating-undo, time, action, by, policy."
+        "Configuration history (`/system history`). Undo a selected row after a confirm prompt.",
+        "See who changed what locally. Undo runs `/system history undo` for that row. It is not Safe Mode unroll; take or release Safe Mode with F4. Rows tagged F (floating-undo) are Safe Mode work that unrolls if that session dies.",
+        "floating-undo, time, action, by, policy. Undo is a row action."
     ),
     guide!(
         "ipv6-dhcp-relay",
@@ -1910,5 +1910,16 @@ mod tests {
                 "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/graphing/"
             )
         );
+    }
+
+    #[test]
+    fn history_guide_covers_undo_and_keeps_safe_mode_separate() {
+        let copy = about_copy("history").expect("history");
+        assert_eq!(copy.title, "About History");
+        assert!(copy.kicker.contains("/system/history"));
+        assert!(copy.body.contains("undo"));
+        assert!(copy.body.contains("F4"));
+        assert!(copy.body.contains("Safe Mode"));
+        assert!(copy.body.contains("floating-undo"));
     }
 }

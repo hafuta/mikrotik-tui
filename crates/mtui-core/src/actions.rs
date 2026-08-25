@@ -54,6 +54,7 @@ pub enum ActionCommand {
     WakeOnLan,
     SendSms,
     AtChat,
+    Undo,
 }
 
 impl ActionCommand {
@@ -92,6 +93,7 @@ impl ActionCommand {
             Self::WakeOnLan => "wol",
             Self::SendSms => "send",
             Self::AtChat => "at-chat",
+            Self::Undo => "undo",
         }
     }
 }
@@ -288,6 +290,21 @@ pub const ACTION_RESET: ActionSpec = ActionSpec {
     },
     when: ActionWhen::HasSelection,
 };
+
+pub const ACTION_UNDO: ActionSpec = ActionSpec {
+    id: "undo",
+    label: "Undo",
+    key: Some('u'),
+    enter: false,
+    needs_selection: true,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Undo,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const HISTORY_ACTIONS: &[ActionSpec] = &[ACTION_UNDO];
 
 pub const ACTION_REBOOT: ActionSpec = ActionSpec {
     id: "reboot",
@@ -1179,6 +1196,23 @@ mod tests {
         assert!(RADIO_ACTIONS.iter().any(|action| action.id == "scan"));
         assert_eq!(ActionCommand::Flush.rest_name(), "flush");
         assert_eq!(ActionCommand::Upgrade.rest_name(), "upgrade");
+    }
+
+    #[test]
+    fn history_undo_needs_a_selected_row() {
+        assert_eq!(ActionCommand::Undo.rest_name(), "undo");
+        let history: Vec<_> = resolve_actions(HISTORY_ACTIONS, false, None)
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert!(history.is_empty());
+        let mut row = HashMap::new();
+        row.insert("action".into(), "set".into());
+        let with_row: Vec<_> = resolve_actions(HISTORY_ACTIONS, false, Some(&row))
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(with_row, ["undo"]);
     }
 
     #[test]

@@ -855,4 +855,52 @@ mod tests {
         assert!(rendered.contains("space pick"), "{rendered}");
         assert!(rendered.contains("esc"), "{rendered}");
     }
+
+    fn canvas_at(app: &App, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal.draw(|frame| draw(frame, app)).expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+            rendered.push('\n');
+        }
+        rendered
+    }
+
+    #[test]
+    fn history_undo_confirm_is_a_centered_alert() {
+        use std::collections::BTreeMap;
+
+        use mtui_core::ActionCommand;
+
+        use crate::write::ConfirmSession;
+
+        let mut app = live_main();
+        app.current_resource = "history".into();
+        app.overlay = Overlay::Confirm(ConfirmSession {
+            title: "Undo".into(),
+            body: "Undo set by admin at noon? RouterOS will revert that local change. This is not Safe Mode unroll; use F4 to take or release Safe Mode.".into(),
+            action_id: "undo".into(),
+            command: ActionCommand::Undo,
+            record_id: "*h1".into(),
+            record_ids: Vec::new(),
+            record_name: "set by admin at noon".into(),
+            endpoint: "/rest/system/history".into(),
+            fields: BTreeMap::new(),
+        });
+        let rendered = canvas(&app);
+        assert!(rendered.contains("Undo"), "{rendered}");
+        assert!(rendered.contains("not Safe Mode unroll"), "{rendered}");
+        assert!(rendered.contains("[ Confirm ]"), "{rendered}");
+        assert!(rendered.contains("[ Cancel ]"), "{rendered}");
+        assert!(rendered.contains("y / enter"), "{rendered}");
+        assert!(rendered.contains("n / esc"), "{rendered}");
+        let narrow = canvas_at(&app, 40, 12);
+        assert!(narrow.contains("Undo"), "{narrow}");
+        assert!(!narrow.contains("panic"), "{narrow}");
+    }
 }

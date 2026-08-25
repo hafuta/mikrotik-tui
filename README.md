@@ -34,7 +34,7 @@ System.
 - Demo mode (`--demo`) to learn the UI without a router
 - TLS with the OS trust store, a CA file, or a pinned device certificate. Optional plaintext `api`.
 - Safe Mode (`F4`): take, release, or unroll on this tab the same way WinBox does, including a prompt when another session already holds it
-- Confirmed reboot, shutdown, and backup save/load
+- Confirmed reboot, shutdown, backup save/load, and System History undo
 - Hide menus you do not use; restore them later
 - In-app help (`?`) and a short description of the current screen (`i`)
 

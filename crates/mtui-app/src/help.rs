@@ -262,6 +262,33 @@ mod tests {
     }
 
     #[test]
+    fn history_help_lists_undo_when_a_row_is_selected() {
+        let mut app = main_app("history");
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("action".into(), "set".into());
+        fields.insert("by".into(), "admin".into());
+        let _ = app.update(crate::event::AppEvent::Worker(
+            crate::event::WorkerMsg::ResourceResult {
+                session: app.test_session(),
+                request_id: app.request_id,
+                generation: app.poll_generation,
+                resource_id: "history".into(),
+                rows: vec![mtui_routeros::Resource {
+                    id: "*h1".into(),
+                    fields,
+                }],
+                error: None,
+            },
+        ));
+        app.pane = Pane::Content;
+        let text = keyboard_help(&app);
+        assert!(text.contains("History"), "{text}");
+        assert!(text.contains("Undo"), "{text}");
+        assert!(text.contains("  u"), "{text}");
+        assert!(!text.contains("Safe Mode unroll"), "{text}");
+    }
+
+    #[test]
     fn login_help_stays_on_device_list_keys() {
         let app = App::new(false).expect("app");
         let text = keyboard_help(&app);

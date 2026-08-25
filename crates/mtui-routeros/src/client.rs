@@ -518,6 +518,14 @@ mod tests {
             command_path("/rest/tool/graphing/interface", "print").unwrap(),
             "/tool/graphing/interface/print"
         );
+        assert_eq!(
+            command_path("/rest/system/history", "undo").unwrap(),
+            "/system/history/undo"
+        );
+        assert!(command_path("/rest/system/history/../file", "undo").is_err());
+        assert!(is_command_name("undo"));
+        assert!(!is_command_name("Undo"));
+        assert!(!is_command_name("history/undo"));
     }
 
     #[test]

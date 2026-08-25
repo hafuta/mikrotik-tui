@@ -3155,7 +3155,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("policy", "Policy", 20),
         ],
         refresh: Duration::from_secs(10),
-        actions: &[],
+        actions: crate::actions::HISTORY_ACTIONS,
         form: None,
     },
     ResourceSpec {
@@ -5524,6 +5524,17 @@ mod tests {
                 );
                 continue;
             }
+            if spec.id == "history" {
+                assert!(
+                    spec.form.is_none(),
+                    "history uses undo confirm, not a sheet"
+                );
+                assert!(
+                    spec.actions.iter().any(|action| action.id == "undo"),
+                    "history should offer undo"
+                );
+                continue;
+            }
             if overlay_only {
                 assert!(
                     spec.form.is_none(),
@@ -5553,6 +5564,32 @@ mod tests {
             resource_by_id("files").is_some_and(|spec| spec.form.is_none()
                 && spec.actions.iter().any(|action| action.id == "backup-save")
                 && spec.actions.iter().any(|action| action.id == "fetch"))
+        );
+    }
+
+    #[test]
+    fn history_is_undo_confirm_with_no_property_sheet() {
+        use crate::actions::{ActionCommand, ActionKind};
+
+        let spec = resource_by_id("history").expect("history");
+        assert!(spec.form.is_none(), "history must not ship a Text sheet");
+        assert_eq!(spec.endpoint(), "/rest/system/history");
+        assert_eq!(spec.actions.len(), 1);
+        let undo = spec.actions[0];
+        assert_eq!(undo.id, "undo");
+        assert_eq!(undo.label, "Undo");
+        assert_eq!(undo.key, Some('u'));
+        assert!(undo.danger);
+        assert!(undo.needs_selection);
+        assert!(matches!(
+            undo.kind,
+            ActionKind::Confirm {
+                command: ActionCommand::Undo
+            }
+        ));
+        assert_eq!(
+            column_keys("history"),
+            ["floating-undo", "time", "action", "by", "policy"]
         );
     }
 
