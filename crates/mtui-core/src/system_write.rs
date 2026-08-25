@@ -16,6 +16,9 @@
 //! - `/rest/certificate`
 //! - `/rest/system/watchdog`
 //! - `/rest/system/note`
+//! - `/rest/system/license`
+//! - `/rest/disk`
+//! - `/rest/system/device-mode`
 //! - `/rest/user/group`
 
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
@@ -63,6 +66,16 @@ const LOOKUP_VRF: FieldKind = FieldKind::Lookup {
 const LOOKUP_NTP_KEY: FieldKind = FieldKind::Lookup {
     resource_id: "ntp-keys",
     value_key: "key-id",
+    multiple: false,
+};
+const LOOKUP_DISK: FieldKind = FieldKind::Lookup {
+    resource_id: "disks",
+    value_key: "slot",
+    multiple: false,
+};
+const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
     multiple: false,
 };
 
@@ -667,6 +680,324 @@ pub static NOTE_FORM: FormSchema = FormSchema {
     create_sections: &[],
 };
 
+pub static LICENSE_FORM: FormSchema = FormSchema {
+    title_key: "software-id",
+    subtitle_keys: &["nlevel", "level"],
+    sections: &[FormSection {
+        id: "status",
+        label: "Status",
+        read_only: true,
+        fields: &[
+            f!("software-id", "Software ID", FieldKind::Readonly),
+            f!("old-software-id", "Old Software ID", FieldKind::Readonly),
+            f!("nlevel", "Level", FieldKind::Readonly),
+            f!("features", "Features", FieldKind::Readonly),
+            f!("expires-in", "Expires In", FieldKind::Readonly),
+            f!("system-id", "System ID", FieldKind::Readonly),
+            f!("level", "CHR Level", FieldKind::Readonly),
+            f!("limited-upgrades", "Limited Upgrades", FieldKind::Readonly),
+            f!("next-renewal-at", "Next Renewal At", FieldKind::Readonly),
+            f!("deadline-at", "Deadline At", FieldKind::Readonly),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static LICENSE_IMPORT_PROMPT: FormSchema = FormSchema {
+    title_key: "file-name",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[FILE_NAME, f!("k", "License Key", FieldKind::Secret)],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[FILE_NAME, f!("k", "License Key", FieldKind::Secret)],
+    }],
+};
+
+const DISK_TYPES: &[&str] = &[
+    "hardware",
+    "raid",
+    "partition",
+    "tmpfs",
+    "ramdisk",
+    "file",
+    "crypted",
+    "sshfs",
+    "nfs",
+    "smb",
+    "nvme-tcp",
+    "iscsi",
+];
+const RAID_TYPES: &[&str] = &["0", "1", "4", "5", "6", "linear", "faulty"];
+const RAID_CHUNK_SIZES: &[&str] = &["64K", "128K", "256K", "512K", "1M", "2M", "4M"];
+const FORMAT_FILE_SYSTEMS: &[&str] = &[
+    "ext4",
+    "fat32",
+    "exfat",
+    "xfs",
+    "btrfs",
+    "discard",
+    "discard-secure",
+    "wipe",
+];
+const DISK_TYPE: FieldSpec = f!("type", "Type", FieldKind::Enum { values: DISK_TYPES });
+const DISK_SLOT: FieldSpec = f!("slot", "Slot", FieldKind::Text);
+
+pub static DISK_FORM: FormSchema = FormSchema {
+    title_key: "slot",
+    subtitle_keys: &["type"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                DISK_SLOT,
+                DISK_TYPE,
+                f!("parent", "Parent", LOOKUP_DISK),
+                f!("mount-filesystem", "Mount Filesystem", FieldKind::Toggle),
+                f!("mount-read-only", "Mount Read Only", FieldKind::Toggle),
+                f!("swap", "Swap", FieldKind::Toggle),
+                DISABLED,
+                f!("tmpfs-max-size", "Tmpfs Max Size", FieldKind::Number),
+                f!("ramdisk-size", "Ramdisk Size", FieldKind::Number),
+                f!("partition-number", "Partition Number", FieldKind::Number),
+                f!("partition-offset", "Partition Offset", FieldKind::Number),
+                f!("partition-size", "Partition Size", FieldKind::Number),
+                f!(
+                    "raid-type",
+                    "RAID Type",
+                    FieldKind::Enum { values: RAID_TYPES }
+                ),
+                f!("raid-device-count", "RAID Device Count", FieldKind::Number),
+                f!(
+                    "raid-max-component-size",
+                    "RAID Max Component Size",
+                    FieldKind::Number
+                ),
+                f!(
+                    "raid-chunk-size",
+                    "RAID Chunk Size",
+                    FieldKind::Enum {
+                        values: RAID_CHUNK_SIZES,
+                    }
+                ),
+                f!("raid-master", "RAID Master", LOOKUP_DISK),
+                f!("raid-role", "RAID Role", FieldKind::Number),
+                f!(
+                    "raid-member-failed",
+                    "RAID Member Failed",
+                    FieldKind::Toggle
+                ),
+                f!("file-path", "File Path", LOOKUP_FILE),
+                f!("file-size", "File Size", FieldKind::Number),
+                f!("file-offset", "File Offset", FieldKind::Number),
+                f!("crypted-backend", "Crypted Backend", LOOKUP_DISK),
+                f!("encryption-key", "Encryption Key", FieldKind::Secret),
+                f!("sshfs-address", "SSHFS Address", FieldKind::Text),
+                f!("sshfs-port", "SSHFS Port", FieldKind::Number),
+                f!("sshfs-user", "SSHFS User", FieldKind::Text),
+                f!("sshfs-password", "SSHFS Password", FieldKind::Secret),
+                f!("sshfs-path", "SSHFS Path", FieldKind::Text),
+                f!("nfs-address", "NFS Address", FieldKind::Text),
+                f!("nfs-share", "NFS Share", FieldKind::Text),
+                f!("smb-address", "SMB Address", FieldKind::Text),
+                f!("smb-share", "SMB Share", FieldKind::Text),
+                f!("smb-user", "SMB User", FieldKind::Text),
+                f!("smb-password", "SMB Password", FieldKind::Secret),
+                f!("smb-encryption", "SMB Encryption", FieldKind::Toggle),
+                f!("nvme-tcp-address", "NVMe TCP Address", FieldKind::Text),
+                f!("nvme-tcp-nqn", "NVMe TCP NQN", FieldKind::Text),
+                f!("nvme-tcp-host-name", "NVMe TCP Host Name", FieldKind::Text),
+                f!("nvme-tcp-password", "NVMe TCP Password", FieldKind::Secret),
+                f!("nvme-tcp-port", "NVMe TCP Port", FieldKind::Number),
+                f!("iscsi-address", "iSCSI Address", FieldKind::Text),
+                f!("iscsi-iqn", "iSCSI IQN", FieldKind::Text),
+                f!("iscsi-port", "iSCSI Port", FieldKind::Number),
+                f!("nvme-tcp-export", "NVMe TCP Export", FieldKind::Toggle),
+                f!(
+                    "nvme-tcp-server-port",
+                    "NVMe TCP Server Port",
+                    FieldKind::Number
+                ),
+                f!(
+                    "nvme-tcp-server-nqn",
+                    "NVMe TCP Server NQN",
+                    FieldKind::Text
+                ),
+                f!(
+                    "nvme-tcp-server-password",
+                    "NVMe TCP Server Password",
+                    FieldKind::Secret
+                ),
+                f!("iscsi-export", "iSCSI Export", FieldKind::Toggle),
+                f!("iscsi-server-port", "iSCSI Server Port", FieldKind::Number),
+                f!("iscsi-server-iqn", "iSCSI Server IQN", FieldKind::Text),
+                f!("nfs-sharing", "NFS Sharing", FieldKind::Toggle),
+                f!("smb-sharing", "SMB Sharing", FieldKind::Toggle),
+                f!("smb-server-user", "SMB Server User", LOOKUP_USER),
+                f!(
+                    "smb-server-password",
+                    "SMB Server Password",
+                    FieldKind::Secret
+                ),
+                f!(
+                    "smb-server-encryption",
+                    "SMB Server Encryption",
+                    FieldKind::Toggle
+                ),
+                f!("media-sharing", "Media Sharing", FieldKind::Toggle),
+                f!("media-interface", "Media Interface", LOOKUP_IFACE),
+                f!(
+                    "self-encryption-password",
+                    "Self Encryption Password",
+                    FieldKind::Secret
+                ),
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("model", "Model", FieldKind::Readonly),
+                f!("serial", "Serial", FieldKind::Readonly),
+                f!("fw-version", "FW Version", FieldKind::Readonly),
+                f!("size", "Size", FieldKind::Readonly),
+                f!("free", "Free", FieldKind::Readonly),
+                f!("fs", "FS", FieldKind::Readonly),
+                f!("fs-label", "FS Label", FieldKind::Readonly),
+                f!("fs-uuid", "FS UUID", FieldKind::Readonly),
+                f!("state", "State", FieldKind::Readonly),
+                f!("mount-point", "Mount Point", FieldKind::Readonly),
+                f!("slot-default", "Slot Default", FieldKind::Readonly),
+                f!("raid-uuid", "RAID UUID", FieldKind::Readonly),
+                f!(
+                    "raid-member-state",
+                    "RAID Member State",
+                    FieldKind::Readonly
+                ),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[DISK_TYPE, DISK_SLOT],
+    }],
+};
+
+pub static FORMAT_DISK_PROMPT: FormSchema = FormSchema {
+    title_key: "file-system",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            FieldSpec {
+                key: "file-system",
+                label: "File System",
+                kind: FieldKind::Enum {
+                    values: FORMAT_FILE_SYSTEMS,
+                },
+            },
+            f!("label", "Label", FieldKind::Text),
+            f!(
+                "mbr-partition-table",
+                "MBR Partition Table",
+                FieldKind::Toggle
+            ),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            FieldSpec {
+                key: "file-system",
+                label: "File System",
+                kind: FieldKind::Enum {
+                    values: FORMAT_FILE_SYSTEMS,
+                },
+            },
+            f!("label", "Label", FieldKind::Text),
+            f!(
+                "mbr-partition-table",
+                "MBR Partition Table",
+                FieldKind::Toggle
+            ),
+        ],
+    }],
+};
+
+const DEVICE_MODE_MODES: &[&str] = &["advanced", "home", "basic", "rose"];
+
+pub static DEVICE_MODE_FORM: FormSchema = FormSchema {
+    title_key: "mode",
+    subtitle_keys: &["flagged"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                f!(
+                    "mode",
+                    "Mode",
+                    FieldKind::Enum {
+                        values: DEVICE_MODE_MODES,
+                    }
+                ),
+                f!("scheduler", "Scheduler", FieldKind::Toggle),
+                f!("socks", "SOCKS", FieldKind::Toggle),
+                f!("fetch", "Fetch", FieldKind::Toggle),
+                f!("pptp", "PPTP", FieldKind::Toggle),
+                f!("l2tp", "L2TP", FieldKind::Toggle),
+                f!("bandwidth-test", "Bandwidth Test", FieldKind::Toggle),
+                f!("traffic-gen", "Traffic Generator", FieldKind::Toggle),
+                f!("sniffer", "Sniffer", FieldKind::Toggle),
+                f!("ipsec", "IPsec", FieldKind::Toggle),
+                f!("romon", "RoMON", FieldKind::Toggle),
+                f!("proxy", "Proxy", FieldKind::Toggle),
+                f!("hotspot", "Hotspot", FieldKind::Toggle),
+                f!("smb", "SMB", FieldKind::Toggle),
+                f!("email", "Email", FieldKind::Toggle),
+                f!("zerotier", "ZeroTier", FieldKind::Toggle),
+                f!("container", "Container", FieldKind::Toggle),
+                f!(
+                    "install-any-version",
+                    "Install Any Version",
+                    FieldKind::Toggle
+                ),
+                f!("partitions", "Partitions", FieldKind::Toggle),
+                f!("routerboard", "RouterBOARD", FieldKind::Toggle),
+                f!("flagging-enabled", "Flagging Enabled", FieldKind::Toggle),
+                f!("flagged", "Flagged", FieldKind::Toggle),
+                f!("activation-timeout", "Activation Timeout", FieldKind::Text),
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("allowed-versions", "Allowed Versions", FieldKind::Readonly),
+                f!("attempt-count", "Attempt Count", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[],
+};
+
 pub static PACKAGE_FORM: FormSchema = FormSchema {
     title_key: "name",
     subtitle_keys: &["version"],
@@ -1238,5 +1569,126 @@ mod tests {
         assert!(!PACKAGE_FORM.writable_keys().contains(&"version"));
         assert!(!PACKAGE_FORM.writable_keys().contains(&"build-time"));
         assert!(!PACKAGE_FORM.writable_keys().contains(&"scheduled"));
+    }
+
+    #[test]
+    fn license_is_inspect_only_and_key_is_secret() {
+        assert!(LICENSE_FORM.create_sections.is_empty());
+        assert!(LICENSE_FORM.writable_keys().is_empty());
+        assert!(
+            LICENSE_FORM
+                .sections
+                .iter()
+                .all(|section| section.id == "status" && section.read_only)
+        );
+        assert_label(&LICENSE_FORM, "software-id", "Software ID");
+        assert_label(&LICENSE_FORM, "nlevel", "Level");
+        assert_label(&LICENSE_FORM, "system-id", "System ID");
+        assert_eq!(
+            LICENSE_FORM.field("nlevel").map(|field| field.kind),
+            Some(FieldKind::Readonly)
+        );
+        assert_eq!(
+            LICENSE_IMPORT_PROMPT.field("k").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_label(&LICENSE_IMPORT_PROMPT, "k", "License Key");
+        assert_lookup(&LICENSE_IMPORT_PROMPT, "file-name", "files", "name");
+        let mut original = HashMap::new();
+        original.insert("k".into(), "********".into());
+        original.insert("file-name".into(), String::new());
+        let mut current = original.clone();
+        current.insert("k".into(), "********".into());
+        current.insert("file-name".into(), "chr.key".into());
+        let body = patch_body(&LICENSE_IMPORT_PROMPT, &original, &current, "********");
+        assert_eq!(body.get("file-name").map(String::as_str), Some("chr.key"));
+        assert!(!body.contains_key("k"));
+    }
+
+    #[test]
+    fn disk_form_uses_webfig_field_kinds() {
+        assert_eq!(create_keys(&DISK_FORM), ["type", "slot"]);
+        assert_enum(&DISK_FORM, "type", DISK_TYPES);
+        assert_enum(&DISK_FORM, "raid-type", RAID_TYPES);
+        assert_enum(&DISK_FORM, "raid-chunk-size", RAID_CHUNK_SIZES);
+        assert_lookup(&DISK_FORM, "parent", "disks", "slot");
+        assert_lookup(&DISK_FORM, "raid-master", "disks", "slot");
+        assert_lookup(&DISK_FORM, "crypted-backend", "disks", "slot");
+        assert_lookup(&DISK_FORM, "file-path", "files", "name");
+        assert_lookup(&DISK_FORM, "media-interface", "interfaces", "name");
+        assert_lookup(&DISK_FORM, "smb-server-user", "users", "name");
+        assert_eq!(
+            DISK_FORM.field("raid-role").map(|field| field.kind),
+            Some(FieldKind::Number)
+        );
+        assert_eq!(
+            DISK_FORM.field("sshfs-port").map(|field| field.kind),
+            Some(FieldKind::Number)
+        );
+        assert_eq!(
+            DISK_FORM.field("mount-filesystem").map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_eq!(
+            DISK_FORM.field("encryption-key").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(
+            DISK_FORM.field("sshfs-password").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(
+            DISK_FORM.field("model").map(|field| field.kind),
+            Some(FieldKind::Readonly)
+        );
+        assert!(!DISK_FORM.writable_keys().contains(&"size"));
+        assert!(!DISK_FORM.writable_keys().contains(&"fs"));
+        assert_label(&DISK_FORM, "raid-master", "RAID Master");
+        assert_enum(&FORMAT_DISK_PROMPT, "file-system", FORMAT_FILE_SYSTEMS);
+        assert_eq!(FORMAT_FILE_SYSTEMS[0], "ext4");
+        assert_eq!(
+            FORMAT_DISK_PROMPT
+                .field("mbr-partition-table")
+                .map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_label(&FORMAT_DISK_PROMPT, "file-system", "File System");
+    }
+
+    #[test]
+    fn device_mode_flags_are_toggles_not_text() {
+        assert!(DEVICE_MODE_FORM.create_sections.is_empty());
+        assert_enum(&DEVICE_MODE_FORM, "mode", DEVICE_MODE_MODES);
+        assert_eq!(DEVICE_MODE_MODES, ["advanced", "home", "basic", "rose"]);
+        for key in [
+            "container",
+            "scheduler",
+            "traffic-gen",
+            "fetch",
+            "flagged",
+            "flagging-enabled",
+        ] {
+            assert_eq!(
+                DEVICE_MODE_FORM.field(key).map(|field| field.kind),
+                Some(FieldKind::Toggle),
+                "{key} must be a toggle"
+            );
+        }
+        assert_label(&DEVICE_MODE_FORM, "traffic-gen", "Traffic Generator");
+        assert_label(&DEVICE_MODE_FORM, "bandwidth-test", "Bandwidth Test");
+        assert_eq!(
+            DEVICE_MODE_FORM
+                .field("allowed-versions")
+                .map(|field| field.kind),
+            Some(FieldKind::Readonly)
+        );
+        assert_eq!(
+            DEVICE_MODE_FORM
+                .field("attempt-count")
+                .map(|field| field.kind),
+            Some(FieldKind::Readonly)
+        );
+        assert!(!DEVICE_MODE_FORM.writable_keys().contains(&"attempt-count"));
+        assert!(no_advanced(&DEVICE_MODE_FORM));
     }
 }

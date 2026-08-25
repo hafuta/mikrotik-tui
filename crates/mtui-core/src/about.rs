@@ -1129,6 +1129,38 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "time, date, time-zone-name, gmt-offset."
     ),
     guide!(
+        "license",
+        "RouterOS license status for this device: Software ID and nlevel on RouterBOARD or x86, \
+         System ID and CHR level on Cloud Hosted Router.",
+        "Check the level before an upgrade or a CHR move. Apply a key or import a file already on \
+         the router; this client never prints or logs a license key. Output-key is not offered.",
+        "software-id, nlevel, features, expires-in on hardware. system-id, level, next-renewal-at, \
+         deadline-at, limited-upgrades on CHR.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/328149/RouterOS+license+keys"
+    ),
+    guide!(
+        "disks",
+        "Attached storage: USB, NAND, RAID, tmpfs, and network-backed slots under `/disk`.",
+        "Inspect size and filesystem before containers or extra logging. Format and eject ask for \
+         confirmation. RAID type and role are sheet fields with a save preview; they are not silent \
+         extra commands.",
+        "slot, type, mount-filesystem, RAID type/role/master, size, free, fs, state. Format needs \
+         a file-system type.",
+        "https://manual.mikrotik.com/docs/hardware/disks/"
+    ),
+    guide!(
+        "device-mode",
+        "RouterOS v7 device-mode: which features (container, scheduler, traffic-gen, fetch, and \
+         others) this box is allowed to run. Home, basic, advanced, and ROSE presets each leave \
+         some flags off until you enable them.",
+        "Read the flags before blaming a missing menu. Saving here sends `/system/device-mode \
+         update`, not a silent PATCH. RouterOS then waits for a reset or mode button press, or a \
+         cold power-off, within the activation timeout (default 5 minutes). The device reboots when \
+         the change is confirmed. If you do nothing, the update is canceled.",
+        "mode, per-feature yes/no flags, flagged, flagging-enabled, allowed-versions, attempt-count.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode"
+    ),
+    guide!(
         "identity",
         "System identity string shown in neighbors, WinBox, and prompts.",
         "Set a unique name per device. It is not a DNS name unless you also create DNS.",

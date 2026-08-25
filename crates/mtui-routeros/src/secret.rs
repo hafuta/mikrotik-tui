@@ -12,7 +12,8 @@ pub const MASKED_VALUE: &str = "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}
 ///
 /// Matches (case-insensitively, treating `_` and `-` as equivalent):
 /// `password`, `secret`, `secrets`, `passphrase`, `private-key`, `psk`, `pin`, `cak`,
-/// `key-val`, any key containing `password` or a pre-shared-key spelling, and
+/// `key-val`, `encryption-key`, `k` (license paste), any key containing
+/// `password` or a pre-shared-key spelling, and
 /// any key ending in `-secret`.
 #[must_use]
 pub fn is_secret_key(key: &str) -> bool {
@@ -28,6 +29,8 @@ pub fn is_secret_key(key: &str) -> bool {
             | "pin"
             | "cak"
             | "key-val"
+            | "encryption-key"
+            | "k"
     ) || normalized.contains("password")
         || normalized.contains("pre-shared-key")
         || normalized.contains("preshared-key")
@@ -65,6 +68,8 @@ mod tests {
             "pin",
             "cak",
             "key-val",
+            "encryption-key",
+            "k",
             "preshared-key",
             "pre-shared-key",
             "wpa2-pre-shared-key",

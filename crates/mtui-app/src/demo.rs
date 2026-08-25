@@ -843,6 +843,67 @@ impl DemoStore {
             ],
         );
         self.rows.insert(
+            "license".into(),
+            vec![resource(
+                "",
+                &[
+                    ("software-id", "ABCD-EFGH"),
+                    ("nlevel", "6"),
+                    ("features", ""),
+                    ("system-id", ""),
+                    ("level", ""),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "disks".into(),
+            vec![
+                resource(
+                    "*d1",
+                    &[
+                        ("slot", "usb1"),
+                        ("type", "hardware"),
+                        ("model", "USB DISK"),
+                        ("serial", "DEMO123"),
+                        ("size", "32000000000"),
+                        ("free", "30000000000"),
+                        ("fs", "ext4"),
+                        ("state", "ok"),
+                        ("disabled", "false"),
+                    ],
+                ),
+                resource(
+                    "*d2",
+                    &[
+                        ("slot", "raid1"),
+                        ("type", "raid"),
+                        ("raid-type", "1"),
+                        ("raid-device-count", "2"),
+                        ("model", "RAID1"),
+                        ("fs", "ext4"),
+                        ("disabled", "false"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "device-mode".into(),
+            vec![resource(
+                "",
+                &[
+                    ("mode", "advanced"),
+                    ("flagged", "false"),
+                    ("flagging-enabled", "true"),
+                    ("container", "false"),
+                    ("scheduler", "true"),
+                    ("traffic-gen", "false"),
+                    ("fetch", "true"),
+                    ("allowed-versions", "7.13+,6.49.8+"),
+                    ("attempt-count", "0"),
+                ],
+            )],
+        );
+        self.rows.insert(
             "safe-mode".into(),
             vec![resource(
                 "",

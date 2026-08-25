@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use mtui_core::{
     FieldKind, FieldSpec, FormSchema, FormSection, default_writable_value, extra_status_fields,
-    field_visible, join_ros_list, prepare_lookup_options, split_ros_list,
+    field_visible, join_ros_list, prepare_lookup_options, split_ros_list, with_leading_none,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -225,6 +225,7 @@ impl FormSession {
                 values.entry(field.key.to_string()).or_default();
             }
         }
+        let original = values.clone();
         let repeat = repeat_from_schema(schema, &values);
         Self {
             resource_id: resource_id.into(),
@@ -234,7 +235,7 @@ impl FormSession {
             focus: 0,
             offset: 0,
             values,
-            original: HashMap::new(),
+            original,
             extras: Vec::new(),
             error: None,
             saving: false,
@@ -677,7 +678,15 @@ impl FormSession {
         let picker = self.lookup.as_mut().expect("lookup still open");
         picker.loading = false;
         picker.error = error;
-        picker.options = prepare_lookup_options(&sheet_id, picker.resource_id, options);
+        let options = prepare_lookup_options(&sheet_id, picker.resource_id, options);
+        picker.options = if matches!(
+            picker.field_key.as_str(),
+            "raid-master" | "media-interface" | "crypted-backend"
+        ) {
+            with_leading_none(options)
+        } else {
+            options
+        };
         let filtered = filtered_lookup_options(&picker.options, &picker.filter, &picker.field_key);
         if picker.focus >= filtered.len() {
             picker.focus = filtered.len().saturating_sub(1);
@@ -2736,6 +2745,24 @@ mod tests {
         assert!(rendered.contains("nightly"));
         assert!(rendered.contains("Password"));
         assert!(!rendered.contains("hidden"));
+    }
+
+    #[test]
+    fn prompt_with_defaults_is_not_dirty() {
+        let mut values = HashMap::new();
+        values.insert("file-system".into(), "ext4".into());
+        let session = FormSession::prompt_with(
+            "disks",
+            "*d1",
+            "format",
+            &mtui_core::FORMAT_DISK_PROMPT,
+            values,
+        );
+        assert!(!session.is_dirty());
+        assert_eq!(
+            session.values.get("file-system").map(String::as_str),
+            Some("ext4")
+        );
     }
 
     #[test]
