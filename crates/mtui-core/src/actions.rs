@@ -1018,6 +1018,7 @@ pub const INTERFACE_CREATE_TARGETS: &[(&str, &str)] = &[
     ("macvlan", "MACVLAN"),
     ("macsec", "MACsec"),
     ("macsec-profiles", "MACsec Profile"),
+    ("lte-apn", "LTE APN"),
     ("interface-lists", "Lists"),
     ("interface-list-members", "List members"),
     ("vrf", "VRF"),

@@ -289,4 +289,42 @@ mod tests {
         );
         assert_eq!(user.field("password"), Some("hunter2"));
     }
+
+    #[test]
+    fn lte_apn_decode_table_covers_optional_malformed_and_secrets() {
+        let cases: &[(&str, Result<(&str, Option<&str>, Option<&str>), ()>)] = &[
+            (
+                r#"{".id":"*1","name":"default","apn":"internet","authentication":"none"}"#,
+                Ok(("*1", Some("internet"), None)),
+            ),
+            (
+                r#"{".id":"*2","name":"carrier","apn":"lte.provider","user":"u","password":"pw"}"#,
+                Ok(("*2", Some("lte.provider"), Some("pw"))),
+            ),
+            (
+                r#"{"name":"partial"}"#,
+                Ok(("", None, None)),
+            ),
+            (r#"{".id":"*3","apn":true}"#, Err(())),
+            (r#"not-json"#, Err(())),
+        ];
+        for (json, expected) in cases {
+            let parsed: Result<Resource, _> = serde_json::from_str(json);
+            match expected {
+                Ok((id, apn, password)) => {
+                    let resource = parsed.expect(json);
+                    assert_eq!(resource.id, *id, "{json}");
+                    assert_eq!(resource.field("apn"), *apn, "{json}");
+                    assert_eq!(resource.field("password"), *password, "{json}");
+                    if password.is_some() {
+                        assert_eq!(
+                            resource.masked_fields().get("password").map(String::as_str),
+                            Some(crate::secret::MASKED_VALUE)
+                        );
+                    }
+                }
+                Err(()) => assert!(parsed.is_err(), "{json}"),
+            }
+        }
+    }
 }

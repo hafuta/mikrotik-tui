@@ -54,6 +54,16 @@ const LOOKUP_MACSEC_PROFILE: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_LTE_APN: FieldKind = FieldKind::Lookup {
+    resource_id: "lte-apn",
+    value_key: "name",
+    multiple: true,
+};
+
+pub const LTE_APN_AUTHENTICATION: &[&str] = &["none", "pap", "chap"];
+pub const LTE_APN_IP_TYPE: &[&str] = &["ipv4", "ipv4-ipv6", "ipv6", "auto"];
+pub const LTE_APN_PASSTHROUGH_SUBNET: &[&str] = &["auto", "p2p"];
+pub const LTE_SMS_PROTOCOL: &[&str] = &["auto", "at", "mbim"];
 
 const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
 
@@ -657,27 +667,129 @@ pub static LTE_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[NAME, COMMENT, DISABLED],
+            fields: &[
+                NAME,
+                COMMENT,
+                DISABLED,
+                MTU,
+                MAC,
+                f!("network-mode", "Network Mode", FieldKind::Repeat),
+                f!("band", "Band", FieldKind::Repeat),
+                f!("nr-band", "NR Band", FieldKind::Repeat),
+                f!("pin", "PIN", FieldKind::Secret),
+                f!("operator", "Operator", FieldKind::Text),
+                f!("modem-init", "Modem Init", FieldKind::Text),
+                f!("allow-roaming", "Allow Roaming", FieldKind::Toggle),
+            ],
         },
         FormSection {
             id: "apn",
             label: "APN",
             read_only: false,
+            fields: &[f!("apn-profiles", "APN Profiles", LOOKUP_LTE_APN)],
+        },
+        FormSection {
+            id: "advanced",
+            label: "Advanced",
+            read_only: false,
             fields: &[
-                f!("apn", "APN", FieldKind::Text),
-                f!("network-mode", "Network", FieldKind::Text),
-                MTU,
-                MAC,
+                f!(
+                    "sms-protocol",
+                    "SMS Protocol",
+                    FieldKind::Enum {
+                        values: LTE_SMS_PROTOCOL
+                    }
+                ),
+                f!("sms-read", "SMS Read", FieldKind::Toggle),
             ],
         },
         FormSection {
             id: "status",
             label: "Status",
             read_only: true,
-            fields: &[DEFAULT_NAME, RUNNING],
+            fields: &[
+                IFACE_TYPE,
+                DEFAULT_NAME,
+                RUNNING,
+                f!("advertised-mtu", "Advertised MTU", FieldKind::Readonly),
+                f!("master", "Master", FieldKind::Readonly),
+            ],
         },
     ],
     create_sections: &[],
+};
+
+pub static LTE_APN_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["apn"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                NAME,
+                f!("apn", "APN", FieldKind::Text),
+                f!(
+                    "authentication",
+                    "Authentication",
+                    FieldKind::Enum {
+                        values: LTE_APN_AUTHENTICATION
+                    }
+                ),
+                f!("user", "User", FieldKind::Text),
+                f!("password", "Password", FieldKind::Secret),
+                f!(
+                    "ip-type",
+                    "IP Type",
+                    FieldKind::Enum {
+                        values: LTE_APN_IP_TYPE
+                    }
+                ),
+                f!("use-network-apn", "Use Network APN", FieldKind::Toggle),
+                f!("use-peer-dns", "Use Peer DNS", FieldKind::Toggle),
+                f!("add-default-route", "Add Default Route", FieldKind::Toggle),
+                f!(
+                    "default-route-distance",
+                    "Default Route Distance",
+                    FieldKind::Number
+                ),
+            ],
+        },
+        FormSection {
+            id: "advanced",
+            label: "Advanced",
+            read_only: false,
+            fields: &[
+                f!(
+                    "passthrough-interface",
+                    "Passthrough Interface",
+                    LOOKUP_IFACE
+                ),
+                f!("passthrough-mac", "Passthrough MAC", FieldKind::Text),
+                f!(
+                    "passthrough-subnet-selection",
+                    "Passthrough Subnet Selection",
+                    FieldKind::Enum {
+                        values: LTE_APN_PASSTHROUGH_SUBNET
+                    }
+                ),
+                f!("ipv6-interface", "IPv6 Interface", LOOKUP_IFACE),
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[f!("default", "Default", FieldKind::Readonly)],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[NAME, f!("apn", "APN", FieldKind::Text)],
+    }],
 };
 
 pub static WIFI_FORM: FormSchema = FormSchema {
@@ -970,7 +1082,7 @@ pub static WIRELESS_ACCESS_LIST_FORM: FormSchema = FormSchema {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forms::patch_body;
+    use crate::forms::{default_writable_value, patch_body};
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
@@ -1107,5 +1219,149 @@ mod tests {
         let body = patch_body(&MACSEC_FORM, &original, &current, "********");
         assert!(!body.contains_key("cak"));
         assert_eq!(body.get("comment").map(String::as_str), Some("peer"));
+    }
+
+    fn assert_enum(schema: &FormSchema, key: &str, values: &'static [&'static str]) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Enum { values })
+        );
+    }
+
+    fn assert_label(schema: &FormSchema, key: &str, label: &str) {
+        assert_eq!(schema.field(key).map(|field| field.label), Some(label));
+    }
+
+    #[test]
+    fn lte_sheet_puts_apn_profiles_on_the_apn_tab() {
+        assert!(LTE_FORM.create_sections.is_empty());
+        assert_eq!(
+            LTE_FORM
+                .sections
+                .iter()
+                .map(|section| section.id)
+                .collect::<Vec<_>>(),
+            ["general", "apn", "advanced", "status"]
+        );
+        assert_lookup(&LTE_FORM, "apn-profiles", "lte-apn", true);
+        assert_eq!(
+            LTE_FORM.field("network-mode").map(|field| field.kind),
+            Some(FieldKind::Repeat)
+        );
+        assert_eq!(
+            LTE_FORM.field("band").map(|field| field.kind),
+            Some(FieldKind::Repeat)
+        );
+        assert_eq!(
+            LTE_FORM.field("nr-band").map(|field| field.kind),
+            Some(FieldKind::Repeat)
+        );
+        assert_eq!(
+            LTE_FORM.field("pin").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(
+            LTE_FORM.field("allow-roaming").map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_enum(&LTE_FORM, "sms-protocol", LTE_SMS_PROTOCOL);
+        assert_eq!(
+            LTE_FORM.field("sms-read").map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_label(&LTE_FORM, "apn-profiles", "APN Profiles");
+        assert_label(&LTE_FORM, "network-mode", "Network Mode");
+        assert_label(&LTE_FORM, "allow-roaming", "Allow Roaming");
+        assert_label(&LTE_FORM, "modem-init", "Modem Init");
+        assert!(!LTE_FORM.writable_keys().contains(&"apn"));
+        assert!(!LTE_FORM.writable_keys().contains(&"running"));
+        assert!(
+            LTE_FORM
+                .sections
+                .iter()
+                .find(|section| section.id == "status")
+                .is_some_and(|section| section.read_only)
+        );
+    }
+
+    #[test]
+    fn lte_apn_kinds_match_webfig() {
+        assert_eq!(create_keys(&LTE_APN_FORM), ["name", "apn"]);
+        assert_enum(&LTE_APN_FORM, "authentication", LTE_APN_AUTHENTICATION);
+        assert_enum(&LTE_APN_FORM, "ip-type", LTE_APN_IP_TYPE);
+        assert_enum(
+            &LTE_APN_FORM,
+            "passthrough-subnet-selection",
+            LTE_APN_PASSTHROUGH_SUBNET,
+        );
+        assert_eq!(
+            LTE_APN_FORM.field("password").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(
+            LTE_APN_FORM.field("use-network-apn").map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_eq!(
+            LTE_APN_FORM.field("use-peer-dns").map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_eq!(
+            LTE_APN_FORM
+                .field("add-default-route")
+                .map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_eq!(
+            LTE_APN_FORM
+                .field("default-route-distance")
+                .map(|field| field.kind),
+            Some(FieldKind::Number)
+        );
+        assert_lookup(&LTE_APN_FORM, "passthrough-interface", "interfaces", false);
+        assert_lookup(&LTE_APN_FORM, "ipv6-interface", "interfaces", false);
+        assert_eq!(
+            LTE_APN_FORM.field("apn").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            LTE_APN_FORM.field("user").map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            LTE_APN_FORM
+                .field("passthrough-mac")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_label(&LTE_APN_FORM, "use-network-apn", "Use Network APN");
+        assert_label(&LTE_APN_FORM, "add-default-route", "Add Default Route");
+        assert_label(
+            &LTE_APN_FORM,
+            "default-route-distance",
+            "Default Route Distance",
+        );
+        assert_label(
+            &LTE_APN_FORM,
+            "passthrough-subnet-selection",
+            "Passthrough Subnet Selection",
+        );
+        assert!(!LTE_APN_FORM.writable_keys().contains(&"default"));
+        assert_eq!(
+            default_writable_value(LTE_APN_FORM.field("authentication").unwrap().kind),
+            "none"
+        );
+
+        let mut original = HashMap::new();
+        original.insert("name".into(), "default".into());
+        original.insert("apn".into(), "internet".into());
+        original.insert("password".into(), "********".into());
+        original.insert("authentication".into(), "chap".into());
+        let mut current = original.clone();
+        current.insert("apn".into(), "lte.provider".into());
+        current.insert("password".into(), "********".into());
+        let body = patch_body(&LTE_APN_FORM, &original, &current, "********");
+        assert_eq!(body.get("apn").map(String::as_str), Some("lte.provider"));
+        assert!(!body.contains_key("password"));
     }
 }
