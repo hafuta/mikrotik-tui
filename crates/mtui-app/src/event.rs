@@ -123,6 +123,15 @@ pub enum WorkerMsg {
         options: Vec<String>,
         error: Option<String>,
     },
+    FormRecordResult {
+        session: SessionId,
+        request_id: u64,
+        generation: u64,
+        resource_id: String,
+        id: String,
+        fields: Option<std::collections::HashMap<String, String>>,
+        error: Option<String>,
+    },
     ListLocalDirResult {
         session: SessionId,
         generation: u64,
@@ -169,6 +178,7 @@ impl WorkerMsg {
             | Self::RecordResult { session, .. }
             | Self::PingTraceResult { session, .. }
             | Self::LookupResult { session, .. }
+            | Self::FormRecordResult { session, .. }
             | Self::ListLocalDirResult { session, .. }
             | Self::ListenDelta { session, .. }
             | Self::WanSample { session, .. }

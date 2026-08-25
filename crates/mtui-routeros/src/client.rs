@@ -138,7 +138,7 @@ impl Client {
             .collect())
     }
 
-    /// Fetches a single record by opaque `RouterOS` id.
+    /// Fetches a single record by opaque `RouterOS` id (`print` + `?.id=`).
     pub async fn get(&self, endpoint: &str, id: &str) -> Result<Resource> {
         if id.trim().is_empty() {
             return Err(Error::api("get", "record id is required"));
@@ -146,10 +146,7 @@ impl Client {
         let replies = self
             .inner
             .control
-            .request(
-                "get",
-                vec![command_path(endpoint, "print")?, format!("=.id={id}")],
-            )
+            .request("get", print_item_words(endpoint, id)?)
             .await?;
         replies
             .into_iter()
@@ -320,12 +317,14 @@ impl ApiStream {
             };
             if sentence.is_fatal() {
                 let message = sentence.attr("message").unwrap_or("fatal API error");
+                let line = sentence.log_line();
                 crate::session::log_response_err(
                     self.operation,
                     &self.command,
                     &self.tag,
                     self.started,
                     message,
+                    Some(&line),
                 );
                 return Err(Error::new(
                     crate::error::ErrorKind::Server,
@@ -338,12 +337,14 @@ impl ApiStream {
                     .attr("message")
                     .or_else(|| sentence.attr("detail"))
                     .unwrap_or("request failed");
+                let line = sentence.log_line();
                 crate::session::log_response_err(
                     self.operation,
                     &self.command,
                     &self.tag,
                     self.started,
                     message,
+                    Some(&line),
                 );
                 return Err(sentence.trap_error("stream"));
             }
@@ -358,6 +359,15 @@ impl ApiStream {
                 return Ok(None);
             }
             if sentence.is_re() {
+                let line = sentence.log_line();
+                tracing::info!(
+                    operation = self.operation,
+                    command = self.command.as_str(),
+                    tag = self.tag.as_str(),
+                    sentence = line.as_str(),
+                    "response {}",
+                    self.command
+                );
                 return Ok(Some(sentence.into_resource()));
             }
         }
@@ -440,6 +450,10 @@ fn command_path(endpoint: &str, command: &str) -> Result<String> {
     Ok(format!("{path}/{command}"))
 }
 
+fn print_item_words(endpoint: &str, id: &str) -> Result<Vec<String>> {
+    Ok(vec![command_path(endpoint, "print")?, format!("?.id={id}")])
+}
+
 fn api_path(endpoint: &str, operation: &'static str) -> Result<String> {
     let trimmed = endpoint.trim();
     let path = trimmed.strip_prefix("/rest").unwrap_or(trimmed);
@@ -489,6 +503,18 @@ mod tests {
         assert_eq!(api_path("/interface", "test").unwrap(), "/interface");
         assert!(api_path("interface", "test").is_err());
         assert!(api_path("/interface/../system", "test").is_err());
+    }
+
+    #[test]
+    fn print_by_id_uses_query_word_not_attribute() {
+        assert_eq!(
+            print_item_words("/rest/interface/ethernet", "*5").unwrap(),
+            vec!["/interface/ethernet/print", "?.id=*5"]
+        );
+        assert_eq!(
+            print_item_words("/rest/interface/vlan", "*3").unwrap(),
+            vec!["/interface/vlan/print", "?.id=*3"]
+        );
     }
 
     #[test]

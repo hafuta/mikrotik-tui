@@ -1,5 +1,8 @@
 //! Descriptor-driven `RouterOS` resource catalog and navigation tree.
 
+use std::collections::HashSet;
+use std::fmt;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use crate::actions::ActionSpec;
@@ -93,609 +96,8 @@ macro_rules! col {
     };
 }
 
-pub static ALL_RESOURCES: &[ResourceSpec] = &[
-    ResourceSpec {
-        id: "interfaces",
-        group: "interfaces-group",
-        label: "Interface",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("type", "Type", 14),
-            col!("mtu", "MTU", 7),
-            col!("actual-mtu", "Actual MTU", 11),
-            col!("l2mtu", "L2 MTU", 8),
-            col!("max-l2mtu", "Max L2 MTU", 11),
-            col!("mac-address", "MAC address", 18),
-            col!("tx-byte", "TX", 12),
-            col!("rx-byte", "RX", 12),
-            col!("tx-packet", "TX pkt", 10),
-            col!("rx-packet", "RX pkt", 10),
-            col!("fp-tx-byte", "FP TX", 12),
-            col!("fp-rx-byte", "FP RX", 12),
-            col!("fp-tx-packet", "FP TX pkt", 10),
-            col!("fp-rx-packet", "FP RX pkt", 10),
-            col!("last-link-up-time", "Last link up", 20),
-            col!("last-link-down-time", "Last link down", 20),
-            col!("link-downs", "Link downs", 11),
-            col!("tx-drop", "TX drop", 9),
-            col!("rx-drop", "RX drop", 9),
-            col!("tx-queue-drop", "TX q-drop", 10),
-            col!("rx-error", "RX error", 9),
-            col!("tx-error", "TX error", 9),
-            col!("running", "Run", 5),
-            col!("slave", "Slave", 6),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(5),
-        actions: crate::actions::INTERFACE_LIST_ACTIONS,
-        form: Some(&crate::interface_write::INTERFACES_FORM),
-    },
-    ResourceSpec {
-        id: "interface-lists",
-        group: "interfaces-group",
-        label: "Lists",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/list",
-        },
-        columns: &[
-            col!("name", "Name", 20),
-            col!("include", "Include", 24),
-            col!("exclude", "Exclude", 24),
-            col!("builtin", "Builtin", 8),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::INTERFACE_LIST_DEF_ACTIONS,
-        form: Some(&crate::interface_write::LIST_FORM),
-    },
-    ResourceSpec {
-        id: "interface-list-members",
-        group: "interfaces-group",
-        label: "List members",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/list/member",
-        },
-        columns: &[
-            col!("list", "List", 16),
-            col!("interface", "Interface", 18),
-            col!("dynamic", "Dyn", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::INTERFACE_LIST_MEMBER_ACTIONS,
-        form: Some(&crate::interface_write::MEMBER_FORM),
-    },
-    ResourceSpec {
-        id: "ethernet",
-        group: "interfaces-group",
-        label: "Ethernet",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/ethernet",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("default-name", "Default name", 16),
-            col!("mtu", "MTU", 7),
-            col!("l2mtu", "L2 MTU", 8),
-            col!("mac-address", "MAC address", 18),
-            col!("orig-mac-address", "Orig MAC", 18),
-            col!("arp", "ARP", 16),
-            col!("auto-negotiation", "Auto-neg", 9),
-            col!("advertise", "Advertise", 28),
-            col!("speed", "Speed", 16),
-            col!("full-duplex", "Duplex", 8),
-            col!("switch", "Switch", 12),
-            col!("loop-protect", "Loop protect", 13),
-            col!("loop-protect-status", "Loop status", 12),
-            col!("running", "Run", 5),
-            col!("slave", "Slave", 6),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(5),
-        actions: crate::actions::ETHERNET_ACTIONS,
-        form: Some(&crate::interface_write::ETHERNET_FORM),
-    },
-    ResourceSpec {
-        id: "eoip",
-        group: "interfaces-group",
-        label: "EoIP Tunnel",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/eoip",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("tunnel-id", "Tunnel ID", 10),
-            col!("local-address", "Local", 18),
-            col!("remote-address", "Remote", 18),
-            col!("mtu", "MTU", 7),
-            col!("mac-address", "MAC address", 18),
-            col!("arp", "ARP", 16),
-            col!("keepalive", "Keepalive", 12),
-            col!("allow-fast-path", "Fast path", 10),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::EOIP_FORM),
-    },
-    ResourceSpec {
-        id: "ipip",
-        group: "interfaces-group",
-        label: "IP Tunnel",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/ipip",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("local-address", "Local", 18),
-            col!("remote-address", "Remote", 18),
-            col!("mtu", "MTU", 7),
-            col!("clamp-tcp-mss", "Clamp MSS", 10),
-            col!("dscp", "DSCP", 8),
-            col!("allow-fast-path", "Fast path", 10),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::IPIP_FORM),
-    },
-    ResourceSpec {
-        id: "gre",
-        group: "interfaces-group",
-        label: "GRE Tunnel",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/gre",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("local-address", "Local", 18),
-            col!("remote-address", "Remote", 18),
-            col!("mtu", "MTU", 7),
-            col!("keepalive", "Keepalive", 12),
-            col!("dscp", "DSCP", 8),
-            col!("clamp-tcp-mss", "Clamp MSS", 10),
-            col!("allow-fast-path", "Fast path", 10),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::GRE_FORM),
-    },
-    ResourceSpec {
-        id: "6to4",
-        group: "interfaces-group",
-        label: "6to4 Tunnel",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/6to4",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("local-address", "Local", 18),
-            col!("remote-address", "Remote", 18),
-            col!("mtu", "MTU", 7),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::IPIP_FORM),
-    },
-    ResourceSpec {
-        id: "sit",
-        group: "interfaces-group",
-        label: "SIT Tunnel",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/sit",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("local-address", "Local", 18),
-            col!("remote-address", "Remote", 18),
-            col!("mtu", "MTU", 7),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::IPIP_FORM),
-    },
-    ResourceSpec {
-        id: "gre6",
-        group: "interfaces-group",
-        label: "GRE6 Tunnel",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/gre6",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("local-address", "Local", 18),
-            col!("remote-address", "Remote", 18),
-            col!("mtu", "MTU", 7),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::GRE_FORM),
-    },
-    ResourceSpec {
-        id: "vlan",
-        group: "interfaces-group",
-        label: "VLAN",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/vlan",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("vlan-id", "VLAN ID", 8),
-            col!("interface", "Interface", 16),
-            col!("mtu", "MTU", 7),
-            col!("l2mtu", "L2 MTU", 8),
-            col!("mac-address", "MAC address", 18),
-            col!("arp", "ARP", 16),
-            col!("use-service-tag", "Service tag", 12),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::VLAN_FORM),
-    },
-    ResourceSpec {
-        id: "vxlan",
-        group: "interfaces-group",
-        label: "VXLAN",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/vxlan",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("vni", "VNI", 8),
-            col!("port", "Port", 8),
-            col!("group", "Group", 16),
-            col!("local", "Local", 18),
-            col!("interface", "Interface", 16),
-            col!("vrf", "VRF", 12),
-            col!("mtu", "MTU", 7),
-            col!("mac-address", "MAC address", 18),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::VXLAN_FORM),
-    },
-    ResourceSpec {
-        id: "vrrp",
-        group: "interfaces-group",
-        label: "VRRP",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/vrrp",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("interface", "Interface", 16),
-            col!("vrid", "VRID", 6),
-            col!("priority", "Priority", 9),
-            col!("interval", "Interval", 10),
-            col!("version", "Version", 8),
-            col!("v3-protocol", "V3 proto", 10),
-            col!("preemption-mode", "Preempt", 8),
-            col!("mac-address", "MAC address", 18),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(5),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::VRRP_FORM),
-    },
-    ResourceSpec {
-        id: "bonding",
-        group: "interfaces-group",
-        label: "Bonding",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/bonding",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("slaves", "Slaves", 28),
-            col!("mode", "Mode", 16),
-            col!("link-monitoring", "Monitor", 16),
-            col!("transmit-hash-policy", "Hash", 16),
-            col!("primary", "Primary", 16),
-            col!("mtu", "MTU", 7),
-            col!("mac-address", "MAC address", 18),
-            col!("arp", "ARP", 16),
-            col!("min-links", "Min links", 10),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::BONDING_FORM),
-    },
-    ResourceSpec {
-        id: "lte",
-        group: "interfaces-group",
-        label: "LTE",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/lte",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("default-name", "Default name", 16),
-            col!("mtu", "MTU", 7),
-            col!("mac-address", "MAC address", 18),
-            col!("network-mode", "Network", 14),
-            col!("apn-profiles", "APN Profiles", 18),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(5),
-        actions: crate::actions::LTE_ACTIONS,
-        form: Some(&crate::interface_write::LTE_FORM),
-    },
-    ResourceSpec {
-        id: "lte-apn",
-        group: "interfaces-group",
-        label: "LTE APN",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/lte/apn",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("apn", "APN", 18),
-            col!("authentication", "Authentication", 14),
-            col!("ip-type", "IP Type", 12),
-            col!("use-network-apn", "Network APN", 12),
-            col!("add-default-route", "Default", 8),
-            col!("password", "Password", 10),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::LIST_ACTIONS,
-        form: Some(&crate::interface_write::LTE_APN_FORM),
-    },
-    ResourceSpec {
-        id: "wifi",
-        group: "interfaces-group",
-        label: "WiFi",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wifi",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("default-name", "Default name", 16),
-            col!("configuration", "Configuration", 20),
-            col!("master-interface", "Master", 16),
-            col!("mac-address", "MAC address", 18),
-            col!("radio-mac", "Radio MAC", 18),
-            col!("current-channel", "Channel", 16),
-            col!("ssid", "SSID", 20),
-            col!("mtu", "MTU", 7),
-            col!("l2mtu", "L2 MTU", 8),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(5),
-        actions: crate::actions::RADIO_ACTIONS,
-        form: Some(&crate::interface_write::WIFI_FORM),
-    },
-    ResourceSpec {
-        id: "wifi-security",
-        group: "interfaces-group",
-        label: "WiFi Security",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wifi/security",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("authentication-types", "Auth", 18),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::LIST_ACTIONS,
-        form: Some(&crate::interface_write::WIFI_SECURITY_FORM),
-    },
-    ResourceSpec {
-        id: "wifi-channel",
-        group: "interfaces-group",
-        label: "WiFi Channel",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wifi/channel",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("band", "Band", 12),
-            col!("frequency", "Frequency", 14),
-            col!("width", "Width", 10),
-            col!("disabled", "Off", 5),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::LIST_ACTIONS,
-        form: Some(&crate::interface_write::WIFI_CHANNEL_FORM),
-    },
-    ResourceSpec {
-        id: "wifi-datapath",
-        group: "interfaces-group",
-        label: "WiFi Datapath",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wifi/datapath",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("bridge", "Bridge", 16),
-            col!("vlan-id", "VLAN", 6),
-            col!("disabled", "Off", 5),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::LIST_ACTIONS,
-        form: Some(&crate::interface_write::WIFI_DATAPATH_FORM),
-    },
-    ResourceSpec {
-        id: "wifi-configuration",
-        group: "interfaces-group",
-        label: "WiFi Configuration",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wifi/configuration",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("ssid", "SSID", 20),
-            col!("country", "Country", 10),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::LIST_ACTIONS,
-        form: Some(&crate::interface_write::WIFI_CONFIGURATION_FORM),
-    },
-    ResourceSpec {
-        id: "wifi-provisioning",
-        group: "interfaces-group",
-        label: "WiFi Provisioning",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wifi/provisioning",
-        },
-        columns: &[
-            col!("action", "Action", 14),
-            col!("supported-bands", "Bands", 16),
-            col!("master-configuration", "Master", 18),
-            col!("disabled", "Off", 5),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::MEMBER_ACTIONS,
-        form: Some(&crate::interface_write::WIFI_PROVISIONING_FORM),
-    },
-    ResourceSpec {
-        id: "wifi-cap",
-        group: "interfaces-group",
-        label: "WiFi CAP",
-        fetch: FetchKind::System {
-            endpoint: "/rest/interface/wifi/cap",
-        },
-        columns: &[
-            col!("enabled", "Enabled", 8),
-            col!("caps-man-addresses", "CAPsMAN", 24),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
-        form: Some(&crate::interface_write::WIFI_CAP_FORM),
-    },
-    ResourceSpec {
-        id: "wifi-capsman",
-        group: "interfaces-group",
-        label: "CAPsMAN",
-        fetch: FetchKind::System {
-            endpoint: "/rest/interface/wifi/capsman",
-        },
-        columns: &[
-            col!("enabled", "Enabled", 8),
-            col!("ca-certificate", "CA", 18),
-            col!("certificate", "Certificate", 18),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
-        form: Some(&crate::interface_write::WIFI_CAPSMAN_FORM),
-    },
-    ResourceSpec {
-        id: "wireless",
-        group: "interfaces-group",
-        label: "Wireless",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wireless",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("default-name", "Default name", 16),
-            col!("ssid", "SSID", 20),
-            col!("mode", "Mode", 14),
-            col!("band", "Band", 14),
-            col!("frequency", "Frequency", 12),
-            col!("mac-address", "MAC address", 18),
-            col!("mtu", "MTU", 7),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(5),
-        actions: crate::actions::RADIO_ACTIONS,
-        form: Some(&crate::interface_write::WIRELESS_FORM),
-    },
-    ResourceSpec {
-        id: "wireless-security-profiles",
-        group: "interfaces-group",
-        label: "Security Profiles",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wireless/security-profiles",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("mode", "Mode", 12),
-            col!("authentication-types", "Auth", 18),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::LIST_ACTIONS,
-        form: Some(&crate::interface_write::WIRELESS_SECURITY_FORM),
-    },
-    ResourceSpec {
-        id: "wireless-access-list",
-        group: "interfaces-group",
-        label: "Access List",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wireless/access-list",
-        },
-        columns: &[
-            col!("mac-address", "MAC", 18),
-            col!("interface", "Interface", 16),
-            col!("authentication", "Auth", 6),
-            col!("disabled", "Off", 5),
-        ],
-        refresh: Duration::from_secs(15),
-        actions: crate::actions::MEMBER_ACTIONS,
-        form: Some(&crate::interface_write::WIRELESS_ACCESS_LIST_FORM),
-    },
-    ResourceSpec {
-        id: "wireless-registration-table",
-        group: "interfaces-group",
-        label: "Registration",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/wireless/registration-table",
-        },
-        columns: &[
-            col!("mac-address", "MAC", 18),
-            col!("interface", "Interface", 16),
-            col!("ap", "AP", 5),
-            col!("signal-strength", "Signal", 10),
-            col!("uptime", "Uptime", 10),
-        ],
-        refresh: Duration::from_secs(5),
-        actions: crate::actions::DISCONNECT_ACTIONS,
-        form: None,
-    },
+/// Unmigrated resources retained as the fallback half of the hybrid catalog.
+static LEGACY_RESOURCES: &[ResourceSpec] = &[
     ResourceSpec {
         id: "wireguard",
         group: "wireguard-group",
@@ -745,120 +147,6 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         refresh: Duration::from_secs(5),
         actions: crate::actions::MEMBER_ACTIONS,
         form: Some(&crate::wireguard_write::WIREGUARD_PEER_FORM),
-    },
-    ResourceSpec {
-        id: "macvlan",
-        group: "interfaces-group",
-        label: "MACVLAN",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/macvlan",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("interface", "Interface", 16),
-            col!("mode", "Mode", 12),
-            col!("mac-address", "MAC address", 18),
-            col!("mtu", "MTU", 7),
-            col!("arp", "ARP", 16),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::MACVLAN_FORM),
-    },
-    ResourceSpec {
-        id: "veth",
-        group: "interfaces-group",
-        label: "VETH",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/veth",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("address", "Address", 24),
-            col!("gateway", "Gateway", 16),
-            col!("dhcp", "DHCP", 6),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(5),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::VETH_FORM),
-    },
-    ResourceSpec {
-        id: "macsec",
-        group: "interfaces-group",
-        label: "MACsec",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/macsec",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("interface", "Interface", 16),
-            col!("profile", "Profile", 14),
-            col!("mtu", "MTU", 7),
-            col!("status", "Status", 16),
-            col!("ckn", "CKN", 24),
-            col!("cak", "CAK", 10),
-            col!("running", "Run", 5),
-            col!("disabled", "Off", 5),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(10),
-        actions: crate::actions::VIRTUAL_IFACE_ACTIONS,
-        form: Some(&crate::interface_write::MACSEC_FORM),
-    },
-    ResourceSpec {
-        id: "macsec-profiles",
-        group: "interfaces-group",
-        label: "MACsec Profile",
-        fetch: FetchKind::List {
-            endpoint: "/rest/interface/macsec/profile",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("server-priority", "Server priority", 16),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::LIST_ACTIONS,
-        form: Some(&crate::interface_write::MACSEC_PROFILE_FORM),
-    },
-    ResourceSpec {
-        id: "vrf",
-        group: "interfaces-group",
-        label: "VRF",
-        fetch: FetchKind::List {
-            endpoint: "/rest/ip/vrf",
-        },
-        columns: &[
-            col!("name", "Name", 18),
-            col!("interfaces", "Interfaces", 36),
-            col!("comment", "Comment", 28),
-        ],
-        refresh: Duration::from_secs(30),
-        actions: crate::actions::VRF_ACTIONS,
-        form: Some(&crate::interface_write::VRF_FORM),
-    },
-    ResourceSpec {
-        id: "detect-internet",
-        group: "interfaces-group",
-        label: "Detect Internet",
-        fetch: FetchKind::System {
-            endpoint: "/rest/interface/detect-internet",
-        },
-        columns: &[
-            col!("detect-interface-list", "Detect", 16),
-            col!("lan-interface-list", "LAN", 16),
-            col!("wan-interface-list", "WAN", 16),
-            col!("internet-interface-list", "Internet", 16),
-            col!("state", "State", 12),
-        ],
-        refresh: Duration::from_secs(15),
-        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
-        form: Some(&crate::interface_write::DETECT_INTERNET_FORM),
     },
     ResourceSpec {
         id: "ppp-secrets",
@@ -4533,6 +3821,61 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
     },
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CatalogError {
+    pub duplicate_id: &'static str,
+}
+
+impl fmt::Display for CatalogError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "duplicate active resource id `{}`",
+            self.duplicate_id
+        )
+    }
+}
+
+impl std::error::Error for CatalogError {}
+
+fn build_catalog(
+    feature: &[ResourceSpec],
+    legacy: &[ResourceSpec],
+) -> Result<Vec<ResourceSpec>, CatalogError> {
+    let mut ids = HashSet::with_capacity(feature.len() + legacy.len());
+    for spec in feature.iter().chain(legacy) {
+        if !ids.insert(spec.id) {
+            return Err(CatalogError {
+                duplicate_id: spec.id,
+            });
+        }
+    }
+    let mut resources = Vec::with_capacity(feature.len() + legacy.len());
+    resources.extend_from_slice(feature);
+    resources.extend_from_slice(legacy);
+    Ok(resources)
+}
+
+/// Active hybrid catalog: feature-owned Interfaces, then unchanged legacy groups.
+pub static ALL_RESOURCES: LazyLock<Vec<ResourceSpec>> = LazyLock::new(|| {
+    build_catalog(
+        crate::features::interfaces::resources::RESOURCES,
+        LEGACY_RESOURCES,
+    )
+    .unwrap_or_else(|error| panic!("{error}"))
+});
+
+pub fn validate_active_catalog() -> Result<(), CatalogError> {
+    LazyLock::force(&ALL_RESOURCES);
+    Ok(())
+}
+
+fn ensure_valid_catalog() {
+    if let Err(error) = validate_active_catalog() {
+        panic!("{error}");
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NavItem {
     pub id: String,
@@ -4608,11 +3951,13 @@ pub static NAVIGATION: &[NavGroup] = &[
 
 #[must_use]
 pub fn resource_by_id(id: &str) -> Option<&'static ResourceSpec> {
+    ensure_valid_catalog();
     ALL_RESOURCES.iter().find(|spec| spec.id == id)
 }
 
 #[must_use]
 pub fn navigation_tree() -> Vec<NavItem> {
+    ensure_valid_catalog();
     let mut items = vec![NavItem {
         id: DASHBOARD_ID.to_string(),
         label: "Dashboard".to_string(),
@@ -4647,6 +3992,43 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), ALL_RESOURCES.len());
+        assert_eq!(validate_active_catalog(), Ok(()));
+    }
+
+    #[test]
+    fn hybrid_catalog_includes_the_entire_feature_inventory() {
+        let feature = crate::features::interfaces::resources::RESOURCES;
+        let active_interfaces = ALL_RESOURCES
+            .iter()
+            .filter(|spec| spec.group == "interfaces-group")
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(active_interfaces, feature);
+        assert!(ALL_RESOURCES.starts_with(feature));
+        assert_eq!(ALL_RESOURCES.len(), feature.len() + LEGACY_RESOURCES.len());
+        for expected in feature {
+            let found: Option<&'static ResourceSpec> = resource_by_id(expected.id);
+            assert_eq!(found, Some(expected));
+        }
+        assert_eq!(
+            resource_by_id("wireguard").map(|spec| spec.group),
+            Some("wireguard-group")
+        );
+    }
+
+    #[test]
+    fn hybrid_catalog_rejects_duplicate_active_ids() {
+        let duplicate = std::slice::from_ref(
+            crate::features::interfaces::resources::RESOURCES
+                .first()
+                .expect("Interfaces feature inventory"),
+        );
+        assert_eq!(
+            build_catalog(duplicate, duplicate),
+            Err(CatalogError {
+                duplicate_id: "interfaces"
+            })
+        );
     }
 
     #[test]
@@ -4976,7 +4358,6 @@ mod tests {
                 "ipip",
                 "gre",
                 "6to4",
-                "sit",
                 "gre6",
                 "vlan",
                 "vxlan",
@@ -5707,7 +5088,7 @@ mod tests {
     fn mutations_require_forms_except_remove_only_rows() {
         use crate::actions::ActionKind;
 
-        for spec in ALL_RESOURCES {
+        for spec in ALL_RESOURCES.iter() {
             if spec.actions.is_empty() {
                 continue;
             }

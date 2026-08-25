@@ -201,12 +201,14 @@ impl Session {
                 .attr("message")
                 .or_else(|| trap.attr("detail"))
                 .unwrap_or("login failed");
+            let sentence = trap.log_line();
             log_response_err(
                 "login",
                 "/login",
                 trap.tag().unwrap_or(""),
                 Instant::now(),
                 message,
+                Some(&sentence),
             );
             self.inner
                 .record_log(&format!("ERROR response /login {message}"));
@@ -276,7 +278,14 @@ impl Session {
         self.inner.pending.lock().await.remove(&tag);
         match collected {
             Ok(replies) if replies.is_empty() => {
-                log_response_err(operation, &command, &tag, started, "connection closed");
+                log_response_err(
+                    operation,
+                    &command,
+                    &tag,
+                    started,
+                    "connection closed",
+                    None,
+                );
                 self.inner
                     .record_log(&format!("ERROR response {command} connection closed"));
                 Err(Error::new(
@@ -288,7 +297,8 @@ impl Session {
             Ok(replies) => {
                 if let Some(fatal) = replies.iter().find(|sentence| sentence.is_fatal()) {
                     let message = fatal.attr("message").unwrap_or("fatal API error");
-                    log_response_err(operation, &command, &tag, started, message);
+                    let sentence = fatal.log_line();
+                    log_response_err(operation, &command, &tag, started, message, Some(&sentence));
                     self.inner
                         .record_log(&format!("ERROR response {command} {message}"));
                     return Err(Error::new(ErrorKind::Server, operation, message));
@@ -298,23 +308,25 @@ impl Session {
                         .attr("message")
                         .or_else(|| trap.attr("detail"))
                         .unwrap_or("request failed");
-                    log_response_err(operation, &command, &tag, started, message);
+                    let sentence = trap.log_line();
+                    log_response_err(operation, &command, &tag, started, message, Some(&sentence));
                     self.inner
                         .record_log(&format!("ERROR response {command} {message}"));
                     return Err(trap.trap_error(operation));
                 }
-                log_response_ok(
-                    operation,
-                    &command,
-                    &tag,
-                    started,
-                    Some(count_replies(&replies)),
-                );
+                log_response_ok(operation, &command, &tag, started, Some(&replies));
                 self.inner.record_log(&format!("INFO response {command}"));
                 Ok(replies)
             }
             Err(_) => {
-                log_response_err(operation, &command, &tag, started, "request timed out");
+                log_response_err(
+                    operation,
+                    &command,
+                    &tag,
+                    started,
+                    "request timed out",
+                    None,
+                );
                 self.inner
                     .record_log(&format!("ERROR response {command} request timed out"));
                 let _ = self.write_cancel(tag.as_str()).await;
@@ -393,15 +405,24 @@ fn count_replies(replies: &[Sentence]) -> u64 {
     u64::try_from(replies.iter().filter(|sentence| sentence.is_re()).count()).unwrap_or(u64::MAX)
 }
 
+fn join_reply_logs(replies: &[Sentence]) -> String {
+    replies
+        .iter()
+        .map(Sentence::log_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn log_outbound(operation: &str, words: &[String]) {
     let command = command_of(words);
     let sentence = Sentence::new(words.to_vec());
     let tag = sentence.tag().unwrap_or("");
-    tracing::info!(operation, command, tag, "outbound {command}");
-    tracing::debug!(
+    tracing::info!(
         operation,
+        command,
+        tag,
         sentence = sentence.log_line().as_str(),
-        "api sentence"
+        "outbound {command}"
     );
 }
 
@@ -410,17 +431,19 @@ pub(crate) fn log_response_ok(
     command: &str,
     tag: &str,
     started: Instant,
-    replies: Option<u64>,
+    replies: Option<&[Sentence]>,
 ) {
     let elapsed_ms = elapsed_ms(started);
     match replies {
         Some(replies) => {
+            let sentence = join_reply_logs(replies);
             tracing::info!(
                 operation,
                 command,
                 tag,
                 elapsed_ms,
-                replies,
+                replies = count_replies(replies),
+                sentence = sentence.as_str(),
                 "response {command}"
             );
         }
@@ -436,15 +459,32 @@ pub(crate) fn log_response_err(
     tag: &str,
     started: Instant,
     error: &str,
+    sentence: Option<&str>,
 ) {
-    tracing::error!(
-        operation,
-        command,
-        tag,
-        elapsed_ms = elapsed_ms(started),
-        error,
-        "response {command}"
-    );
+    let elapsed_ms = elapsed_ms(started);
+    match sentence {
+        Some(sentence) => {
+            tracing::error!(
+                operation,
+                command,
+                tag,
+                elapsed_ms,
+                error,
+                sentence,
+                "response {command}"
+            );
+        }
+        None => {
+            tracing::error!(
+                operation,
+                command,
+                tag,
+                elapsed_ms,
+                error,
+                "response {command}"
+            );
+        }
+    }
 }
 
 fn log_request_failed(operation: &str, command: &str, tag: &str, err: &Error) {
@@ -502,18 +542,7 @@ async fn read_loop(mut reader: ReadHalf<PinBox>, inner: Arc<SessionInner>) {
                                 sentence = sentence.log_line().as_str(),
                                 "api error reply"
                             );
-                        } else {
-                            tracing::debug!(
-                                sentence = sentence.log_line().as_str(),
-                                "api error reply"
-                            );
                         }
-                    } else if sentence.is_done() {
-                        tracing::debug!(
-                            tag = sentence.tag().unwrap_or(""),
-                            sentence = sentence.log_line().as_str(),
-                            "api done"
-                        );
                     }
                     if let Some(tag) = sentence.tag() {
                         let pending = inner.pending.lock().await;

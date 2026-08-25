@@ -323,10 +323,9 @@ impl App {
                         let len = self.console.filtered_indices(&self.console_entries).len();
                         self.console.page_by(-1, page, len);
                         self.sync_console_viewport();
-                    } else {
-                        self.page_content(-1);
+                        return Vec::new();
                     }
-                    return Vec::new();
+                    return self.page_content(-1);
                 }
                 KeyCode::Char('d') => {
                     if self.pane == Pane::Console {
@@ -334,10 +333,9 @@ impl App {
                         let len = self.console.filtered_indices(&self.console_entries).len();
                         self.console.page_by(1, page, len);
                         self.sync_console_viewport();
-                    } else {
-                        self.page_content(1);
+                        return Vec::new();
                     }
-                    return Vec::new();
+                    return self.page_content(1);
                 }
                 KeyCode::Left => {
                     if self.on_table_content() {
@@ -435,16 +433,18 @@ impl App {
                 self.rebuild_log_table();
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                self.move_content(-1);
+                return self.move_content(-1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.move_content(1);
+                return self.move_content(1);
             }
-            KeyCode::PageUp => self.page_content(-1),
-            KeyCode::PageDown => self.page_content(1),
-            KeyCode::Home => self.jump_content_home(),
-            KeyCode::Char('g') if !self.action_key_consumed('g') => self.jump_content_home(),
-            KeyCode::End | KeyCode::Char('G') => self.jump_content_end(),
+            KeyCode::PageUp => return self.page_content(-1),
+            KeyCode::PageDown => return self.page_content(1),
+            KeyCode::Home => return self.jump_content_home(),
+            KeyCode::Char('g') if !self.action_key_consumed('g') => {
+                return self.jump_content_home();
+            }
+            KeyCode::End | KeyCode::Char('G') => return self.jump_content_end(),
             KeyCode::Char('h') if self.on_table_content() => {
                 self.table.scroll_columns(-1);
             }
@@ -907,11 +907,14 @@ impl App {
             return Some(Vec::new());
         }
         if session.confirm_save {
+            if session.save_preview_pending() {
+                return Some(Vec::new());
+            }
             return Some(match key.code {
                 KeyCode::Char('y') | KeyCode::Enter => self.save_form(),
                 KeyCode::Char('n') | KeyCode::Esc => {
                     if let Overlay::Form(session) = &mut self.overlay {
-                        session.confirm_save = false;
+                        session.close_save_preview();
                     }
                     self.status = "Save canceled".into();
                     Vec::new()
@@ -966,12 +969,6 @@ impl App {
                 session.move_field(schema, 1);
                 session.clamp(schema);
             }),
-            KeyCode::Left | KeyCode::Char('[') => {
-                self.with_form(|session| session.move_section(schema, -1));
-            }
-            KeyCode::Right | KeyCode::Char(']') => {
-                self.with_form(|session| session.move_section(schema, 1));
-            }
             KeyCode::Char('k') if !self.form_editing_text(schema) => {
                 self.with_form(|session| {
                     session.move_field(schema, -1);
@@ -984,17 +981,8 @@ impl App {
                     session.clamp(schema);
                 });
             }
-            KeyCode::Char('h') if !self.form_editing_text(schema) => {
-                self.with_form(|session| session.move_section(schema, -1));
-            }
-            KeyCode::Char('l') if !self.form_editing_text(schema) => {
-                self.with_form(|session| session.move_section(schema, 1));
-            }
-            KeyCode::Char(digit)
-                if digit.is_ascii_digit() && digit != '0' && !self.form_editing_text(schema) =>
-            {
-                let index = usize::from(digit as u8 - b'1');
-                self.with_form(|session| session.jump_section(schema, index));
+            KeyCode::Char('-') if !self.form_editing_text(schema) => {
+                self.with_form(|session| session.remove_optional(schema));
             }
             KeyCode::Char(' ') | KeyCode::Enter => {
                 self.with_form(|session| session.activate(schema));
@@ -1339,55 +1327,71 @@ impl App {
         self.open_resource(&open_id)
     }
 
-    fn move_content(&mut self, delta: isize) {
+    fn move_content(&mut self, delta: isize) -> Vec<AppCommand> {
         if self.on_dashboard_content() {
             self.scroll_firewall(delta);
+            Vec::new()
         } else {
-            self.move_cursor(delta);
+            self.move_cursor(delta)
         }
     }
 
-    fn page_content(&mut self, direction: isize) {
+    fn page_content(&mut self, direction: isize) -> Vec<AppCommand> {
         if self.on_dashboard_content() {
             let page = isize::try_from(self.firewall_page_size()).unwrap_or(1);
             self.scroll_firewall(direction.saturating_mul(page));
+            Vec::new()
         } else if self.on_table_content() {
             self.table.page_by(direction);
-            self.after_table_cursor();
+            self.after_table_cursor()
         } else if self.pane == Pane::Nav {
             self.nav.page_by(direction);
+            Vec::new()
         } else if self.pane == Pane::Inspector {
             let visible = self.inspector_visible_rows();
             let page = isize::try_from(visible).unwrap_or(1);
             self.inspector
                 .move_selection(direction.saturating_mul(page), visible);
+            Vec::new()
+        } else {
+            Vec::new()
         }
     }
 
-    fn jump_content_home(&mut self) {
+    fn jump_content_home(&mut self) -> Vec<AppCommand> {
         if self.on_dashboard_content() {
             self.scroll_firewall_to(0);
+            Vec::new()
         } else if self.on_table_content() {
             self.table.select_first();
-            self.after_table_cursor();
+            self.after_table_cursor()
         } else if self.pane == Pane::Nav {
             self.nav.select_first();
+            Vec::new()
         } else if self.pane == Pane::Inspector {
             self.inspector.select_first();
+            Vec::new()
+        } else {
+            Vec::new()
         }
     }
 
-    fn jump_content_end(&mut self) {
+    fn jump_content_end(&mut self) -> Vec<AppCommand> {
         if self.on_dashboard_content() {
             self.scroll_firewall_to(usize::MAX);
+            Vec::new()
         } else if self.on_table_content() {
             self.table.select_last();
-            self.after_table_cursor();
+            self.after_table_cursor()
         } else if self.pane == Pane::Nav {
             self.nav.select_last();
+            Vec::new()
         } else if self.pane == Pane::Inspector {
             let visible = self.inspector_visible_rows();
             self.inspector.select_last(visible);
+            Vec::new()
+        } else {
+            Vec::new()
         }
     }
 
@@ -1409,19 +1413,23 @@ impl App {
         self.poll_current()
     }
 
-    fn move_cursor(&mut self, delta: isize) {
+    fn move_cursor(&mut self, delta: isize) -> Vec<AppCommand> {
         match self.pane {
-            Pane::Nav => self.nav.move_by(delta),
+            Pane::Nav => {
+                self.nav.move_by(delta);
+                Vec::new()
+            }
             Pane::Content => {
                 self.table.move_selection(delta);
                 if self.current_resource == "logs" && delta < 0 {
                     self.log_follow = false;
                 }
-                self.after_table_cursor();
+                self.after_table_cursor()
             }
             Pane::Inspector => {
                 let visible = self.inspector_visible_rows();
                 self.inspector.move_selection(delta, visible);
+                Vec::new()
             }
             Pane::Console => {
                 let id = self.active;
@@ -1432,12 +1440,14 @@ impl App {
                     .len();
                 session.console.move_selection(delta, len);
                 self.sync_console_viewport();
+                Vec::new()
             }
         }
     }
 
-    fn after_table_cursor(&mut self) {
+    fn after_table_cursor(&mut self) -> Vec<AppCommand> {
         self.refresh_inspector(false);
+        self.hydrate_selected_typed_interface()
     }
 
     fn run_palette_command(&mut self, id: &str) -> Vec<AppCommand> {

@@ -561,6 +561,29 @@ fn dispatch_commands(
                     let _ = tx.send(msg);
                 });
             }
+            AppCommand::FetchFormRecord {
+                session,
+                request_id,
+                generation,
+                resource_id,
+                endpoint,
+                id,
+            } => {
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let msg = fetch_form_record(
+                        session,
+                        client,
+                        request_id,
+                        generation,
+                        resource_id,
+                        endpoint,
+                        id,
+                    )
+                    .await;
+                    let _ = tx.send(msg);
+                });
+            }
             AppCommand::ListLocalDir {
                 session,
                 generation,
@@ -930,6 +953,48 @@ async fn fetch_lookup(
             request_id,
             generation,
             options: Vec::new(),
+            error: Some(err.to_string()),
+        },
+    }
+}
+
+async fn fetch_form_record(
+    session: SessionId,
+    client: Option<Arc<Client>>,
+    request_id: u64,
+    generation: u64,
+    resource_id: String,
+    endpoint: String,
+    id: String,
+) -> WorkerMsg {
+    let Some(client) = client else {
+        return WorkerMsg::FormRecordResult {
+            session,
+            request_id,
+            generation,
+            resource_id,
+            id,
+            fields: None,
+            error: Some("not connected".into()),
+        };
+    };
+    match client.get(&endpoint, &id).await {
+        Ok(row) => WorkerMsg::FormRecordResult {
+            session,
+            request_id,
+            generation,
+            resource_id,
+            id,
+            fields: Some(row.fields),
+            error: None,
+        },
+        Err(err) => WorkerMsg::FormRecordResult {
+            session,
+            request_id,
+            generation,
+            resource_id,
+            id,
+            fields: None,
             error: Some(err.to_string()),
         },
     }

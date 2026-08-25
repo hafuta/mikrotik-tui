@@ -103,15 +103,20 @@ mod tests {
             tracing::info!(
                 command = "/interface/print",
                 operation = "list",
-                "outbound /interface/print"
+                sentence = "!re =.id=*1 =name=ether1 =poe-out=auto-on .tag=2\n!done .tag=2",
+                "response /interface/print"
             );
         });
         let records = store.records_after(0);
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].message, "outbound /interface/print");
+        assert_eq!(records[0].message, "response /interface/print");
         assert_eq!(
             records[0].fields.get("command").map(String::as_str),
             Some("/interface/print")
+        );
+        assert_eq!(
+            records[0].fields.get("sentence").map(String::as_str),
+            Some("!re =.id=*1 =name=ether1 =poe-out=auto-on .tag=2\n!done .tag=2")
         );
         assert_eq!(records[0].level, LogLevel::Info);
     }

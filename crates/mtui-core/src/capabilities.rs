@@ -2,13 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+pub use crate::features::interfaces::rules::{WIFI_PACKAGES, WIRELESS_PACKAGES};
 use crate::resources::ALL_RESOURCES;
-
-/// Extra `RouterOS` packages that can expose `WiFi` Wave2 / `wifi-qcom` menus.
-pub const WIFI_PACKAGES: &[&str] = &["wifi-qcom", "wifi-qcom-ac"];
-
-/// Legacy `wireless` package (pre-wifiwave2).
-pub const WIRELESS_PACKAGES: &[&str] = &["wireless"];
 
 /// Extra package that exposes `/container`, VETH, and `/app`.
 pub const CONTAINER_PACKAGES: &[&str] = &["container"];
@@ -41,7 +36,6 @@ pub const BULK_SELECT_RESOURCES: &[&str] = &[
     "ipip",
     "gre",
     "6to4",
-    "sit",
     "gre6",
     "vlan",
     "vxlan",
@@ -66,11 +60,8 @@ pub const BULK_SELECT_RESOURCES: &[&str] = &[
 /// names are returned, any one of them is enough (wifi-qcom *or* wifi-qcom-ac).
 #[must_use]
 pub fn required_packages(resource_id: &str) -> Option<&'static [&'static str]> {
-    if resource_id == "wifi" || resource_id.starts_with("wifi-") {
-        return Some(WIFI_PACKAGES);
-    }
-    if resource_id == "wireless" || resource_id.starts_with("wireless-") {
-        return Some(WIRELESS_PACKAGES);
+    if let Some(packages) = crate::features::interfaces::rules::required_packages(resource_id) {
+        return Some(packages);
     }
     if CONTAINER_MENUS.contains(&resource_id) {
         return Some(CONTAINER_PACKAGES);
@@ -81,7 +72,8 @@ pub fn required_packages(resource_id: &str) -> Option<&'static [&'static str]> {
 /// True when this list screen offers bulk check and batch enable/disable/remove.
 #[must_use]
 pub fn supports_bulk_select(resource_id: &str) -> bool {
-    BULK_SELECT_RESOURCES.contains(&resource_id)
+    crate::features::interfaces::rules::BULK_SELECT_RESOURCES.contains(&resource_id)
+        || BULK_SELECT_RESOURCES.contains(&resource_id)
 }
 
 /// Map resource id → missing package label for menus the installed set lacks.
@@ -105,7 +97,7 @@ pub fn unavailable_menus_for_device(
         .filter(|name| !name.is_empty())
         .collect();
     let mut out = HashMap::new();
-    for spec in ALL_RESOURCES {
+    for spec in ALL_RESOURCES.iter() {
         let Some(packages) = required_packages(spec.id) else {
             continue;
         };

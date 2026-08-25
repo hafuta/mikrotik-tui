@@ -9,6 +9,7 @@ mod actions;
 mod bridge_write;
 mod capabilities;
 mod container_write;
+mod features;
 mod forms;
 mod hotspot_write;
 mod interface_write;
@@ -38,23 +39,26 @@ pub use actions::{
     ACTION_ADD, ACTION_BACKUP_LOAD, ACTION_BACKUP_SAVE, ACTION_COPY, ACTION_EDIT, ACTION_REBOOT,
     ACTION_REMOVE, ACTION_RESET, ACTION_SHUTDOWN, ACTION_TOGGLE, ACTION_TORCH, ActionCommand,
     ActionKind, ActionSpec, ActionWhen, CERTIFICATE_ACTIONS, ETHERNET_ACTIONS, FILE_ACTIONS,
-    INTERFACE_CREATE_TARGETS, INTERFACE_LIST_ACTIONS, NEIGHBOR_ACTIONS, NeighborConnectTarget,
-    RESOURCE_LIFECYCLE_ACTIONS, action_label, is_backup_file, neighbor_connect_target,
-    resolve_actions, truthy,
+    INTERFACE_LIST_ACTIONS, NEIGHBOR_ACTIONS, NeighborConnectTarget, RESOURCE_LIFECYCLE_ACTIONS,
+    action_label, is_backup_file, neighbor_connect_target, resolve_actions, truthy,
 };
 pub use capabilities::{
     BULK_SELECT_RESOURCES, CONTAINER_PACKAGES, WIFI_PACKAGES, WIRELESS_PACKAGES,
     installed_package_names, required_packages, supports_bulk_select, unavailable_menus,
     unavailable_menus_for_device,
 };
+pub use features::interfaces::actions::INTERFACE_CREATE_TARGETS;
+pub use features::interfaces::edit_resource_for_interface_type;
 pub use forms::{
-    FieldKind, FieldSpec, FormSchema, FormSection, accepts_number_char, default_writable_value,
-    extra_status_fields, field_enabled, field_visible, join_ros_list, patch_body,
-    prepare_lookup_options, preview_changes, split_ros_list, with_leading_all, with_leading_none,
+    BoxedFieldPredicate, EnumChoice, FieldKind, FieldPredicate, FieldRule, FieldSpec, FormSchema,
+    FormSection, ScalarKind, accepts_constrained_number_char, accepts_number_char,
+    default_writable_value, evaluate_field_rules, extra_status_fields, field_enabled,
+    field_visible, form_mutation_body, join_ros_list, patch_body, prepare_lookup_options,
+    preview_changes, split_ros_list, validate_form_values, with_leading_all, with_leading_none,
 };
 pub use resources::{
-    ALL_RESOURCES, ColumnSpec, DASHBOARD_ID, FetchKind, NAVIGATION, NavGroup, NavItem,
-    ResourceSpec, navigation_tree, resource_by_id,
+    ALL_RESOURCES, CatalogError, ColumnSpec, DASHBOARD_ID, FetchKind, NAVIGATION, NavGroup,
+    NavItem, ResourceSpec, navigation_tree, resource_by_id, validate_active_catalog,
 };
 pub use routeros_version::{
     MIN_ROUTEROS_VERSION, RouterOsVersion, parse_routeros_version, routeros_meets_minimum,

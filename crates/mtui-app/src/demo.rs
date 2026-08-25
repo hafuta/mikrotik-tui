@@ -1223,6 +1223,28 @@ pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>>
             options: store.lookup_values(resource_id, value_key),
             error: None,
         }]),
+        AppCommand::FetchFormRecord {
+            session,
+            request_id,
+            generation,
+            resource_id,
+            id,
+            ..
+        } => {
+            let row = store
+                .rows(resource_id)
+                .into_iter()
+                .find(|row| row.id == *id);
+            Some(vec![WorkerMsg::FormRecordResult {
+                session: *session,
+                request_id: *request_id,
+                generation: *generation,
+                resource_id: resource_id.clone(),
+                id: id.clone(),
+                fields: row.as_ref().map(|row| row.fields.clone()),
+                error: row.is_none().then(|| "no such item".into()),
+            }])
+        }
         AppCommand::Mutate {
             session,
             request_id,

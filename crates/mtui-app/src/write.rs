@@ -6,12 +6,13 @@ use std::path::Path;
 
 use mtui_core::{
     AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
-    CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, FORMAT_DISK_PROMPT, IMPORT_CONFIG_PROMPT,
-    INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, LICENSE_IMPORT_PROMPT, RESET_CONFIG_PROMPT,
-    SMS_PROMPT, WOL_PROMPT, action_label, field_enabled, neighbor_connect_target, patch_body,
-    resource_by_id, supports_bulk_select, truthy,
+    CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, FORMAT_DISK_PROMPT, FetchKind,
+    IMPORT_CONFIG_PROMPT, INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, LICENSE_IMPORT_PROMPT,
+    RESET_CONFIG_PROMPT, ResourceSpec, SMS_PROMPT, WOL_PROMPT, action_label,
+    edit_resource_for_interface_type, form_mutation_body, neighbor_connect_target, resource_by_id,
+    supports_bulk_select, truthy, validate_form_values,
 };
-use mtui_routeros::MASKED_VALUE;
+use mtui_routeros::{MASKED_VALUE, is_secret_key};
 use mtui_ui::{
     ActionMenuItem, ActionMenuState, COPY_FORM, FormSession, LoginField, LoginPane, ProbeKind,
     ProbeState, Row, TorchState,
@@ -88,14 +89,7 @@ fn redact_mutation_fields(fields: &BTreeMap<String, String>) -> BTreeMap<String,
     fields
         .iter()
         .map(|(key, value)| {
-            let sensitive = key.eq_ignore_ascii_case("password")
-                || key.eq_ignore_ascii_case("contents")
-                || key.eq_ignore_ascii_case("k")
-                || key.eq_ignore_ascii_case("encryption-key")
-                || key.eq_ignore_ascii_case("license-key")
-                || key.contains("secret")
-                || key.contains("passphrase");
-            let shown = if sensitive {
+            let shown = if is_sensitive_mutation_key(key) {
                 MASKED_VALUE.to_string()
             } else {
                 value.clone()
@@ -103,6 +97,47 @@ fn redact_mutation_fields(fields: &BTreeMap<String, String>) -> BTreeMap<String,
             (key.clone(), shown)
         })
         .collect()
+}
+
+fn is_sensitive_mutation_key(key: &str) -> bool {
+    is_secret_key(key)
+        || key.eq_ignore_ascii_case("contents")
+        || key.eq_ignore_ascii_case("k")
+        || key.eq_ignore_ascii_case("encryption-key")
+        || key.eq_ignore_ascii_case("license-key")
+}
+
+fn sanitize_form_save_error(message: &str, session: &FormSession) -> String {
+    let mut sanitized = message
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let mut secrets = session
+        .values
+        .iter()
+        .filter(|(key, value)| {
+            is_sensitive_mutation_key(key) && !value.is_empty() && value.as_str() != MASKED_VALUE
+        })
+        .map(|(_, value)| value.as_str())
+        .collect::<Vec<_>>();
+    secrets.sort_unstable_by_key(|secret| std::cmp::Reverse(secret.len()));
+    for secret in secrets {
+        sanitized = sanitized.replace(secret, "[redacted]");
+    }
+
+    let mut bounded = sanitized.chars().take(1_024).collect::<String>();
+    if sanitized.chars().count() > 1_024 {
+        bounded.push('…');
+    }
+    if bounded.is_empty() {
+        "RouterOS rejected the write.".into()
+    } else {
+        bounded
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -302,21 +337,132 @@ impl App {
         let Some(spec) = resource_by_id(&self.current_resource) else {
             return Vec::new();
         };
-        let Some(schema) = spec.form else {
-            self.status = "This screen has no editor".into();
-            return Vec::new();
-        };
         let Some(row) = self.table.selected_row().cloned() else {
             return Vec::new();
         };
+        let (resource_id, schema) = if spec.id == "interfaces" {
+            row.get("type")
+                .and_then(|iface_type| edit_resource_for_interface_type(iface_type))
+                .and_then(resource_by_id)
+                .map_or((spec.id, spec.form), |typed| (typed.id, typed.form))
+        } else {
+            (spec.id, spec.form)
+        };
+        let Some(schema) = schema else {
+            self.status = "This screen has no editor".into();
+            return Vec::new();
+        };
         let id = row.get(".id").cloned().unwrap_or_default();
-        if !spec.is_singleton() && id.is_empty() {
+        if !resource_by_id(resource_id).is_some_and(ResourceSpec::is_singleton) && id.is_empty() {
             self.status = "Selected row has no id".into();
             return Vec::new();
         }
-        self.overlay = Overlay::Form(FormSession::edit(spec.id, id, &row, schema));
-        tracing::trace!(resource_id = spec.id, overlay = "form", "opened pane");
-        Vec::new()
+        self.overlay = Overlay::Form(FormSession::edit(resource_id, id.clone(), &row, schema));
+        tracing::trace!(resource_id, overlay = "form", "opened pane");
+        self.hydrate_edit_form(resource_id, spec.id, &id)
+    }
+
+    /// `/interface` print omits Ethernet `poe-*` / `sfp-*`. Refetch the typed
+    /// list endpoint when the editor is not the screen that loaded the row.
+    fn hydrate_edit_form(
+        &mut self,
+        resource_id: &str,
+        list_resource_id: &str,
+        id: &str,
+    ) -> Vec<AppCommand> {
+        if resource_id == list_resource_id {
+            return Vec::new();
+        }
+        let Some(cmd) = self.fetch_typed_interface_record(resource_id, id) else {
+            return Vec::new();
+        };
+        if let Overlay::Form(session) = &mut self.overlay
+            && let AppCommand::FetchFormRecord { request_id, .. } = &cmd
+        {
+            session.hydrate_request_id = Some(*request_id);
+        }
+        vec![cmd]
+    }
+
+    /// Details pane needs typed print: Ethernet `sfp-*` / `poe-*`, VLAN `l3-*`,
+    /// Switch chip `l3-*` from `/interface/ethernet/switch`.
+    pub(crate) fn hydrate_selected_typed_interface(&mut self) -> Vec<AppCommand> {
+        if matches!(self.overlay, Overlay::Form(_)) {
+            return Vec::new();
+        }
+        if self.current_resource == "switch" {
+            return self.hydrate_selected_if_missing_prefix("switch", "l3-");
+        }
+        if self.current_resource == "switch-port" {
+            return self.hydrate_selected_if_missing_prefix("switch-port", "l3-");
+        }
+        if self.current_resource != "interfaces" {
+            return Vec::new();
+        }
+        let Some(row) = self.table.selected_row() else {
+            return Vec::new();
+        };
+        let Some(id) = row.get(".id").filter(|id| !id.is_empty()).cloned() else {
+            return Vec::new();
+        };
+        let Some(resource_id) = row
+            .get("type")
+            .map(String::as_str)
+            .and_then(edit_resource_for_interface_type)
+        else {
+            return Vec::new();
+        };
+        let missing = match resource_id {
+            "ethernet" => !row
+                .keys()
+                .any(|key| key.starts_with("sfp-") || key.starts_with("poe-")),
+            "vlan" => !row.keys().any(|key| key.starts_with("l3-")),
+            _ => return Vec::new(),
+        };
+        if !missing {
+            return Vec::new();
+        }
+        self.fetch_typed_interface_record(resource_id, &id)
+            .into_iter()
+            .collect()
+    }
+
+    fn hydrate_selected_if_missing_prefix(
+        &mut self,
+        resource_id: &str,
+        prefix: &str,
+    ) -> Vec<AppCommand> {
+        let Some(row) = self.table.selected_row() else {
+            return Vec::new();
+        };
+        if row.keys().any(|key| key.starts_with(prefix)) {
+            return Vec::new();
+        }
+        let Some(id) = row.get(".id").filter(|id| !id.is_empty()).cloned() else {
+            return Vec::new();
+        };
+        self.fetch_typed_interface_record(resource_id, &id)
+            .into_iter()
+            .collect()
+    }
+
+    fn fetch_typed_interface_record(&mut self, resource_id: &str, id: &str) -> Option<AppCommand> {
+        if id.is_empty() {
+            return None;
+        }
+        let typed = resource_by_id(resource_id)?;
+        let FetchKind::List { endpoint } = typed.fetch else {
+            return None;
+        };
+        let request_id = self.next_request();
+        Some(AppCommand::FetchFormRecord {
+            session: SessionId::UNSTAMPED,
+            request_id,
+            generation: self.poll_generation,
+            resource_id: resource_id.to_string(),
+            endpoint: endpoint.to_string(),
+            id: id.to_string(),
+        })
     }
 
     pub(crate) fn open_create(&mut self, resource_id: &str) -> Vec<AppCommand> {
@@ -450,8 +596,14 @@ impl App {
         if command == ActionCommand::Format {
             values.insert("file-system".into(), "ext4".into());
         }
+        let resource_id = if command == ActionCommand::Copy {
+            typed_interface_spec(self.table.selected_row())
+                .map_or_else(|| self.current_resource.clone(), |spec| spec.id.to_string())
+        } else {
+            self.current_resource.clone()
+        };
         self.overlay = Overlay::Form(FormSession::prompt_with(
-            self.current_resource.clone(),
+            resource_id,
             id,
             command.rest_name(),
             schema,
@@ -552,7 +704,7 @@ impl App {
             record_id,
             record_ids,
             record_name,
-            endpoint: command_base_path(action.id, spec.endpoint()),
+            endpoint: command_base_path(action.id, confirm_resource_endpoint(spec, row, command)),
             fields,
         });
         tracing::trace!(overlay = "confirm", action = action.id, "opened pane");
@@ -855,8 +1007,19 @@ impl App {
         let Some(schema) = spec.form else {
             return Vec::new();
         };
-        let mut body = patch_body(schema, &session.original, &session.values, MASKED_VALUE);
-        body.retain(|key, _| field_enabled(&session.resource_id, key, &session.values));
+        if let Some(error) = validate_form_values(&session.resource_id, schema, &session.values) {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.error = Some(error);
+            }
+            return Vec::new();
+        }
+        let mut body = form_mutation_body(
+            &session.resource_id,
+            schema,
+            &session.original,
+            &session.values,
+            MASKED_VALUE,
+        );
         if session.mode == mtui_ui::FormMode::Create {
             body.retain(|_, value| !value.is_empty());
             if body.is_empty() {
@@ -872,8 +1035,7 @@ impl App {
         }
         let count = body.len();
         if let Overlay::Form(session) = &mut self.overlay {
-            session.confirm_save = true;
-            session.error = None;
+            session.open_save_preview();
         }
         if spec.id == "device-mode" {
             self.status = format!(
@@ -895,8 +1057,19 @@ impl App {
         let Some(schema) = spec.form else {
             return Vec::new();
         };
-        let mut body = patch_body(schema, &session.original, &session.values, MASKED_VALUE);
-        body.retain(|key, _| field_enabled(&session.resource_id, key, &session.values));
+        if let Some(error) = validate_form_values(&session.resource_id, schema, &session.values) {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.error = Some(error);
+            }
+            return Vec::new();
+        }
+        let mut body = form_mutation_body(
+            &session.resource_id,
+            schema,
+            &session.original,
+            &session.values,
+            MASKED_VALUE,
+        );
         if session.mode == mtui_ui::FormMode::Create {
             body.retain(|_, value| !value.is_empty());
             if body.is_empty() {
@@ -906,8 +1079,7 @@ impl App {
                 return Vec::new();
             }
             if let Overlay::Form(session) = &mut self.overlay {
-                session.saving = true;
-                session.error = None;
+                session.begin_save();
             }
             self.status = "Creating…".into();
             return vec![self.mutate_command(MutationOp::Put {
@@ -926,8 +1098,7 @@ impl App {
             Some(session.record_id.clone())
         };
         if let Overlay::Form(session) = &mut self.overlay {
-            session.saving = true;
-            session.error = None;
+            session.begin_save();
         }
         if spec.id == "device-mode" {
             self.status = "Updating device-mode…".into();
@@ -1222,7 +1393,7 @@ impl App {
     }
 
     fn bulk_op_for(&self, session: &ConfirmSession, id: &str) -> MutationOp {
-        let endpoint = session.endpoint.clone();
+        let endpoint = bulk_interface_endpoint(self, session, id);
         if session.command == ActionCommand::Remove {
             return MutationOp::Delete {
                 endpoint,
@@ -1253,9 +1424,13 @@ impl App {
     }
 
     pub(crate) fn mutate_command(&mut self, op: MutationOp) -> AppCommand {
+        let request_id = self.next_request();
+        if let Overlay::Form(session) = &mut self.overlay {
+            session.track_mutation_request(request_id);
+        }
         AppCommand::Mutate {
             session: SessionId::UNSTAMPED,
-            request_id: self.next_request(),
+            request_id,
             generation: self.poll_generation,
             op,
         }
@@ -1263,7 +1438,10 @@ impl App {
 
     pub(crate) fn apply_mutate_result(&mut self, msg: WorkerMsg) -> Vec<AppCommand> {
         let WorkerMsg::MutateResult {
-            generation, error, ..
+            request_id,
+            generation,
+            error,
+            ..
         } = msg
         else {
             return Vec::new();
@@ -1271,15 +1449,25 @@ impl App {
         if generation != self.poll_generation {
             return Vec::new();
         }
+        if matches!(
+            &self.overlay,
+            Overlay::Form(session) if !session.accepts_mutation_result(request_id)
+        ) {
+            return Vec::new();
+        }
         if let Some(cmds) = self.finish_safe_mode_mutate(error.as_deref()) {
             return cmds;
         }
         if let Some(err) = error {
+            let display_error = if let Overlay::Form(session) = &self.overlay {
+                sanitize_form_save_error(&Self::classify_write_error(&err), session)
+            } else {
+                Self::classify_write_error(&err)
+            };
             if let Overlay::Form(session) = &mut self.overlay {
-                session.saving = false;
-                session.error = Some(err.clone());
+                session.apply_mutation_error(display_error.clone());
             }
-            self.status = format!("Write failed: {}", Self::classify_write_error(&err));
+            self.status = format!("Write failed: {display_error}");
             return Vec::new();
         }
         self.overlay = Overlay::None;
@@ -1620,6 +1808,45 @@ fn probe_fields(
     fields
 }
 
+fn typed_interface_spec(row: Option<&HashMap<String, String>>) -> Option<&'static ResourceSpec> {
+    row.and_then(|row| row.get("type"))
+        .map(String::as_str)
+        .and_then(edit_resource_for_interface_type)
+        .and_then(resource_by_id)
+}
+
+fn uses_typed_interface_menu(command: ActionCommand) -> bool {
+    matches!(command, ActionCommand::Remove | ActionCommand::Copy)
+}
+
+fn confirm_resource_endpoint(
+    list_spec: &ResourceSpec,
+    row: Option<&HashMap<String, String>>,
+    command: ActionCommand,
+) -> &'static str {
+    if list_spec.id == "interfaces"
+        && uses_typed_interface_menu(command)
+        && let Some(typed) = typed_interface_spec(row)
+    {
+        return typed.endpoint();
+    }
+    list_spec.endpoint()
+}
+
+fn bulk_interface_endpoint(app: &App, session: &ConfirmSession, id: &str) -> String {
+    if app.current_resource == "interfaces" && uses_typed_interface_menu(session.command) {
+        let row = app
+            .table
+            .rows
+            .iter()
+            .find(|row| row.get(".id").map(String::as_str) == Some(id));
+        if let Some(typed) = typed_interface_spec(row) {
+            return typed.endpoint().to_string();
+        }
+    }
+    session.endpoint.clone()
+}
+
 fn command_base_path(action_id: &str, resource_endpoint: &str) -> String {
     match action_id {
         "reboot" | "shutdown" | "reset-configuration" => "/rest/system".into(),
@@ -1743,6 +1970,26 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    fn focused_form_key(app: &App) -> &'static str {
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form");
+        };
+        let schema = resource_by_id(&session.resource_id)
+            .and_then(|spec| spec.form)
+            .expect("form schema");
+        session.visible_fields(schema)[session.focus].1.key
+    }
+
+    fn focus_form_key(app: &mut App, key: &str) {
+        for _ in 0..80 {
+            if focused_form_key(app) == key {
+                return;
+            }
+            let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        }
+        panic!("did not reach field {key}, last {}", focused_form_key(app));
+    }
+
     #[test]
     fn enter_on_content_opens_edit_not_nav() {
         let mut app = App::new(false).expect("app");
@@ -1765,6 +2012,440 @@ mod tests {
         app.pane = Pane::Content;
         let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
         assert!(matches!(app.overlay, Overlay::Form(_)));
+    }
+
+    #[test]
+    fn editing_ether_from_interface_list_hydrates_ethernet_print() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("interfaces");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "ether5".into());
+        fields.insert("type".into(), "ether".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "interfaces".into(),
+            rows: vec![Resource {
+                id: "*5".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let Some(AppCommand::FetchFormRecord {
+            request_id,
+            generation,
+            resource_id,
+            endpoint,
+            id,
+            ..
+        }) = cmds.into_iter().next()
+        else {
+            panic!("expected FetchFormRecord");
+        };
+        assert_eq!(resource_id, "ethernet");
+        assert_eq!(endpoint, "/rest/interface/ethernet");
+        assert_eq!(id, "*5");
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form");
+        };
+        assert!(
+            !session
+                .visible_fields(
+                    mtui_core::resource_by_id("ethernet")
+                        .and_then(|spec| spec.form)
+                        .expect("ethernet form")
+                )
+                .iter()
+                .any(|(_, field)| field.key == "poe-out" || field.key == "sfp-ignore-rx-los")
+        );
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::FormRecordResult {
+            session: app.test_session(),
+            request_id,
+            generation,
+            resource_id,
+            id,
+            fields: Some(HashMap::from([
+                ("poe-out".into(), "auto-on".into()),
+                ("sfp-shutdown-temperature".into(), "95C".into()),
+            ])),
+            error: None,
+        }));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected form");
+        };
+        let schema = mtui_core::resource_by_id("ethernet")
+            .and_then(|spec| spec.form)
+            .expect("ethernet form");
+        let keys: Vec<_> = session
+            .visible_fields(schema)
+            .into_iter()
+            .map(|(_, field)| field.key)
+            .collect();
+        assert!(keys.contains(&"poe-out"));
+        assert!(keys.contains(&"sfp-ignore-rx-los"));
+        assert_eq!(
+            app.table
+                .selected_row()
+                .and_then(|row| row.get("poe-out"))
+                .map(String::as_str),
+            Some("auto-on")
+        );
+        assert!(app.inspector.fields.iter().any(|(label, _)| label == "PoE"));
+        assert!(app.inspector.fields.iter().any(|(label, _)| label == "SFP"));
+    }
+
+    #[test]
+    fn interface_list_hydrates_ethernet_print_into_details_pane() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("interfaces");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "sfp1".into());
+        fields.insert("type".into(), "ether".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "interfaces".into(),
+            rows: vec![Resource {
+                id: "*s".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        let Some(AppCommand::FetchFormRecord {
+            request_id,
+            generation,
+            resource_id,
+            endpoint,
+            id,
+            ..
+        }) = cmds.into_iter().next()
+        else {
+            panic!("expected FetchFormRecord for ethernet details");
+        };
+        assert_eq!(resource_id, "ethernet");
+        assert_eq!(endpoint, "/rest/interface/ethernet");
+        assert_eq!(id, "*s");
+        assert!(!app.inspector.fields.iter().any(|(label, _)| label == "SFP"));
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::FormRecordResult {
+            session: app.test_session(),
+            request_id,
+            generation,
+            resource_id,
+            id,
+            fields: Some(HashMap::from([
+                ("sfp-shutdown-temperature".into(), "95C".into()),
+                ("sfp-ignore-rx-los".into(), "no".into()),
+            ])),
+            error: None,
+        }));
+        assert!(
+            app.inspector.fields.iter().any(|(label, _)| label == "SFP"),
+            "details pane should show SFP once ethernet print arrives: {:?}",
+            app.inspector
+                .fields
+                .iter()
+                .map(|(label, _)| label.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            app.inspector
+                .fields
+                .iter()
+                .any(|(label, _)| label == "Ignore Rx LOS")
+        );
+    }
+
+    #[test]
+    fn interface_list_hydrates_vlan_print_into_details_pane() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("interfaces");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "vlan10".into());
+        fields.insert("type".into(), "vlan".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "interfaces".into(),
+            rows: vec![Resource {
+                id: "*v".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        let Some(AppCommand::FetchFormRecord {
+            request_id,
+            generation,
+            resource_id,
+            endpoint,
+            id,
+            ..
+        }) = cmds.into_iter().next()
+        else {
+            panic!("expected FetchFormRecord for vlan details");
+        };
+        assert_eq!(resource_id, "vlan");
+        assert_eq!(endpoint, "/rest/interface/vlan");
+        assert_eq!(id, "*v");
+        assert!(
+            !app.inspector
+                .fields
+                .iter()
+                .any(|(label, _)| label == "L3 Hw Offloading")
+        );
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::FormRecordResult {
+            session: app.test_session(),
+            request_id,
+            generation,
+            resource_id,
+            id,
+            fields: Some(HashMap::from([
+                ("l3-hw-offloading".into(), "yes".into()),
+                ("hw-offloaded".into(), "yes".into()),
+            ])),
+            error: None,
+        }));
+        assert!(
+            app.inspector
+                .fields
+                .iter()
+                .any(|(label, _)| label == "L3 Hw Offloading"),
+            "details pane should show VLAN L3 once vlan print arrives: {:?}",
+            app.inspector
+                .fields
+                .iter()
+                .map(|(label, _)| label.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn switch_list_hydrates_print_detail_into_details_pane() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("switch");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "switch1".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "switch".into(),
+            rows: vec![Resource {
+                id: "*sw".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        let Some(AppCommand::FetchFormRecord {
+            request_id,
+            generation,
+            resource_id,
+            endpoint,
+            id,
+            ..
+        }) = cmds.into_iter().next()
+        else {
+            panic!("expected FetchFormRecord for switch details");
+        };
+        assert_eq!(resource_id, "switch");
+        assert_eq!(endpoint, "/rest/interface/ethernet/switch");
+        assert_eq!(id, "*sw");
+        assert!(
+            !app.inspector
+                .fields
+                .iter()
+                .any(|(label, _)| label == "L3 HW")
+        );
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::FormRecordResult {
+            session: app.test_session(),
+            request_id,
+            generation,
+            resource_id,
+            id,
+            fields: Some(HashMap::from([("l3-hw-offloading".into(), "yes".into())])),
+            error: None,
+        }));
+        assert!(
+            app.inspector
+                .fields
+                .iter()
+                .any(|(label, _)| label == "L3 HW"),
+            "details pane should show switch L3 once print arrives: {:?}",
+            app.inspector
+                .fields
+                .iter()
+                .map(|(label, _)| label.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn switch_port_list_hydrates_print_detail_into_details_pane() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("switch-port");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "ether1".into());
+        fields.insert("switch".into(), "switch1".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "switch-port".into(),
+            rows: vec![Resource {
+                id: "*p".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        let Some(AppCommand::FetchFormRecord {
+            request_id,
+            generation,
+            resource_id,
+            endpoint,
+            id,
+            ..
+        }) = cmds.into_iter().next()
+        else {
+            panic!("expected FetchFormRecord for switch-port details");
+        };
+        assert_eq!(resource_id, "switch-port");
+        assert_eq!(endpoint, "/rest/interface/ethernet/switch/port");
+        assert_eq!(id, "*p");
+        assert!(
+            !app.inspector
+                .fields
+                .iter()
+                .any(|(label, _)| label == "L3 HW")
+        );
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::FormRecordResult {
+            session: app.test_session(),
+            request_id,
+            generation,
+            resource_id,
+            id,
+            fields: Some(HashMap::from([("l3-hw-offloading".into(), "yes".into())])),
+            error: None,
+        }));
+        assert!(
+            app.inspector
+                .fields
+                .iter()
+                .any(|(label, _)| label == "L3 HW"),
+            "details pane should show port L3 once print arrives: {:?}",
+            app.inspector
+                .fields
+                .iter()
+                .map(|(label, _)| label.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    fn interface_row(id: &str, name: &str, iface_type: &str) -> Resource {
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), name.into());
+        fields.insert("type".into(), iface_type.into());
+        Resource {
+            id: id.into(),
+            fields,
+        }
+    }
+
+    #[test]
+    fn removing_eoip_from_interface_list_uses_eoip_remove() {
+        let mut app = load_named_rows(
+            "interfaces",
+            vec![interface_row("*e", "eoip-office", "eoip")],
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected remove confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.endpoint, "/rest/interface/eoip");
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Delete { endpoint, id } => {
+                assert_eq!(endpoint, "/rest/interface/eoip");
+                assert_eq!(id, "*e");
+            }
+            other => panic!("expected eoip delete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bulk_remove_from_interface_list_uses_each_type_menu() {
+        let mut app = load_named_rows(
+            "interfaces",
+            vec![
+                interface_row("*e", "eoip-office", "eoip"),
+                interface_row("*v", "vlan10", "vlan"),
+            ],
+        );
+        bulk_check_two_rows(&mut app);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Batch { ops } => {
+                let mut paths: Vec<_> = ops
+                    .iter()
+                    .map(|op| match op {
+                        MutationOp::Delete { endpoint, id } => (endpoint.as_str(), id.as_str()),
+                        other => panic!("expected delete, got {other:?}"),
+                    })
+                    .collect();
+                paths.sort_unstable();
+                assert_eq!(
+                    paths,
+                    vec![
+                        ("/rest/interface/eoip", "*e"),
+                        ("/rest/interface/vlan", "*v"),
+                    ]
+                );
+            }
+            other => panic!("expected batch delete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copying_eoip_from_interface_list_targets_eoip_menu() {
+        let mut app = load_named_rows(
+            "interfaces",
+            vec![interface_row("*e", "eoip-office", "eoip")],
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('c'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected copy prompt, got {:?}", app.overlay);
+        };
+        assert_eq!(session.resource_id, "eoip");
+        if let Overlay::Form(session) = &mut app.overlay {
+            session.values.insert("new-name".into(), "eoip-2".into());
+        }
+        let cmds = app.save_form();
+        match command_op(&cmds) {
+            MutationOp::Command {
+                endpoint,
+                command,
+                fields,
+            } => {
+                assert_eq!(endpoint, "/rest/interface/eoip");
+                assert_eq!(command, "copy");
+                assert_eq!(fields.get(".id").map(String::as_str), Some("*e"));
+            }
+            other => panic!("expected eoip copy, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1835,7 +2516,7 @@ mod tests {
     }
 
     #[test]
-    fn arrows_move_fields_and_tabs_from_a_text_input() {
+    fn arrows_move_fields_without_switching_sections() {
         let mut app = open_vlan_editor();
         let Overlay::Form(session) = &app.overlay else {
             panic!("expected form");
@@ -1863,7 +2544,8 @@ mod tests {
         let Overlay::Form(session) = &app.overlay else {
             panic!("expected form");
         };
-        assert_eq!(session.section, 1);
+        assert_eq!(session.section, 0);
+        assert_eq!(session.focus, 0);
         let _ = app.update(AppEvent::Input(press(KeyCode::Left)));
         let Overlay::Form(session) = &app.overlay else {
             panic!("expected form");
@@ -1877,8 +2559,9 @@ mod tests {
     }
 
     #[test]
-    fn digits_type_into_text_and_number_fields_instead_of_jumping_tabs() {
+    fn digits_type_into_text_and_number_fields_on_single_page() {
         let mut app = open_vlan_editor();
+        focus_form_key(&mut app, "name");
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('2'))));
         let Overlay::Form(session) = &app.overlay else {
             panic!("expected form");
@@ -1889,7 +2572,7 @@ mod tests {
             Some("vlan102")
         );
 
-        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        focus_form_key(&mut app, "vlan-id");
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('2'))));
         let Overlay::Form(session) = &app.overlay else {
             panic!("expected form");
@@ -1903,25 +2586,28 @@ mod tests {
         let Overlay::Form(session) = &app.overlay else {
             panic!("expected form");
         };
-        assert_eq!(session.section, 1);
+        assert_eq!(session.section, 0);
+        assert_eq!(
+            session.values.get("vlan-id").map(String::as_str),
+            Some("102")
+        );
     }
 
     #[test]
-    fn digits_still_jump_tabs_from_a_toggle() {
+    fn digits_on_toggle_do_not_switch_sections() {
         let mut app = open_vlan_editor();
-        for _ in 0..4 {
-            let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
-        }
+        assert_eq!(focused_form_key(&app), "disabled");
         let Overlay::Form(session) = &app.overlay else {
             panic!("expected form");
         };
-        assert_eq!(session.focus, 4);
+        assert_eq!(session.focus, 0);
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('2'))));
         let Overlay::Form(session) = &app.overlay else {
             panic!("expected form");
         };
-        assert_eq!(session.section, 1);
+        assert_eq!(session.section, 0);
         assert_eq!(session.focus, 0);
+        assert_eq!(focused_form_key(&app), "disabled");
     }
 
     #[test]
@@ -3464,6 +4150,115 @@ mod tests {
             }
             other => panic!("unexpected op {other:?}"),
         }
+    }
+
+    #[test]
+    fn failed_form_save_is_sanitized_retryable_and_stale_safe() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("vlan");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "vlan10".into());
+        fields.insert("vlan-id".into(), "10".into());
+        fields.insert("comment".into(), "old".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "vlan".into(),
+            rows: vec![Resource {
+                id: "*4".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        if let Overlay::Form(session) = &mut app.overlay {
+            session.values.insert("comment".into(), "office".into());
+            session.values.insert("password".into(), "hunter2".into());
+        } else {
+            panic!("expected form");
+        }
+
+        assert!(app.save_form().is_empty());
+        let first = app.save_form();
+        let (first_request, generation) = match first.as_slice() {
+            [
+                AppCommand::Mutate {
+                    request_id,
+                    generation,
+                    ..
+                },
+            ] => (*request_id, *generation),
+            other => panic!("expected first mutation, got {other:?}"),
+        };
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed while save pending");
+        };
+        assert!(session.save_preview_pending());
+        assert!(
+            app.save_form().is_empty(),
+            "pending save must not duplicate"
+        );
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::MutateResult {
+            session: app.test_session(),
+            request_id: first_request,
+            generation,
+            error: Some("failure: password hunter2 was rejected by policy".into()),
+        }));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("failed save must keep form open");
+        };
+        assert!(session.save_preview_failed());
+        let shown = session.error.as_deref().expect("inline error");
+        assert!(shown.contains("[redacted]"));
+        assert!(!shown.contains("hunter2"));
+        assert_eq!(
+            session.values.get("comment").map(String::as_str),
+            Some("office")
+        );
+
+        let retry = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let retry_request = match retry.as_slice() {
+            [AppCommand::Mutate { request_id, .. }] => *request_id,
+            other => panic!("expected retry mutation, got {other:?}"),
+        };
+        assert_ne!(retry_request, first_request);
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed while retry pending");
+        };
+        assert!(session.save_preview_pending());
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::MutateResult {
+            session: app.test_session(),
+            request_id: first_request,
+            generation,
+            error: Some("late duplicate failure".into()),
+        }));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("stale result closed form");
+        };
+        assert!(session.save_preview_pending());
+        assert!(session.error.is_none());
+
+        let _ = app.update(AppEvent::Worker(WorkerMsg::MutateResult {
+            session: app.test_session(),
+            request_id: retry_request,
+            generation,
+            error: Some("retry failed".into()),
+        }));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("Back should return to the form");
+        };
+        assert!(!session.confirm_save);
+        assert_eq!(
+            session.values.get("comment").map(String::as_str),
+            Some("office")
+        );
+        assert!(session.error.is_none());
     }
 
     fn named_row(id: &str, name: &str) -> Resource {

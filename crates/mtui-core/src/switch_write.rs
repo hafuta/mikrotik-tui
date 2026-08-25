@@ -1,6 +1,6 @@
 //! Form schemas for the Switch nav group.
 
-use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
+use crate::forms::{FieldKind, FieldPredicate, FieldRule, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
     ($key:literal, $label:literal, $kind:expr) => {
@@ -37,6 +37,30 @@ const DISABLED: FieldSpec = f!("disabled", "Disabled", FieldKind::Toggle);
 const PORTS: FieldSpec = f!("ports", "Ports", LOOKUP_SWITCH_PORTS);
 const VLAN_ID: FieldSpec = f!("vlan-id", "VLAN ID", FieldKind::Number);
 const L3HW: FieldSpec = f!("l3-hw-offloading", "L3 HW", FieldKind::Toggle);
+
+const fn printed(resource_id: &'static str, field_key: &'static str) -> FieldRule {
+    FieldRule {
+        resource_id,
+        field_key,
+        visible: FieldPredicate::HasKey(field_key),
+        enabled: FieldPredicate::HasKey(field_key),
+    }
+}
+
+/// Chip-specific `/interface/ethernet/switch` attributes from the CLI
+/// reference. Print omits keys the chip does not expose (MediaTek-MT7621
+/// has `mirror-source`/`mirror-target` but not `cpu-flow-control` or
+/// `mirror-egress-target`). Port `l3-hw-offloading` follows
+/// `/interface/ethernet/switch/port` print the same way.
+pub(crate) const FIELD_RULES: &[FieldRule] = &[
+    printed("switch", "mirror-source"),
+    printed("switch", "mirror-target"),
+    printed("switch", "mirror-egress-target"),
+    printed("switch", "cpu-flow-control"),
+    printed("switch", "l3-hw-offloading"),
+    printed("switch", "switch-all-ports"),
+    printed("switch-port", "l3-hw-offloading"),
+];
 
 pub static SWITCH_FORM: FormSchema = FormSchema {
     title_key: "name",
@@ -272,6 +296,36 @@ mod tests {
     }
 
     #[test]
+    fn switch_optional_fields_follow_print_detail_keys() {
+        use crate::forms::field_visible;
+
+        let mt7621 = HashMap::from([
+            ("name".to_string(), "switch1".to_string()),
+            ("type".to_string(), "MediaTek-MT7621".to_string()),
+            ("mirror-source".to_string(), "none".to_string()),
+            ("mirror-target".to_string(), "none".to_string()),
+        ]);
+        assert!(field_visible("switch", "name", &mt7621));
+        assert!(field_visible("switch", "type", &mt7621));
+        assert!(field_visible("switch", "mirror-source", &mt7621));
+        assert!(field_visible("switch", "mirror-target", &mt7621));
+        assert!(!field_visible("switch", "mirror-egress-target", &mt7621));
+        assert!(!field_visible("switch", "cpu-flow-control", &mt7621));
+        assert!(!field_visible("switch", "l3-hw-offloading", &mt7621));
+        assert!(!field_visible("switch", "switch-all-ports", &mt7621));
+
+        let marvell = HashMap::from([
+            ("cpu-flow-control".to_string(), "yes".to_string()),
+            ("mirror-egress-target".to_string(), "none".to_string()),
+            ("l3-hw-offloading".to_string(), "no".to_string()),
+        ]);
+        assert!(field_visible("switch", "cpu-flow-control", &marvell));
+        assert!(field_visible("switch", "mirror-egress-target", &marvell));
+        assert!(field_visible("switch", "l3-hw-offloading", &marvell));
+        assert!(!field_visible("switch", "mirror-source", &marvell));
+    }
+
+    #[test]
     fn switch_port_keeps_identity_readonly() {
         assert_eq!(tab_ids(&SWITCH_PORT_FORM), ["general", "advanced"]);
         assert!(SWITCH_PORT_FORM.create_sections.is_empty());
@@ -305,6 +359,21 @@ mod tests {
                 .map(|field| field.kind),
             Some(FieldKind::Number)
         );
+    }
+
+    #[test]
+    fn switch_port_l3_hw_follows_port_print_attributes() {
+        use crate::forms::field_visible;
+
+        let row = HashMap::from([
+            ("name".to_string(), "ether1".to_string()),
+            ("switch".to_string(), "switch1".to_string()),
+        ]);
+        assert!(!field_visible("switch-port", "l3-hw-offloading", &row));
+        assert!(field_visible("switch-port", "vlan-mode", &row));
+
+        let with_l3 = HashMap::from([("l3-hw-offloading".to_string(), "yes".to_string())]);
+        assert!(field_visible("switch-port", "l3-hw-offloading", &with_l3));
     }
 
     #[test]
