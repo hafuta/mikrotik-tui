@@ -342,6 +342,11 @@ const LOOKUP_INTERFACES: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_INTERFACES_MULTI: FieldKind = FieldKind::Lookup {
+    resource_id: "interfaces",
+    value_key: "name",
+    multiple: true,
+};
 const LOOKUP_POOLS: FieldKind = FieldKind::Lookup {
     resource_id: "pools",
     value_key: "name",
@@ -1313,6 +1318,274 @@ pub static IP_SSH_FORM: FormSchema = FormSchema {
     create_sections: &[],
 };
 
+const CACHE_ENTRIES: &[&str] = &[
+    "1k", "2k", "4k", "8k", "16k", "32k", "64k", "128k", "256k", "512k", "1M", "2M", "4M", "8M",
+    "16M", "32M", "64M",
+];
+const TRAFFIC_FLOW_VERSIONS: &[&str] = &["1", "5", "9", "ipfix"];
+
+pub static TRAFFIC_FLOW_FORM: FormSchema = FormSchema {
+    title_key: "enabled",
+    subtitle_keys: &["interfaces"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("enabled", "Enabled", FieldKind::Toggle),
+            f!("interfaces", "Interfaces", FieldKind::Repeat),
+            f!(
+                "cache-entries",
+                "Cache Entries",
+                FieldKind::Enum {
+                    values: CACHE_ENTRIES,
+                }
+            ),
+            f!(
+                "active-flow-timeout",
+                "Active Flow Timeout",
+                FieldKind::Text
+            ),
+            f!(
+                "inactive-flow-timeout",
+                "Inactive Flow Timeout",
+                FieldKind::Text
+            ),
+            f!("packet-sampling", "Packet Sampling", FieldKind::Toggle),
+            f!("sampling-interval", "Sampling Interval", FieldKind::Number),
+            f!("sampling-space", "Sampling Space", FieldKind::Number),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static TRAFFIC_FLOW_TARGET_FORM: FormSchema = FormSchema {
+    title_key: "dst-address",
+    subtitle_keys: &["version"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("src-address", "Src. Address", FieldKind::Text),
+            f!("dst-address", "Dst. Address", FieldKind::Text),
+            f!("port", "Port", FieldKind::Number),
+            f!(
+                "version",
+                "Version",
+                FieldKind::Enum {
+                    values: TRAFFIC_FLOW_VERSIONS,
+                }
+            ),
+            f!(
+                "v9-template-refresh",
+                "v9 Template Refresh",
+                FieldKind::Number
+            ),
+            f!(
+                "v9-template-timeout",
+                "v9 Template Timeout",
+                FieldKind::Text
+            ),
+            DISABLED,
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("dst-address", "Dst. Address", FieldKind::Text),
+            f!("port", "Port", FieldKind::Number),
+            f!(
+                "version",
+                "Version",
+                FieldKind::Enum {
+                    values: TRAFFIC_FLOW_VERSIONS,
+                }
+            ),
+        ],
+    }],
+};
+
+const IPFIX_GENERAL: &[FieldSpec] = &[
+    f!("bytes", "Bytes", FieldKind::Toggle),
+    f!("ip-total-length", "IP Total Length", FieldKind::Toggle),
+    f!("src-address", "Src. Address", FieldKind::Toggle),
+    f!("dst-address", "Dst. Address", FieldKind::Toggle),
+    f!("ipv6-flow-label", "IPv6 Flow Label", FieldKind::Toggle),
+    f!("src-address-mask", "Src. Address Mask", FieldKind::Toggle),
+    f!("dst-address-mask", "Dst. Address Mask", FieldKind::Toggle),
+    f!("is-multicast", "Is Multicast", FieldKind::Toggle),
+    f!("src-mac-address", "Src. MAC Address", FieldKind::Toggle),
+    f!("dst-mac-address", "Dst. MAC Address", FieldKind::Toggle),
+    f!("last-forwarded", "Last Forwarded", FieldKind::Toggle),
+    f!("src-port", "Src. Port", FieldKind::Toggle),
+    f!("dst-port", "Dst. Port", FieldKind::Toggle),
+    f!("nat-dst-address", "NAT Dst. Address", FieldKind::Toggle),
+    f!("sys-init-time", "Sys Init Time", FieldKind::Toggle),
+    f!("first-forwarded", "First Forwarded", FieldKind::Toggle),
+    f!("nat-dst-port", "NAT Dst. Port", FieldKind::Toggle),
+    f!("tcp-ack-num", "TCP Ack Num", FieldKind::Toggle),
+    f!("gateway", "Gateway", FieldKind::Toggle),
+    f!("nat-events", "NAT Events", FieldKind::Toggle),
+    f!("tcp-flags", "TCP Flags", FieldKind::Toggle),
+    f!("icmp-code", "ICMP Code", FieldKind::Toggle),
+    f!("nat-src-address", "NAT Src. Address", FieldKind::Toggle),
+    f!("icmp-type", "ICMP Type", FieldKind::Toggle),
+    f!("nat-src-port", "NAT Src. Port", FieldKind::Toggle),
+    f!("tcp-seq-num", "TCP Seq Num", FieldKind::Toggle),
+    f!("tcp-window-size", "TCP Window Size", FieldKind::Toggle),
+    f!("igmp-type", "IGMP Type", FieldKind::Toggle),
+    f!("out-interface", "Out Interface", FieldKind::Toggle),
+    f!("in-interface", "In Interface", FieldKind::Toggle),
+    f!("packets", "Packets", FieldKind::Toggle),
+    f!("ip-header-length", "IP Header Length", FieldKind::Toggle),
+    f!("protocol", "Protocol", FieldKind::Toggle),
+    f!("tos", "ToS", FieldKind::Toggle),
+    f!("ttl", "TTL", FieldKind::Toggle),
+    f!("udp-length", "UDP Length", FieldKind::Toggle),
+];
+
+pub static TRAFFIC_FLOW_IPFIX_FORM: FormSchema = FormSchema {
+    title_key: "bytes",
+    subtitle_keys: &["protocol"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: IPFIX_GENERAL,
+    }],
+    create_sections: &[],
+};
+
+pub static IGMP_PROXY_FORM: FormSchema = FormSchema {
+    title_key: "query-interval",
+    subtitle_keys: &["quick-leave"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("query-interval", "Query Interval", FieldKind::Text),
+            f!(
+                "query-response-interval",
+                "Query Response Interval",
+                FieldKind::Text
+            ),
+            f!(
+                "last-member-query-interval",
+                "Last Member Query Interval",
+                FieldKind::Text
+            ),
+            f!("robustness", "Robustness", FieldKind::Number),
+            f!("quick-leave", "Quick Leave", FieldKind::Toggle),
+        ],
+    }],
+    create_sections: &[],
+};
+
+pub static IGMP_PROXY_INTERFACE_FORM: FormSchema = FormSchema {
+    title_key: "interface",
+    subtitle_keys: &["upstream"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                INTERFACE,
+                f!("upstream", "Upstream", FieldKind::Toggle),
+                f!("threshold", "Threshold", FieldKind::Number),
+                f!(
+                    "alternative-subnets",
+                    "Alternative Subnets",
+                    FieldKind::Repeat
+                ),
+                DISABLED,
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("querier", "Querier", FieldKind::Readonly),
+                f!(
+                    "source-ip-address",
+                    "Source IP Address",
+                    FieldKind::Readonly
+                ),
+                f!("rx-bytes", "RX Bytes", FieldKind::Readonly),
+                f!("rx-packets", "RX Packets", FieldKind::Readonly),
+                f!("tx-bytes", "TX Bytes", FieldKind::Readonly),
+                f!("tx-packets", "TX Packets", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[INTERFACE],
+    }],
+};
+
+pub static IGMP_PROXY_MFC_FORM: FormSchema = FormSchema {
+    title_key: "group",
+    subtitle_keys: &["source"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                f!("group", "Group", FieldKind::Text),
+                f!("source", "Source", FieldKind::Text),
+                f!(
+                    "upstream-interface",
+                    "Upstream Interface",
+                    LOOKUP_INTERFACES
+                ),
+                f!(
+                    "downstream-interfaces",
+                    "Downstream Interfaces",
+                    LOOKUP_INTERFACES_MULTI
+                ),
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!(
+                    "active-downstream-interfaces",
+                    "Active Downstream Interfaces",
+                    FieldKind::Readonly
+                ),
+                f!("bytes", "Bytes", FieldKind::Readonly),
+                f!("packets", "Packets", FieldKind::Readonly),
+                f!("wrong-packets", "Wrong Packets", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            f!("group", "Group", FieldKind::Text),
+            f!("source", "Source", FieldKind::Text),
+            f!(
+                "upstream-interface",
+                "Upstream Interface",
+                LOOKUP_INTERFACES
+            ),
+        ],
+    }],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1360,6 +1633,18 @@ mod tests {
         assert_eq!(create_keys(&ROUTE_FORM), ["dst-address", "gateway"]);
         assert_eq!(create_keys(&POOL_FORM), ["name", "ranges"]);
         assert!(SERVICE_FORM.create_sections.is_empty());
+        assert!(TRAFFIC_FLOW_FORM.create_sections.is_empty());
+        assert!(TRAFFIC_FLOW_IPFIX_FORM.create_sections.is_empty());
+        assert!(IGMP_PROXY_FORM.create_sections.is_empty());
+        assert_eq!(
+            create_keys(&TRAFFIC_FLOW_TARGET_FORM),
+            ["dst-address", "port", "version"]
+        );
+        assert_eq!(create_keys(&IGMP_PROXY_INTERFACE_FORM), ["interface"]);
+        assert_eq!(
+            create_keys(&IGMP_PROXY_MFC_FORM),
+            ["group", "source", "upstream-interface"]
+        );
         assert!(IP_SETTINGS_FORM.create_sections.is_empty());
         assert_eq!(create_keys(&FIREWALL_NAT_FORM), ["chain", "action"]);
         assert_eq!(create_keys(&FIREWALL_MANGLE_FORM), ["chain", "action"]);
@@ -1516,5 +1801,258 @@ mod tests {
         );
         assert!(!SERVICE_PORT_FORM.writable_keys().contains(&"name"));
         assert!(SERVICE_PORT_FORM.writable_keys().contains(&"disabled"));
+    }
+
+    fn no_advanced(schema: &FormSchema) -> bool {
+        schema
+            .sections
+            .iter()
+            .all(|section| section.id != "advanced")
+    }
+
+    fn assert_enum(schema: &FormSchema, key: &str, values: &'static [&'static str]) {
+        assert_eq!(
+            schema.field(key).map(|field| field.kind),
+            Some(FieldKind::Enum { values })
+        );
+    }
+
+    fn assert_label(schema: &FormSchema, key: &str, label: &str) {
+        assert_eq!(schema.field(key).map(|field| field.label), Some(label));
+    }
+
+    #[test]
+    fn traffic_flow_forms_use_webfig_field_kinds() {
+        assert!(TRAFFIC_FLOW_FORM.create_sections.is_empty());
+        assert!(no_advanced(&TRAFFIC_FLOW_FORM));
+        assert_eq!(
+            TRAFFIC_FLOW_FORM.writable_keys(),
+            [
+                "enabled",
+                "interfaces",
+                "cache-entries",
+                "active-flow-timeout",
+                "inactive-flow-timeout",
+                "packet-sampling",
+                "sampling-interval",
+                "sampling-space",
+            ]
+        );
+        assert_eq!(field_kind(&TRAFFIC_FLOW_FORM, "enabled"), FieldKind::Toggle);
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_FORM, "interfaces"),
+            FieldKind::Repeat
+        );
+        assert_enum(&TRAFFIC_FLOW_FORM, "cache-entries", CACHE_ENTRIES);
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_FORM, "active-flow-timeout"),
+            FieldKind::Text
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_FORM, "inactive-flow-timeout"),
+            FieldKind::Text
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_FORM, "packet-sampling"),
+            FieldKind::Toggle
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_FORM, "sampling-interval"),
+            FieldKind::Number
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_FORM, "sampling-space"),
+            FieldKind::Number
+        );
+        assert_label(&TRAFFIC_FLOW_FORM, "cache-entries", "Cache Entries");
+        assert_label(
+            &TRAFFIC_FLOW_FORM,
+            "active-flow-timeout",
+            "Active Flow Timeout",
+        );
+        assert_label(&TRAFFIC_FLOW_FORM, "packet-sampling", "Packet Sampling");
+    }
+
+    #[test]
+    fn traffic_flow_target_and_ipfix_use_webfig_field_kinds() {
+        assert_eq!(
+            create_keys(&TRAFFIC_FLOW_TARGET_FORM),
+            ["dst-address", "port", "version"]
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_TARGET_FORM, "src-address"),
+            FieldKind::Text
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_TARGET_FORM, "dst-address"),
+            FieldKind::Text
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_TARGET_FORM, "port"),
+            FieldKind::Number
+        );
+        assert_enum(&TRAFFIC_FLOW_TARGET_FORM, "version", TRAFFIC_FLOW_VERSIONS);
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_TARGET_FORM, "v9-template-refresh"),
+            FieldKind::Number
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_TARGET_FORM, "v9-template-timeout"),
+            FieldKind::Text
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_TARGET_FORM, "disabled"),
+            FieldKind::Toggle
+        );
+        assert_label(&TRAFFIC_FLOW_TARGET_FORM, "src-address", "Src. Address");
+        assert_label(
+            &TRAFFIC_FLOW_TARGET_FORM,
+            "v9-template-refresh",
+            "v9 Template Refresh",
+        );
+
+        assert!(TRAFFIC_FLOW_IPFIX_FORM.create_sections.is_empty());
+        assert!(no_advanced(&TRAFFIC_FLOW_IPFIX_FORM));
+        for field in IPFIX_GENERAL {
+            assert_eq!(field.kind, FieldKind::Toggle, "{}", field.key);
+            assert_ne!(field.kind, FieldKind::Text, "{}", field.key);
+            assert_ne!(field.kind, FieldKind::Number, "{}", field.key);
+        }
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_IPFIX_FORM, "src-port"),
+            FieldKind::Toggle
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_IPFIX_FORM, "bytes"),
+            FieldKind::Toggle
+        );
+        assert_label(
+            &TRAFFIC_FLOW_IPFIX_FORM,
+            "ip-total-length",
+            "IP Total Length",
+        );
+    }
+
+    #[test]
+    fn igmp_proxy_forms_use_webfig_field_kinds() {
+        assert!(IGMP_PROXY_FORM.create_sections.is_empty());
+        assert!(no_advanced(&IGMP_PROXY_FORM));
+        assert_eq!(
+            IGMP_PROXY_FORM.writable_keys(),
+            [
+                "query-interval",
+                "query-response-interval",
+                "last-member-query-interval",
+                "robustness",
+                "quick-leave",
+            ]
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_FORM, "query-interval"),
+            FieldKind::Text
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_FORM, "query-response-interval"),
+            FieldKind::Text
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_FORM, "last-member-query-interval"),
+            FieldKind::Text
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_FORM, "robustness"),
+            FieldKind::Number
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_FORM, "quick-leave"),
+            FieldKind::Toggle
+        );
+        assert_label(&IGMP_PROXY_FORM, "quick-leave", "Quick Leave");
+        assert_label(
+            &IGMP_PROXY_FORM,
+            "last-member-query-interval",
+            "Last Member Query Interval",
+        );
+
+        assert_eq!(create_keys(&IGMP_PROXY_INTERFACE_FORM), ["interface"]);
+        assert_eq!(
+            field_kind(&IGMP_PROXY_INTERFACE_FORM, "interface"),
+            lookup("interfaces", "name")
+        );
+        assert_eq!(
+            create_field_kind(&IGMP_PROXY_INTERFACE_FORM, "interface"),
+            lookup("interfaces", "name")
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_INTERFACE_FORM, "upstream"),
+            FieldKind::Toggle
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_INTERFACE_FORM, "threshold"),
+            FieldKind::Number
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_INTERFACE_FORM, "alternative-subnets"),
+            FieldKind::Repeat
+        );
+        assert_label(
+            &IGMP_PROXY_INTERFACE_FORM,
+            "alternative-subnets",
+            "Alternative Subnets",
+        );
+        status_readonly(&IGMP_PROXY_INTERFACE_FORM);
+
+        assert_eq!(
+            create_keys(&IGMP_PROXY_MFC_FORM),
+            ["group", "source", "upstream-interface"]
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_MFC_FORM, "upstream-interface"),
+            lookup("interfaces", "name")
+        );
+        assert_eq!(
+            field_kind(&IGMP_PROXY_MFC_FORM, "downstream-interfaces"),
+            lookup_multi("interfaces", "name")
+        );
+        assert_eq!(field_kind(&IGMP_PROXY_MFC_FORM, "group"), FieldKind::Text);
+        status_readonly(&IGMP_PROXY_MFC_FORM);
+        assert!(!IGMP_PROXY_MFC_FORM.writable_keys().contains(&"packets"));
+        assert!(!IGMP_PROXY_MFC_FORM.writable_keys().contains(&"bytes"));
+    }
+
+    #[test]
+    fn traffic_flow_and_igmp_patch_skips_status_and_unchanged() {
+        let mut original = HashMap::new();
+        original.insert("interface".into(), "ether2".into());
+        original.insert("upstream".into(), "true".into());
+        original.insert("threshold".into(), "1".into());
+        original.insert("alternative-subnets".into(), "192.168.50.0/24".into());
+        original.insert("querier".into(), "yes".into());
+        original.insert("rx-bytes".into(), "100".into());
+        let mut current = original.clone();
+        current.insert("threshold".into(), "2".into());
+        current.insert("rx-bytes".into(), "999".into());
+        let body = patch_body(&IGMP_PROXY_INTERFACE_FORM, &original, &current, "********");
+        assert_eq!(body.get("threshold").map(String::as_str), Some("2"));
+        assert!(!body.contains_key("querier"));
+        assert!(!body.contains_key("rx-bytes"));
+        assert!(!body.contains_key("interface"));
+
+        let mut original = HashMap::new();
+        original.insert("enabled".into(), "false".into());
+        original.insert("interfaces".into(), "all".into());
+        original.insert("cache-entries".into(), "4k".into());
+        original.insert("packet-sampling".into(), "false".into());
+        let mut current = original.clone();
+        current.insert("enabled".into(), "true".into());
+        current.insert("interfaces".into(), "ether1,ether2".into());
+        let body = patch_body(&TRAFFIC_FLOW_FORM, &original, &current, "********");
+        assert_eq!(body.get("enabled").map(String::as_str), Some("true"));
+        assert_eq!(
+            body.get("interfaces").map(String::as_str),
+            Some("ether1,ether2")
+        );
+        assert!(!body.contains_key("cache-entries"));
+        assert!(!body.contains_key("packet-sampling"));
     }
 }

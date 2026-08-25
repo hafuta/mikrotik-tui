@@ -2643,6 +2643,113 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::ip_write::IP_SSH_FORM),
     },
     ResourceSpec {
+        id: "traffic-flow",
+        group: "ip-group",
+        label: "Traffic Flow",
+        fetch: FetchKind::System {
+            endpoint: "/rest/ip/traffic-flow",
+        },
+        columns: &[
+            col!("enabled", "Enabled", 8),
+            col!("interfaces", "Interfaces", 20),
+            col!("cache-entries", "Cache", 8),
+            col!("packet-sampling", "Sampling", 9),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ip_write::TRAFFIC_FLOW_FORM),
+    },
+    ResourceSpec {
+        id: "traffic-flow-targets",
+        group: "ip-group",
+        label: "Traffic Flow Targets",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/traffic-flow/target",
+        },
+        columns: &[
+            col!("src-address", "Src. Address", 16),
+            col!("dst-address", "Dst. Address", 16),
+            col!("port", "Port", 6),
+            col!("version", "Version", 8),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::TRAFFIC_FLOW_TARGET_FORM),
+    },
+    ResourceSpec {
+        id: "traffic-flow-ipfix",
+        group: "ip-group",
+        label: "Traffic Flow IPFIX",
+        fetch: FetchKind::System {
+            endpoint: "/rest/ip/traffic-flow/ipfix",
+        },
+        columns: &[
+            col!("bytes", "Bytes", 7),
+            col!("src-address", "Src", 6),
+            col!("dst-address", "Dst", 6),
+            col!("protocol", "Proto", 6),
+            col!("nat-events", "NAT", 5),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ip_write::TRAFFIC_FLOW_IPFIX_FORM),
+    },
+    ResourceSpec {
+        id: "igmp-proxy",
+        group: "ip-group",
+        label: "IGMP Proxy",
+        fetch: FetchKind::System {
+            endpoint: "/rest/routing/igmp-proxy",
+        },
+        columns: &[
+            col!("query-interval", "Query", 10),
+            col!("query-response-interval", "Response", 10),
+            col!("quick-leave", "Quick leave", 11),
+            col!("robustness", "Robust", 8),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ip_write::IGMP_PROXY_FORM),
+    },
+    ResourceSpec {
+        id: "igmp-proxy-interfaces",
+        group: "ip-group",
+        label: "IGMP Proxy Interfaces",
+        fetch: FetchKind::List {
+            endpoint: "/rest/routing/igmp-proxy/interface",
+        },
+        columns: &[
+            col!("interface", "Interface", 16),
+            col!("upstream", "Up", 5),
+            col!("threshold", "TTL", 6),
+            col!("querier", "Querier", 8),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(10),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::ip_write::IGMP_PROXY_INTERFACE_FORM),
+    },
+    ResourceSpec {
+        id: "igmp-proxy-mfc",
+        group: "ip-group",
+        label: "IGMP Proxy MFC",
+        fetch: FetchKind::List {
+            endpoint: "/rest/routing/igmp-proxy/mfc",
+        },
+        columns: &[
+            col!("group", "Group", 16),
+            col!("source", "Source", 16),
+            col!("upstream-interface", "Upstream", 14),
+            col!("downstream-interfaces", "Downstream", 20),
+            col!("packets", "Packets", 10),
+            col!("bytes", "Bytes", 12),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::ip_write::IGMP_PROXY_MFC_FORM),
+    },
+    ResourceSpec {
         id: "proxy",
         group: "ip-group",
         label: "Proxy",
@@ -4306,6 +4413,68 @@ mod tests {
     }
 
     #[test]
+    fn traffic_flow_and_igmp_proxy_are_ip_group_screens() {
+        let flow = resource_by_id("traffic-flow").expect("traffic-flow");
+        assert!(flow.is_singleton());
+        assert_eq!(flow.endpoint(), "/rest/ip/traffic-flow");
+        assert_eq!(flow.cli_path(), "/ip/traffic-flow");
+        assert_eq!(flow.group, "ip-group");
+        assert!(flow.form.is_some());
+        assert_eq!(
+            column_keys("traffic-flow"),
+            ["enabled", "interfaces", "cache-entries", "packet-sampling"]
+        );
+
+        let targets = resource_by_id("traffic-flow-targets").expect("traffic-flow-targets");
+        assert!(!targets.is_singleton());
+        assert_eq!(targets.endpoint(), "/rest/ip/traffic-flow/target");
+        assert_eq!(
+            targets
+                .actions
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>(),
+            crate::actions::MEMBER_ACTIONS
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            column_keys("traffic-flow-targets"),
+            ["src-address", "dst-address", "port", "version", "disabled"]
+        );
+
+        let ipfix = resource_by_id("traffic-flow-ipfix").expect("traffic-flow-ipfix");
+        assert!(ipfix.is_singleton());
+        assert_eq!(ipfix.endpoint(), "/rest/ip/traffic-flow/ipfix");
+
+        let proxy = resource_by_id("igmp-proxy").expect("igmp-proxy");
+        assert!(proxy.is_singleton());
+        assert_eq!(proxy.endpoint(), "/rest/routing/igmp-proxy");
+        assert_eq!(proxy.cli_path(), "/routing/igmp-proxy");
+        assert_eq!(proxy.group, "ip-group");
+
+        let ifaces = resource_by_id("igmp-proxy-interfaces").expect("igmp-proxy-interfaces");
+        assert!(!ifaces.is_singleton());
+        assert_eq!(ifaces.endpoint(), "/rest/routing/igmp-proxy/interface");
+        assert!(ifaces.form.is_some());
+
+        let mfc = resource_by_id("igmp-proxy-mfc").expect("igmp-proxy-mfc");
+        assert_eq!(mfc.endpoint(), "/rest/routing/igmp-proxy/mfc");
+        assert_eq!(
+            mfc.actions
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>(),
+            crate::actions::LIST_ACTIONS
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>()
+        );
+        assert_unique_endpoints("ip-group");
+    }
+
+    #[test]
     fn ping_and_traceroute_are_local_fetch() {
         let ping = resource_by_id("ping").expect("ping");
         let traceroute = resource_by_id("traceroute").expect("traceroute");
@@ -4815,6 +4984,12 @@ mod tests {
                 "connection-tracking",
                 "neighbor-discovery",
                 "ip-ssh",
+                "traffic-flow",
+                "traffic-flow-targets",
+                "traffic-flow-ipfix",
+                "igmp-proxy",
+                "igmp-proxy-interfaces",
+                "igmp-proxy-mfc",
                 "proxy",
                 "proxy-access",
                 "proxy-cache",

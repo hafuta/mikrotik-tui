@@ -106,4 +106,21 @@ mod tests {
         assert!(!is_command_name("reset/counters"));
         assert!(!is_command_name("../torch"));
     }
+
+    #[test]
+    fn encode_omits_absent_optional_traffic_flow_keys() {
+        let mut fields = BTreeMap::new();
+        fields.insert("enabled".into(), "true".into());
+        fields.insert("dst-address".into(), "192.0.2.10".into());
+        let json = encode_fields(&fields);
+        let object = json.as_object().expect("object");
+        assert_eq!(object.get("enabled"), Some(&Value::String("true".into())));
+        assert_eq!(
+            object.get("dst-address"),
+            Some(&Value::String("192.0.2.10".into()))
+        );
+        assert!(!object.contains_key("sampling-interval"));
+        assert!(!object.contains_key("v9-template-timeout"));
+        assert!(!object.values().any(|value| !value.is_string()));
+    }
 }

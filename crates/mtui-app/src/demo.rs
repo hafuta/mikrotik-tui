@@ -535,6 +535,108 @@ impl DemoStore {
             vec![resource("*nk1", &[("key-id", "1")])],
         );
         self.rows.insert(
+            "traffic-flow".into(),
+            vec![resource(
+                "",
+                &[
+                    ("enabled", "false"),
+                    ("interfaces", "all"),
+                    ("cache-entries", "4k"),
+                    ("active-flow-timeout", "30m"),
+                    ("inactive-flow-timeout", "15s"),
+                    ("packet-sampling", "false"),
+                    ("sampling-interval", "0"),
+                    ("sampling-space", "0"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "traffic-flow-targets".into(),
+            vec![resource(
+                "*tf1",
+                &[
+                    ("src-address", "0.0.0.0"),
+                    ("dst-address", "192.0.2.10"),
+                    ("port", "2055"),
+                    ("version", "ipfix"),
+                    ("v9-template-refresh", "20"),
+                    ("v9-template-timeout", "1m"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "traffic-flow-ipfix".into(),
+            vec![resource(
+                "",
+                &[
+                    ("bytes", "true"),
+                    ("src-address", "true"),
+                    ("dst-address", "true"),
+                    ("protocol", "true"),
+                    ("nat-events", "false"),
+                    ("src-port", "true"),
+                    ("dst-port", "true"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "igmp-proxy".into(),
+            vec![resource(
+                "",
+                &[
+                    ("query-interval", "2m5s"),
+                    ("query-response-interval", "10s"),
+                    ("last-member-query-interval", "1s"),
+                    ("robustness", "2"),
+                    ("quick-leave", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "igmp-proxy-interfaces".into(),
+            vec![
+                resource(
+                    "*ig1",
+                    &[
+                        ("interface", "ether1"),
+                        ("upstream", "true"),
+                        ("threshold", "1"),
+                        ("alternative-subnets", "192.168.50.0/24"),
+                        ("disabled", "false"),
+                        ("querier", "false"),
+                        ("source-ip-address", "192.0.2.1"),
+                    ],
+                ),
+                resource(
+                    "*ig2",
+                    &[
+                        ("interface", "ether2"),
+                        ("upstream", "false"),
+                        ("threshold", "1"),
+                        ("alternative-subnets", ""),
+                        ("disabled", "false"),
+                        ("querier", "true"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "igmp-proxy-mfc".into(),
+            vec![resource(
+                "*mfc1",
+                &[
+                    ("group", "239.1.1.1"),
+                    ("source", "192.0.2.50"),
+                    ("upstream-interface", "ether1"),
+                    ("downstream-interfaces", "ether2"),
+                    ("packets", "12"),
+                    ("bytes", "1440"),
+                    ("wrong-packets", "0"),
+                ],
+            )],
+        );
+        self.rows.insert(
             "safe-mode".into(),
             vec![resource(
                 "",
@@ -897,6 +999,43 @@ mod tests {
         assert_eq!(
             store.lookup_values("ntp-keys", "key-id"),
             vec!["1".to_string()]
+        );
+    }
+
+    #[test]
+    fn demo_traffic_flow_and_igmp_proxy_are_seeded() {
+        let store = DemoStore::new();
+        let flow = store.rows("traffic-flow");
+        assert_eq!(flow.len(), 1);
+        assert_eq!(flow[0].id, "");
+        assert_eq!(flow[0].field("enabled"), Some("false"));
+        assert_eq!(flow[0].field("interfaces"), Some("all"));
+        assert_eq!(flow[0].field("cache-entries"), Some("4k"));
+
+        let targets = store.rows("traffic-flow-targets");
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].field("dst-address"), Some("192.0.2.10"));
+        assert_eq!(targets[0].field("version"), Some("ipfix"));
+        assert_eq!(targets[0].field("port"), Some("2055"));
+
+        assert_eq!(
+            store.rows("traffic-flow-ipfix")[0].field("bytes"),
+            Some("true")
+        );
+        assert_eq!(
+            store.rows("igmp-proxy")[0].field("query-interval"),
+            Some("2m5s")
+        );
+        assert_eq!(store.rows("igmp-proxy-interfaces").len(), 2);
+        assert!(
+            store
+                .rows("igmp-proxy-interfaces")
+                .iter()
+                .any(|row| row.field("upstream") == Some("true"))
+        );
+        assert_eq!(
+            store.rows("igmp-proxy-mfc")[0].field("group"),
+            Some("239.1.1.1")
         );
     }
 
