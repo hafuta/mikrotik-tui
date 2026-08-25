@@ -55,6 +55,8 @@ pub enum ActionCommand {
     SendSms,
     AtChat,
     Undo,
+    Format,
+    Eject,
 }
 
 impl ActionCommand {
@@ -94,6 +96,8 @@ impl ActionCommand {
             Self::SendSms => "send",
             Self::AtChat => "at-chat",
             Self::Undo => "undo",
+            Self::Format => "format",
+            Self::Eject => "eject",
         }
     }
 }
@@ -828,6 +832,57 @@ pub const ACTION_UPGRADE: ActionSpec = ActionSpec {
 };
 
 pub const ROUTERBOARD_ACTIONS: &[ActionSpec] = &[ACTION_UPGRADE];
+
+pub const ACTION_FORMAT: ActionSpec = ActionSpec {
+    id: "format",
+    label: "Format",
+    key: Some('f'),
+    enter: false,
+    needs_selection: true,
+    danger: true,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Format,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+pub const ACTION_EJECT: ActionSpec = ActionSpec {
+    id: "eject",
+    label: "Eject",
+    key: None,
+    enter: false,
+    needs_selection: true,
+    danger: true,
+    kind: ActionKind::Confirm {
+        command: ActionCommand::Eject,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+/// Disks: add/edit plus confirmed format and eject. RAID knobs stay on the sheet.
+pub const DISK_ACTIONS: &[ActionSpec] = &[
+    ACTION_ADD,
+    ACTION_EDIT,
+    ACTION_TOGGLE,
+    ACTION_FORMAT,
+    ACTION_EJECT,
+    ACTION_REMOVE,
+];
+
+pub const ACTION_LICENSE_IMPORT: ActionSpec = ActionSpec {
+    id: "import",
+    label: "Apply license key",
+    key: Some('p'),
+    enter: false,
+    needs_selection: false,
+    danger: true,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Import,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const LICENSE_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_LICENSE_IMPORT];
 
 pub const ACTION_INSTALL: ActionSpec = ActionSpec {
     id: "install",

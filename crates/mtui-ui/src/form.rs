@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use mtui_core::{
     FieldKind, FieldSpec, FormSchema, FormSection, default_writable_value, extra_status_fields,
-    field_visible, join_ros_list, prepare_lookup_options, split_ros_list,
+    field_visible, join_ros_list, prepare_lookup_options, split_ros_list, with_leading_none,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -677,7 +677,15 @@ impl FormSession {
         let picker = self.lookup.as_mut().expect("lookup still open");
         picker.loading = false;
         picker.error = error;
-        picker.options = prepare_lookup_options(&sheet_id, picker.resource_id, options);
+        let options = prepare_lookup_options(&sheet_id, picker.resource_id, options);
+        picker.options = if matches!(
+            picker.field_key.as_str(),
+            "raid-master" | "media-interface" | "crypted-backend"
+        ) {
+            with_leading_none(options)
+        } else {
+            options
+        };
         let filtered = filtered_lookup_options(&picker.options, &picker.filter, &picker.field_key);
         if picker.focus >= filtered.len() {
             picker.focus = filtered.len().saturating_sub(1);

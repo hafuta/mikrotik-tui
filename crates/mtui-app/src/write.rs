@@ -6,10 +6,10 @@ use std::path::Path;
 
 use mtui_core::{
     AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
-    CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, IMPORT_CONFIG_PROMPT,
-    INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, RESET_CONFIG_PROMPT, SMS_PROMPT, WOL_PROMPT,
-    action_label, field_enabled, neighbor_connect_target, patch_body, resource_by_id,
-    supports_bulk_select, truthy,
+    CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, FORMAT_DISK_PROMPT, IMPORT_CONFIG_PROMPT,
+    INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, LICENSE_IMPORT_PROMPT, RESET_CONFIG_PROMPT,
+    SMS_PROMPT, WOL_PROMPT, action_label, field_enabled, neighbor_connect_target, patch_body,
+    resource_by_id, supports_bulk_select, truthy,
 };
 use mtui_routeros::MASKED_VALUE;
 use mtui_ui::{
@@ -90,6 +90,9 @@ fn redact_mutation_fields(fields: &BTreeMap<String, String>) -> BTreeMap<String,
         .map(|(key, value)| {
             let sensitive = key.eq_ignore_ascii_case("password")
                 || key.eq_ignore_ascii_case("contents")
+                || key.eq_ignore_ascii_case("k")
+                || key.eq_ignore_ascii_case("encryption-key")
+                || key.eq_ignore_ascii_case("license-key")
                 || key.contains("secret")
                 || key.contains("passphrase");
             let shown = if sensitive {
@@ -343,7 +346,8 @@ impl App {
             | ActionCommand::ResetConfiguration
             | ActionCommand::WakeOnLan
             | ActionCommand::SendSms
-            | ActionCommand::AtChat => self.open_schema_prompt(command),
+            | ActionCommand::AtChat
+            | ActionCommand::Format => self.open_schema_prompt(command),
             _ => Vec::new(),
         }
     }
@@ -405,6 +409,8 @@ impl App {
             ActionCommand::Import => {
                 if self.current_resource == "files" {
                     (&IMPORT_CONFIG_PROMPT, false)
+                } else if self.current_resource == "license" {
+                    (&LICENSE_IMPORT_PROMPT, false)
                 } else {
                     (&CERT_IMPORT_PROMPT, false)
                 }
@@ -416,6 +422,7 @@ impl App {
             ActionCommand::WakeOnLan => (&WOL_PROMPT, false),
             ActionCommand::SendSms => (&SMS_PROMPT, false),
             ActionCommand::AtChat => (&AT_CHAT_PROMPT, true),
+            ActionCommand::Format => (&FORMAT_DISK_PROMPT, true),
             _ => return Vec::new(),
         };
         let (id, name) = if needs_row {
@@ -425,6 +432,7 @@ impl App {
             let id = row.get(".id").cloned().unwrap_or_default();
             let name = row
                 .get("name")
+                .or_else(|| row.get("slot"))
                 .or_else(|| row.get("interface"))
                 .cloned()
                 .unwrap_or_else(|| id.clone());
@@ -438,6 +446,9 @@ impl App {
         }
         if command == ActionCommand::ExportCertificate {
             values.insert("type".into(), "pem".into());
+        }
+        if command == ActionCommand::Format {
+            values.insert("file-system".into(), "ext4".into());
         }
         self.overlay = Overlay::Form(FormSession::prompt_with(
             self.current_resource.clone(),
@@ -535,7 +546,13 @@ impl App {
         if self.safe_mode.we_hold()
             && matches!(
                 action.id,
-                "reboot" | "shutdown" | "upgrade" | "reset-configuration" | "backup-load"
+                "reboot"
+                    | "shutdown"
+                    | "upgrade"
+                    | "reset-configuration"
+                    | "backup-load"
+                    | "format"
+                    | "eject"
             )
         {
             body.push_str(
@@ -796,6 +813,14 @@ impl App {
                 "Running…",
             )
         };
+        if command == "import"
+            && resource_id == "license"
+            && !fields.contains_key("k")
+            && !fields.contains_key("file-name")
+        {
+            self.form_error("License key or file name is required");
+            return Vec::new();
+        }
         if let Overlay::Form(session) = &mut self.overlay {
             session.saving = true;
         }
@@ -865,7 +890,13 @@ impl App {
             session.confirm_save = true;
             session.error = None;
         }
-        self.status = format!("Save preview · {count} field(s)");
+        if spec.id == "device-mode" {
+            self.status = format!(
+                "Save preview · {count} field(s). Confirming sends device-mode update. Press the reset or mode button, or power off, within 5 minutes, or RouterOS cancels. The device reboots when confirmed."
+            );
+        } else {
+            self.status = format!("Save preview · {count} field(s)");
+        }
         Vec::new()
     }
 
@@ -913,6 +944,14 @@ impl App {
             session.saving = true;
             session.error = None;
         }
+        if spec.id == "device-mode" {
+            self.status = "Updating device-mode…".into();
+            return vec![self.mutate_command(MutationOp::Command {
+                endpoint: spec.endpoint().to_string(),
+                command: "update".into(),
+                fields: body,
+            })];
+        }
         self.status = "Saving…".into();
         vec![self.mutate_command(MutationOp::Patch {
             endpoint: spec.endpoint().to_string(),
@@ -927,7 +966,7 @@ impl App {
             "download" => self.save_download_prompt(),
             "fetch" => self.save_fetch_prompt(),
             "sign" | "export-certificate" => self.save_cert_prompt(),
-            "import" if self.current_resource != "files" => self.save_cert_prompt(),
+            "import" if self.current_resource == "certificates" => self.save_cert_prompt(),
             _ => self.save_prompt_form(command),
         }
     }
@@ -1634,6 +1673,8 @@ fn confirm_body(action_id: &str, label: &str, record_name: &str) -> String {
         "reset-configuration" => {
             "Reset configuration? This wipes the running config (keep-users if you set it).".into()
         }
+        "eject" => format!("Eject {record_name}? Unmount it before you remove the disk."),
+        "format" => format!("Format {record_name}? This erases the filesystem on that slot."),
         "flush" => format!("Flush {record_name}? Dynamic entries will be rebuilt."),
         "run" => format!("Run {record_name} now?"),
         "release" => format!("Release lease {record_name}?"),
@@ -1654,6 +1695,7 @@ fn confirm_record_name(
     }
     row.and_then(|row| {
         row.get("name")
+            .or_else(|| row.get("slot"))
             .or_else(|| row.get("interface"))
             .or_else(|| row.get("address"))
     })

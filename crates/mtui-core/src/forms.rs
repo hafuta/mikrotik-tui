@@ -202,8 +202,9 @@ pub fn prepare_lookup_options(
 /// Local Clock is on. Traffic Flow shows Sampling Interval and Sampling Space
 /// only when Packet Sampling is on. Traffic Flow Targets show v9 template
 /// fields only for version `9` or `ipfix`. IGMP Proxy Interfaces show
-/// Alternative Subnets only when Upstream is on. Inapplicable rows are omitted,
-/// not locked. Check Certificate appears only when protocol is `tls`.
+/// Alternative Subnets only when Upstream is on. Disks show type-specific RAID,
+/// network, and sharing fields. Inapplicable rows are omitted, not locked.
+/// Check Certificate appears only when protocol is `tls`.
 #[must_use]
 #[allow(clippy::implicit_hasher)]
 pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, String>) -> bool {
@@ -214,6 +215,7 @@ pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, Stri
         "traffic-flow-targets" => traffic_flow_target_field_visible(key, values),
         "igmp-proxy-interfaces" => igmp_proxy_interface_field_visible(key, values),
         "lte-apn" => lte_apn_field_visible(key, values),
+        "disks" => disk_field_visible(key, values),
         _ => true,
     }
 }
@@ -301,6 +303,51 @@ fn lte_apn_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
         "passthrough-mac" | "passthrough-subnet-selection" => values
             .get("passthrough-interface")
             .is_some_and(|value| !value.trim().is_empty()),
+        _ => true,
+    }
+}
+
+fn disk_type(values: &HashMap<String, String>) -> &str {
+    values.get("type").map_or("", String::as_str)
+}
+
+fn disk_raid_member(values: &HashMap<String, String>) -> bool {
+    let master = values.get("raid-master").map_or("", String::as_str);
+    !master.is_empty() && master != "none"
+}
+
+fn disk_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    let kind = disk_type(values);
+    match key {
+        "tmpfs-max-size" => kind == "tmpfs",
+        "ramdisk-size" => kind == "ramdisk",
+        "partition-number" | "partition-offset" | "partition-size" => kind == "partition",
+        "raid-type" | "raid-device-count" | "raid-max-component-size" | "raid-chunk-size" => {
+            kind == "raid"
+        }
+        "raid-master" | "raid-role" | "raid-member-failed" => {
+            kind == "raid" || disk_raid_member(values)
+        }
+        "file-path" | "file-size" | "file-offset" => kind == "file",
+        "crypted-backend" | "encryption-key" => kind == "crypted",
+        "sshfs-address" | "sshfs-port" | "sshfs-user" | "sshfs-password" | "sshfs-path" => {
+            kind == "sshfs"
+        }
+        "nfs-address" | "nfs-share" => kind == "nfs",
+        "smb-address" | "smb-share" | "smb-user" | "smb-password" | "smb-encryption" => {
+            kind == "smb"
+        }
+        "nvme-tcp-address" | "nvme-tcp-nqn" | "nvme-tcp-host-name" | "nvme-tcp-password"
+        | "nvme-tcp-port" => kind == "nvme-tcp",
+        "iscsi-address" | "iscsi-iqn" | "iscsi-port" => kind == "iscsi",
+        "nvme-tcp-server-port" | "nvme-tcp-server-nqn" | "nvme-tcp-server-password" => {
+            flag_on(values, "nvme-tcp-export")
+        }
+        "iscsi-server-port" | "iscsi-server-iqn" => flag_on(values, "iscsi-export"),
+        "smb-server-user" | "smb-server-password" | "smb-server-encryption" => {
+            flag_on(values, "smb-sharing")
+        }
+        "media-interface" => flag_on(values, "media-sharing"),
         _ => true,
     }
 }
@@ -486,6 +533,8 @@ fn looks_secret_key(key: &str) -> bool {
         || normalized == "secret"
         || normalized == "secrets"
         || normalized == "key-val"
+        || normalized == "encryption-key"
+        || normalized == "k"
 }
 
 pub const ARP_VALUES: &[&str] = &[
