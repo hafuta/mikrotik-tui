@@ -126,7 +126,7 @@ impl DemoStore {
                 match command.as_str() {
                     "enable" => self.set_disabled(endpoint, id, false),
                     "disable" => self.set_disabled(endpoint, id, true),
-                    "remove" => {
+                    "remove" | "undo" => {
                         if let Some(bucket) = self.bucket_for_endpoint(endpoint) {
                             bucket.retain(|row| row.id != *id);
                         }
@@ -1286,6 +1286,24 @@ mod tests {
             Ok(())
         );
         assert_eq!(store.rows("romon")[0].field("enabled"), Some("true"));
+    }
+
+    #[test]
+    fn demo_history_undo_removes_that_row() {
+        let mut store = DemoStore::new();
+        store
+            .apply(&MutationOp::Command {
+                endpoint: "/rest/system/history".into(),
+                command: "undo".into(),
+                fields: BTreeMap::from([(".id".into(), "*h1".into())]),
+            })
+            .expect("undo");
+        let ids: Vec<_> = store
+            .rows("history")
+            .into_iter()
+            .map(|row| row.id)
+            .collect();
+        assert_eq!(ids, vec!["*h2".to_string()]);
     }
 
     #[test]

@@ -101,6 +101,7 @@ mod tests {
     fn command_names_reject_path_segments() {
         assert!(is_command_name("reset-counters"));
         assert!(is_command_name("enable"));
+        assert!(is_command_name("undo"));
         assert!(!is_command_name(""));
         assert!(!is_command_name("Enable"));
         assert!(!is_command_name("reset/counters"));

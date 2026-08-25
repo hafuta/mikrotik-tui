@@ -329,6 +329,25 @@ mod tests {
     }
 
     #[test]
+    fn history_undo_needs_write_not_reboot() {
+        use crate::actions::ACTION_UNDO;
+
+        let read = SessionAccess::from_policies("ops", "read", ["read", "api"]);
+        let reason = read
+            .action_block_reason("history", &ACTION_UNDO)
+            .expect("blocked");
+        assert!(reason.contains("READ MODE"));
+
+        let write = SessionAccess::from_policies("ops", "write", ["read", "write", "api"]);
+        assert!(write.action_block_reason("history", &ACTION_UNDO).is_none());
+        assert_eq!(required_policy("history", &ACTION_UNDO), Some(POLICY_WRITE));
+        assert_ne!(
+            required_policy("history", &ACTION_UNDO),
+            Some(POLICY_REBOOT)
+        );
+    }
+
+    #[test]
     fn torch_needs_sniff() {
         let access = SessionAccess::from_policies("ops", "write", ["read", "write"]);
         assert!(

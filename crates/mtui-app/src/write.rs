@@ -488,14 +488,7 @@ impl App {
             .and_then(|row| row.get(".id"))
             .cloned()
             .unwrap_or_default();
-        let mut record_name = row
-            .and_then(|row| {
-                row.get("name")
-                    .or_else(|| row.get("interface"))
-                    .or_else(|| row.get("address"))
-            })
-            .cloned()
-            .unwrap_or_else(|| record_id.clone());
+        let mut record_name = confirm_record_name(spec.id, row, &record_id);
         let record_ids = match checked.as_slice() {
             [] => Vec::new(),
             [id] => {
@@ -510,6 +503,10 @@ impl App {
         };
         if !action.needs_selection {
             record_id.clear();
+        }
+        if action.id == "undo" && record_id.is_empty() {
+            self.status = "Selected row has no id".into();
+            return Vec::new();
         }
         let command = match (command, row) {
             (ActionCommand::ToggleDisabled, _) if record_ids.len() > 1 => {
@@ -1640,7 +1637,51 @@ fn confirm_body(action_id: &str, label: &str, record_name: &str) -> String {
         "flush" => format!("Flush {record_name}? Dynamic entries will be rebuilt."),
         "run" => format!("Run {record_name} now?"),
         "release" => format!("Release lease {record_name}?"),
+        "undo" => format!(
+            "Undo {record_name}? RouterOS will revert that local change. This is not Safe Mode unroll; use F4 to take or release Safe Mode."
+        ),
         _ => format!("{label} {record_name}?"),
+    }
+}
+
+fn confirm_record_name(
+    spec_id: &str,
+    row: Option<&HashMap<String, String>>,
+    record_id: &str,
+) -> String {
+    if spec_id == "history" {
+        return history_row_label(row, record_id);
+    }
+    row.and_then(|row| {
+        row.get("name")
+            .or_else(|| row.get("interface"))
+            .or_else(|| row.get("address"))
+    })
+    .cloned()
+    .unwrap_or_else(|| record_id.to_string())
+}
+
+fn history_row_label(row: Option<&HashMap<String, String>>, record_id: &str) -> String {
+    let Some(row) = row else {
+        return record_id.to_string();
+    };
+    let action = row
+        .get("action")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("change");
+    let by = row
+        .get("by")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown");
+    match row
+        .get("time")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        Some(time) => format!("{action} by {by} at {time}"),
+        None => format!("{action} by {by}"),
     }
 }
 
@@ -2449,6 +2490,248 @@ mod tests {
             "{}",
             session.body
         );
+    }
+
+    #[test]
+    fn history_undo_confirms_then_posts_id() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("history");
+        let mut fields = HashMap::new();
+        fields.insert("time".into(), "aug/25/2026 01:00:00".into());
+        fields.insert("action".into(), "set".into());
+        fields.insert("by".into(), "admin".into());
+        fields.insert("policy".into(), "write".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "history".into(),
+            rows: vec![Resource {
+                id: "*h1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected undo confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::Undo);
+        assert_eq!(session.endpoint, "/rest/system/history");
+        assert_eq!(session.record_id, "*h1");
+        assert_eq!(session.action_id, "undo");
+        assert!(
+            session
+                .body
+                .contains("set by admin at aug/25/2026 01:00:00")
+        );
+        assert!(session.body.contains("not Safe Mode unroll"));
+        assert!(!session.body.contains("Safe Mode cannot undo"));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Command {
+                endpoint,
+                command,
+                fields,
+            } => {
+                assert_eq!(endpoint, "/rest/system/history");
+                assert_eq!(command, "undo");
+                assert_eq!(fields.get(".id").map(String::as_str), Some("*h1"));
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
+    }
+
+    #[test]
+    fn history_undo_without_a_row_does_not_open_confirm() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("history");
+        app.pane = Pane::Content;
+        assert!(app.table.selected_row().is_none());
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    #[test]
+    fn history_undo_cancel_does_not_mutate() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("history");
+        let mut fields = HashMap::new();
+        fields.insert("action".into(), "remove".into());
+        fields.insert("by".into(), "ops".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "history".into(),
+            rows: vec![Resource {
+                id: "*h9".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(matches!(app.overlay, Overlay::Confirm(_)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('n'))));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    #[test]
+    fn history_undo_without_id_does_not_open_confirm() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("history");
+        let mut fields = HashMap::new();
+        fields.insert("action".into(), "set".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "history".into(),
+            rows: vec![Resource {
+                id: String::new(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(app.status.contains("no id"));
+    }
+
+    #[test]
+    fn history_undo_inspect_only_stays_closed() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("history");
+        app.access = mtui_core::SessionAccess::from_policies("ops", "read", ["read", "api"]);
+        let mut fields = HashMap::new();
+        fields.insert("action".into(), "set".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "history".into(),
+            rows: vec![Resource {
+                id: "*h1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+        assert!(app.status.contains("READ MODE"));
+    }
+
+    #[test]
+    fn history_undo_repeated_u_keeps_one_confirm() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("history");
+        let mut fields = HashMap::new();
+        fields.insert("action".into(), "set".into());
+        fields.insert("by".into(), "admin".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "history".into(),
+            rows: vec![Resource {
+                id: "*h1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        let first = match &app.overlay {
+            Overlay::Confirm(session) => session.body.clone(),
+            other => panic!("expected undo confirm, got {other:?}"),
+        };
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(cmds.is_empty());
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("confirm should stay open");
+        };
+        assert_eq!(session.body, first);
+    }
+
+    #[test]
+    fn history_undo_error_and_stale_mutate_are_ignored_or_surfaced() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("history");
+        let mut fields = HashMap::new();
+        fields.insert("action".into(), "set".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "history".into(),
+            rows: vec![Resource {
+                id: "*h1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        let previous = app.poll_generation;
+        let cmds = app.apply_mutate_result(WorkerMsg::MutateResult {
+            session: app.test_session(),
+            request_id: 1,
+            generation: previous.wrapping_add(1),
+            error: Some("failure: not enough permissions (write)".into()),
+        });
+        assert!(cmds.is_empty());
+        assert!(!app.status.starts_with("Write failed"));
+
+        app.poll_generation = previous;
+        let cmds = app.apply_mutate_result(WorkerMsg::MutateResult {
+            session: app.test_session(),
+            request_id: 1,
+            generation: previous,
+            error: Some("failure: not enough permissions (write)".into()),
+        });
+        assert!(cmds.is_empty());
+        assert!(app.status.contains("Write failed"));
+        assert!(
+            app.status.contains("write")
+                || app.status.contains("WRITE")
+                || app.status.contains("permissions")
+                || app.status.contains("READ MODE")
+        );
+    }
+
+    #[test]
+    fn history_row_label_covers_optional_fields() {
+        assert_eq!(history_row_label(None, "*1"), "*1");
+
+        let mut row = HashMap::new();
+        row.insert("action".into(), "set".into());
+        assert_eq!(history_row_label(Some(&row), "*1"), "set by unknown");
+
+        row.insert("action".into(), String::new());
+        row.insert("by".into(), "ops".into());
+        row.insert("time".into(), "noon".into());
+        assert_eq!(history_row_label(Some(&row), "*1"), "change by ops at noon");
+
+        row.clear();
+        row.insert("action".into(), "remove".into());
+        row.insert("by".into(), "admin".into());
+        assert_eq!(history_row_label(Some(&row), "*1"), "remove by admin");
     }
 
     #[test]

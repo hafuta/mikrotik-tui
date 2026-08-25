@@ -113,6 +113,44 @@ mod tests {
     }
 
     #[test]
+    fn history_rows_decode_optional_fields_and_reject_malformed() {
+        let cases: [(&str, bool, &str, Option<&str>); 4] = [
+            (
+                r#"{".id":"*h1","time":"aug/25/2026 01:00:00","action":"set","by":"admin","policy":"write","floating-undo":"false"}"#,
+                true,
+                "*h1",
+                Some("set"),
+            ),
+            (
+                r#"{".id":"*h2","action":"remove","by":"ops"}"#,
+                true,
+                "*h2",
+                Some("remove"),
+            ),
+            (
+                r#"{".id":"*h3","action":"set","note":"extra-unknown"}"#,
+                true,
+                "*h3",
+                Some("set"),
+            ),
+            (r#"{".id":"*h4","action":1}"#, false, "", None),
+        ];
+        for (json, ok, id, action) in cases {
+            let parsed: Result<Resource, _> = serde_json::from_str(json);
+            assert_eq!(parsed.is_ok(), ok, "{json}");
+            if ok {
+                let row = parsed.expect("row");
+                assert_eq!(row.id, id);
+                assert_eq!(row.field("action"), action);
+                let display = row.display_row();
+                if !id.is_empty() {
+                    assert_eq!(display.get(".id").map(String::as_str), Some(id));
+                }
+            }
+        }
+    }
+
+    #[test]
     fn missing_id_defaults_to_empty_string() {
         let resource: Resource =
             serde_json::from_str(r#"{"enabled":"true"}"#).expect("valid resource JSON");
