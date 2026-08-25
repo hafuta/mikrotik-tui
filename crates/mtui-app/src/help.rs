@@ -241,4 +241,14 @@ mod tests {
         assert!(!text.contains("certificates"), "{text}");
         assert!(!text.contains("F4"), "{text}");
     }
+
+    #[test]
+    fn table_help_lists_bulk_check_on_interfaces_and_skips_it_on_logs() {
+        let interfaces = keyboard_help(&main_app("interfaces"));
+        assert!(interfaces.contains("check row"), "{interfaces}");
+        assert!(interfaces.contains("check all filtered"), "{interfaces}");
+        let logs = keyboard_help(&main_app("logs"));
+        assert!(!logs.contains("check row"), "{logs}");
+        assert!(!logs.contains("check all filtered"), "{logs}");
+    }
 }

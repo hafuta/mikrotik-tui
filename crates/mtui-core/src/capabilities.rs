@@ -22,6 +22,30 @@ pub const BULK_SELECT_RESOURCES: &[&str] = &[
     "dhcp-relay",
     "queue-simple",
     "queue-tree",
+    "interfaces",
+    "interface-list-members",
+    "ethernet",
+    "eoip",
+    "ipip",
+    "gre",
+    "6to4",
+    "sit",
+    "gre6",
+    "vlan",
+    "vxlan",
+    "vrrp",
+    "bonding",
+    "lte",
+    "wifi",
+    "wireless",
+    "wireguard",
+    "macvlan",
+    "macsec",
+    "routes",
+    "ipv6-routes",
+    "address-list",
+    "ipv6-address-list",
+    "users",
 ];
 
 /// Packages that must be installed for `resource_id` to exist on the device.
@@ -128,8 +152,17 @@ mod tests {
         assert!(supports_bulk_select("firewall-filter"));
         assert!(supports_bulk_select("dhcp-leases"));
         assert!(supports_bulk_select("queue-simple"));
-        assert!(!supports_bulk_select("interfaces"));
+        assert!(supports_bulk_select("interfaces"));
+        assert!(supports_bulk_select("ethernet"));
+        assert!(supports_bulk_select("vlan"));
+        assert!(supports_bulk_select("routes"));
+        assert!(supports_bulk_select("ipv6-routes"));
+        assert!(supports_bulk_select("address-list"));
+        assert!(supports_bulk_select("ipv6-address-list"));
+        assert!(supports_bulk_select("users"));
         assert!(!supports_bulk_select("logs"));
+        assert!(!supports_bulk_select("user-groups"));
+        assert!(!supports_bulk_select("dns-static"));
     }
 
     #[test]

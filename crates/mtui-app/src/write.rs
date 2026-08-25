@@ -2794,17 +2794,24 @@ mod tests {
         }
     }
 
-    #[test]
-    fn bulk_disable_confirms_all_checked_firewall_rows() {
-        let mut app = load_named_rows(
-            "firewall-filter",
-            vec![filter_rule("*1", "first"), filter_rule("*2", "second")],
-        );
+    fn named_row(id: &str, name: &str) -> Resource {
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), name.into());
+        Resource {
+            id: id.into(),
+            fields,
+        }
+    }
+
+    fn bulk_check_two_rows(app: &mut App) {
         app.pane = Pane::Content;
         let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
         app.table.move_selection(1);
         let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
         assert_eq!(app.table.checked_count(), 2);
+    }
+
+    fn assert_bulk_disable(app: &mut App) {
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('d'))));
         let Overlay::Confirm(session) = &app.overlay else {
             panic!("expected bulk confirm, got {:?}", app.overlay);
@@ -2816,5 +2823,58 @@ mod tests {
             MutationOp::Batch { ops } => assert_eq!(ops.len(), 2),
             other => panic!("expected batch, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn bulk_disable_confirms_all_checked_firewall_rows() {
+        let mut app = load_named_rows(
+            "firewall-filter",
+            vec![filter_rule("*1", "first"), filter_rule("*2", "second")],
+        );
+        bulk_check_two_rows(&mut app);
+        assert_bulk_disable(&mut app);
+    }
+
+    #[test]
+    fn space_toggle_batch_covers_interfaces_routes_address_lists_and_users() {
+        for resource_id in [
+            "interfaces",
+            "ethernet",
+            "vlan",
+            "routes",
+            "ipv6-routes",
+            "address-list",
+            "ipv6-address-list",
+            "users",
+        ] {
+            let mut app = load_named_rows(
+                resource_id,
+                vec![named_row("*1", "one"), named_row("*2", "two")],
+            );
+            bulk_check_two_rows(&mut app);
+            assert!(
+                app.footer_action_hints()
+                    .iter()
+                    .any(|(key, _)| key == "space"),
+                "{resource_id} should show space-check hint"
+            );
+            assert_bulk_disable(&mut app);
+        }
+    }
+
+    #[test]
+    fn space_does_not_bulk_select_on_lists_outside_the_allowlist() {
+        let mut app = load_named_rows(
+            "dns-static",
+            vec![named_row("*1", "one"), named_row("*2", "two")],
+        );
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char(' '))));
+        assert_eq!(app.table.checked_count(), 0);
+        assert!(
+            !app.footer_action_hints()
+                .iter()
+                .any(|(key, _)| key == "space")
+        );
     }
 }
