@@ -220,4 +220,42 @@ mod tests {
         assert!(!trap.is_link_loss());
         assert!(trap.to_string().contains("romon"));
     }
+
+    #[test]
+    fn lte_apn_errors_keep_resource_operation_and_cause() {
+        let cases = [
+            (
+                ErrorKind::Api,
+                "list",
+                "no such item",
+                "routeros: list: api: no such item",
+            ),
+            (
+                ErrorKind::Timeout,
+                "list",
+                "request timed out",
+                "routeros: list: timeout: request timed out",
+            ),
+            (
+                ErrorKind::Canceled,
+                "list",
+                "canceled",
+                "routeros: list: canceled: canceled",
+            ),
+            (
+                ErrorKind::Decode,
+                "list",
+                "field \"apn\" is not a string",
+                "routeros: list: decode: field \"apn\" is not a string",
+            ),
+        ];
+        for (kind, operation, message, display) in cases {
+            let err = Error::new(kind, operation, message)
+                .with_source(std::io::Error::other("fake transport"));
+            assert_eq!(err.kind(), kind);
+            assert_eq!(err.operation(), operation);
+            assert_eq!(err.to_string(), display);
+            assert!(std::error::Error::source(&err).is_some());
+        }
+    }
 }

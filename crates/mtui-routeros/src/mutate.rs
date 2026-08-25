@@ -123,4 +123,40 @@ mod tests {
         assert!(!object.contains_key("v9-template-timeout"));
         assert!(!object.values().any(|value| !value.is_string()));
     }
+
+    #[test]
+    fn lte_apn_encode_omits_absent_optional_fields() {
+        let mut fields = BTreeMap::new();
+        fields.insert("name".into(), "carrier".into());
+        fields.insert("apn".into(), "internet".into());
+        fields.insert("use-network-apn".into(), "false".into());
+        let json = encode_fields(&fields);
+        assert_eq!(
+            json.to_string(),
+            r#"{"apn":"internet","name":"carrier","use-network-apn":"false"}"#
+        );
+        assert!(json.get("password").is_none());
+        assert!(json.get("user").is_none());
+
+        let original = BTreeMap::from([
+            ("name".into(), "carrier".into()),
+            ("apn".into(), "internet".into()),
+            ("password".into(), "secret".into()),
+        ]);
+        let current = BTreeMap::from([
+            ("name".into(), "carrier".into()),
+            ("apn".into(), "lte.provider".into()),
+            ("password".into(), "********".into()),
+        ]);
+        let changed = changed_fields(
+            &original,
+            &current,
+            &["name", "apn", "password", "user"],
+            "********",
+        );
+        assert_eq!(
+            changed,
+            BTreeMap::from([("apn".into(), "lte.provider".into())])
+        );
+    }
 }

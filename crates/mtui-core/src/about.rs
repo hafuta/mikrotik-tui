@@ -221,9 +221,21 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "lte",
-        "LTE/5G modems: APN, band, and connection state for the cellular interface.",
-        "Use it on devices with a modem (or USB LTE) to bring up a WAN over mobile data.",
-        "apn, network-mode, band, imei/iccid where present, running and disabled."
+        "LTE/5G modems: APN profiles, band, and connection state for the cellular interface.",
+        "Use it on devices with a modem (or USB LTE) to bring up a WAN over mobile data. \
+         Carrier APN names, authentication, and PDN type live on LTE APN.",
+        "apn-profiles, network-mode, band, PIN, allow-roaming, running and disabled."
+    ),
+    guide!(
+        "lte-apn",
+        "LTE APN profiles (`/interface lte apn`): the carrier access point, authentication, \
+         and IP type the modem uses when attaching.",
+        "Edit these on LTE boards when the SIM needs a named APN, PAP/CHAP, or a specific \
+         PDN type. Assign the profile on the LTE interface. Turn off Use Network APN when \
+         the carrier-provided APN is wrong.",
+        "name, apn, authentication, user, password, ip-type, use-network-apn, use-peer-dns, \
+         add-default-route, passthrough interface.",
+        "https://manual.mikrotik.com/docs/cli-reference/interface/lte/apn/"
     ),
     guide!(
         "wifi",
@@ -1742,6 +1754,24 @@ mod tests {
             !copy.body.to_ascii_lowercase().contains("paraphrased"),
             "about copy must not mention paraphrasing"
         );
+    }
+
+    #[test]
+    fn lte_apn_guide_points_at_the_cli_reference() {
+        let guide = screen_guide("lte-apn").expect("lte-apn");
+        let copy = about_copy("lte-apn").expect("copy");
+        let hay = format!("{} {} {}", guide.summary, guide.use_when, guide.fields);
+        for needle in ["APN", "authentication", "use-network-apn"] {
+            assert!(hay.contains(needle), "missing {needle}");
+        }
+        assert!(copy.kicker.contains("/interface/lte/apn"));
+        assert!(copy.body.contains("/interface/lte/apn"));
+        assert!(copy.body.contains("manual.mikrotik.com"));
+        assert!(
+            !copy.body.to_ascii_lowercase().contains("paraphrased"),
+            "about copy must not mention paraphrasing"
+        );
+        assert!(!copy.body.contains('\u{2014}'));
     }
 
     #[test]

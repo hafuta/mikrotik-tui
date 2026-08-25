@@ -1681,6 +1681,50 @@ mod tests {
         assert!(matches!(app.overlay, Overlay::Form(_)));
     }
 
+    #[test]
+    fn lte_apn_save_omits_hidden_password_and_keeps_apn() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("lte-apn");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "carrier".into());
+        fields.insert("apn".into(), "internet".into());
+        fields.insert("authentication".into(), "none".into());
+        fields.insert("password".into(), "secret-apn".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "lte-apn".into(),
+            rows: vec![Resource {
+                id: "*apn2".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        {
+            let Overlay::Form(session) = &mut app.overlay else {
+                panic!("expected form");
+            };
+            session.values.insert("apn".into(), "lte.provider".into());
+            session
+                .values
+                .insert("password".into(), "typed-secret".into());
+        }
+        let preview = app.update(AppEvent::Input(ctrl_s()));
+        assert!(preview.is_empty());
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
+        match command_op(&cmds) {
+            MutationOp::Patch { fields, .. } => {
+                assert_eq!(fields.get("apn").map(String::as_str), Some("lte.provider"));
+                assert!(!fields.contains_key("password"));
+            }
+            other => panic!("expected patch, got {other:?}"),
+        }
+    }
+
     fn open_vlan_editor() -> App {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;

@@ -213,6 +213,7 @@ pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, Stri
         "traffic-flow" => traffic_flow_field_visible(key, values),
         "traffic-flow-targets" => traffic_flow_target_field_visible(key, values),
         "igmp-proxy-interfaces" => igmp_proxy_interface_field_visible(key, values),
+        "lte-apn" => lte_apn_field_visible(key, values),
         _ => true,
     }
 }
@@ -285,6 +286,21 @@ fn traffic_flow_target_field_visible(key: &str, values: &HashMap<String, String>
 fn igmp_proxy_interface_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
     match key {
         "alternative-subnets" => flag_on(values, "upstream"),
+        _ => true,
+    }
+}
+
+fn lte_apn_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    match key {
+        "user" | "password" => {
+            matches!(
+                values.get("authentication").map(String::as_str),
+                Some("pap" | "chap")
+            )
+        }
+        "passthrough-mac" | "passthrough-subnet-selection" => values
+            .get("passthrough-interface")
+            .is_some_and(|value| !value.trim().is_empty()),
         _ => true,
     }
 }
@@ -858,5 +874,35 @@ mod tests {
             );
             assert!(field_visible(resource, flag, &values));
         }
+    }
+
+    #[test]
+    fn lte_apn_hides_auth_and_passthrough_until_selected() {
+        let mut values = HashMap::new();
+        values.insert("authentication".into(), "none".into());
+        assert!(field_visible("lte-apn", "apn", &values));
+        assert!(!field_visible("lte-apn", "user", &values));
+        assert!(!field_visible("lte-apn", "password", &values));
+        assert!(!field_enabled("lte-apn", "password", &values));
+        assert!(field_visible("lte-apn", "passthrough-interface", &values));
+        assert!(!field_visible("lte-apn", "passthrough-mac", &values));
+        assert!(!field_visible(
+            "lte-apn",
+            "passthrough-subnet-selection",
+            &values
+        ));
+
+        values.insert("authentication".into(), "chap".into());
+        assert!(field_visible("lte-apn", "user", &values));
+        assert!(field_visible("lte-apn", "password", &values));
+        assert!(field_enabled("lte-apn", "password", &values));
+
+        values.insert("passthrough-interface".into(), "ether2".into());
+        assert!(field_visible("lte-apn", "passthrough-mac", &values));
+        assert!(field_visible(
+            "lte-apn",
+            "passthrough-subnet-selection",
+            &values
+        ));
     }
 }

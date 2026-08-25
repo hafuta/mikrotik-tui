@@ -3037,6 +3037,70 @@ mod secret_mask_tests {
     }
 
     #[test]
+    fn lte_apn_password_is_masked_in_table_and_inspector() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("lte-apn");
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("name".into(), "carrier".into());
+        fields.insert("apn".into(), "internet".into());
+        fields.insert("password".into(), "MARKER-SECRET".into());
+        let row = Resource {
+            id: "*1".into(),
+            fields,
+        };
+
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "lte-apn".into(),
+            rows: vec![row],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+
+        let table_row = app.table.selected_row().expect("row");
+        assert_eq!(table_row.get("apn").map(String::as_str), Some("internet"));
+        assert_eq!(
+            table_row.get("password").map(String::as_str),
+            Some(MASKED_VALUE)
+        );
+        assert!(
+            !app.inspector
+                .fields
+                .iter()
+                .any(|(_, value)| value.contains("MARKER"))
+        );
+    }
+
+    #[test]
+    fn stale_lte_apn_refresh_is_ignored() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("lte-apn");
+        let stale = app.poll_generation;
+        app.poll_generation = stale.wrapping_add(1);
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("name".into(), "stale".into());
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: stale,
+            resource_id: "lte-apn".into(),
+            rows: vec![Resource {
+                id: "*9".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+        assert!(app.table.selected_row().is_none());
+    }
+
+    #[test]
     fn y_key_copies_current_row_to_clipboard() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

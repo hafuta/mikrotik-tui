@@ -211,6 +211,52 @@ impl DemoStore {
             ],
         );
         self.rows.insert(
+            "lte".into(),
+            vec![resource(
+                "*lte1",
+                &[
+                    ("name", "lte1"),
+                    ("default-name", "lte1"),
+                    ("type", "lte"),
+                    ("mtu", "1500"),
+                    ("network-mode", "3g,lte"),
+                    ("apn-profiles", "default"),
+                    ("running", "true"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "lte-apn".into(),
+            vec![
+                resource(
+                    "*apn1",
+                    &[
+                        ("name", "default"),
+                        ("apn", "internet"),
+                        ("authentication", "none"),
+                        ("ip-type", "ipv4"),
+                        ("use-network-apn", "true"),
+                        ("use-peer-dns", "true"),
+                        ("add-default-route", "true"),
+                        ("default-route-distance", "2"),
+                    ],
+                ),
+                resource(
+                    "*apn2",
+                    &[
+                        ("name", "carrier"),
+                        ("apn", "lte.provider"),
+                        ("authentication", "chap"),
+                        ("user", "user"),
+                        ("password", "secret-apn"),
+                        ("ip-type", "ipv4"),
+                        ("use-network-apn", "false"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
             "addresses".into(),
             vec![
                 resource(
@@ -1123,6 +1169,12 @@ mod tests {
         assert_eq!(store.rows("smb-users").len(), 2);
         assert_eq!(store.rows("smb-shares").len(), 2);
         assert_eq!(store.rows("smb-users")[1].field("name"), Some("mtuser"));
+        assert_eq!(store.rows("lte").len(), 1);
+        assert_eq!(store.rows("lte-apn").len(), 2);
+        assert_eq!(
+            store.lookup_values("lte-apn", "name"),
+            ["carrier", "default"]
+        );
     }
 
     #[test]

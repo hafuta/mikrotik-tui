@@ -289,4 +289,69 @@ mod tests {
         );
         assert_eq!(user.field("password"), Some("hunter2"));
     }
+
+    #[test]
+    fn lte_apn_decode_table_covers_optional_malformed_and_secrets() {
+        struct Case {
+            json: &'static str,
+            ok: bool,
+            id: &'static str,
+            apn: Option<&'static str>,
+            password: Option<&'static str>,
+        }
+        let cases = [
+            Case {
+                json: r#"{".id":"*1","name":"default","apn":"internet","authentication":"none"}"#,
+                ok: true,
+                id: "*1",
+                apn: Some("internet"),
+                password: None,
+            },
+            Case {
+                json: r#"{".id":"*2","name":"carrier","apn":"lte.provider","user":"u","password":"pw"}"#,
+                ok: true,
+                id: "*2",
+                apn: Some("lte.provider"),
+                password: Some("pw"),
+            },
+            Case {
+                json: r#"{"name":"partial"}"#,
+                ok: true,
+                id: "",
+                apn: None,
+                password: None,
+            },
+            Case {
+                json: r#"{".id":"*3","apn":true}"#,
+                ok: false,
+                id: "",
+                apn: None,
+                password: None,
+            },
+            Case {
+                json: "not-json",
+                ok: false,
+                id: "",
+                apn: None,
+                password: None,
+            },
+        ];
+        for case in cases {
+            let parsed: Result<Resource, _> = serde_json::from_str(case.json);
+            if !case.ok {
+                assert!(parsed.is_err(), "{}", case.json);
+                continue;
+            }
+            let resource = parsed.expect(case.json);
+            assert_eq!(resource.id, case.id, "{}", case.json);
+            assert_eq!(resource.field("apn"), case.apn, "{}", case.json);
+            assert_eq!(resource.field("password"), case.password, "{}", case.json);
+            if case.password.is_some() {
+                assert_eq!(
+                    resource.masked_fields().get("password").map(String::as_str),
+                    Some(crate::secret::MASKED_VALUE)
+                );
+            }
+        }
+    }
 }

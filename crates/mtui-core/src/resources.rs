@@ -446,7 +446,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
             col!("mtu", "MTU", 7),
             col!("mac-address", "MAC address", 18),
             col!("network-mode", "Network", 14),
-            col!("apn", "APN", 18),
+            col!("apn-profiles", "APN Profiles", 18),
             col!("running", "Run", 5),
             col!("disabled", "Off", 5),
             col!("comment", "Comment", 28),
@@ -454,6 +454,27 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         refresh: Duration::from_secs(5),
         actions: crate::actions::LTE_ACTIONS,
         form: Some(&crate::interface_write::LTE_FORM),
+    },
+    ResourceSpec {
+        id: "lte-apn",
+        group: "interfaces-group",
+        label: "LTE APN",
+        fetch: FetchKind::List {
+            endpoint: "/rest/interface/lte/apn",
+        },
+        columns: &[
+            col!("name", "Name", 18),
+            col!("apn", "APN", 18),
+            col!("authentication", "Authentication", 14),
+            col!("ip-type", "IP Type", 12),
+            col!("use-network-apn", "Network APN", 12),
+            col!("add-default-route", "Default", 8),
+            col!("password", "Password", 10),
+            col!("comment", "Comment", 28),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::interface_write::LTE_APN_FORM),
     },
     ResourceSpec {
         id: "wifi",
@@ -4778,6 +4799,7 @@ mod tests {
                 "vrrp",
                 "bonding",
                 "lte",
+                "lte-apn",
                 "wifi",
                 "wifi-security",
                 "wifi-channel",
@@ -4838,6 +4860,51 @@ mod tests {
                 .filter(|spec| spec.group == "interfaces-group")
                 .all(|spec| !spec.columns.is_empty())
         );
+    }
+
+    #[test]
+    fn lte_apn_is_a_list_under_interfaces() {
+        assert_eq!(
+            resource_by_id("lte-apn").map(|spec| spec.label),
+            Some("LTE APN")
+        );
+        assert_eq!(
+            resource_by_id("lte-apn").map(ResourceSpec::endpoint),
+            Some("/rest/interface/lte/apn")
+        );
+        assert_eq!(
+            resource_by_id("lte-apn").map(ResourceSpec::cli_path),
+            Some("/interface/lte/apn")
+        );
+        assert_eq!(
+            column_keys("lte"),
+            [
+                "name",
+                "default-name",
+                "mtu",
+                "mac-address",
+                "network-mode",
+                "apn-profiles",
+                "running",
+                "disabled",
+                "comment",
+            ]
+        );
+        assert_eq!(
+            column_keys("lte-apn"),
+            [
+                "name",
+                "apn",
+                "authentication",
+                "ip-type",
+                "use-network-apn",
+                "add-default-route",
+                "password",
+                "comment",
+            ]
+        );
+        assert!(resource_by_id("lte-apn").is_some_and(|spec| spec.form.is_some()));
+        assert!(!resource_by_id("lte-apn").is_some_and(ResourceSpec::is_singleton));
     }
 
     #[test]

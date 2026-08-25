@@ -1860,6 +1860,67 @@ mod tests {
     }
 
     #[test]
+    fn lte_apn_hides_password_until_authentication_is_set() {
+        let schema = FormSchema {
+            title_key: "name",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[
+                    FieldSpec {
+                        key: "authentication",
+                        label: "Authentication",
+                        kind: FieldKind::Enum {
+                            values: &["none", "pap", "chap"],
+                        },
+                    },
+                    FieldSpec {
+                        key: "password",
+                        label: "Password",
+                        kind: FieldKind::Secret,
+                    },
+                    FieldSpec {
+                        key: "network-mode",
+                        label: "Network Mode",
+                        kind: FieldKind::Repeat,
+                    },
+                ],
+            }],
+            create_sections: &[],
+        };
+        let mut row = HashMap::new();
+        row.insert("authentication".into(), "none".into());
+        row.insert("network-mode".into(), "lte".into());
+        let mut session = FormSession::edit("lte-apn", "*1", &row, &schema);
+        let keys: Vec<_> = session
+            .visible_fields(&schema)
+            .iter()
+            .map(|(_, field)| field.key)
+            .collect();
+        assert_eq!(keys, ["authentication", "network-mode"]);
+
+        session.activate(&schema);
+        let picker = session.lookup.as_ref().expect("select");
+        assert_eq!(picker.resource_id, "");
+        assert!(!picker.loading);
+        assert_eq!(picker.options, ["none", "pap", "chap"]);
+        session.lookup_move(2);
+        session.lookup_confirm();
+        assert_eq!(
+            session.values.get("authentication").map(String::as_str),
+            Some("chap")
+        );
+        let keys: Vec<_> = session
+            .visible_fields(&schema)
+            .iter()
+            .map(|(_, field)| field.key)
+            .collect();
+        assert_eq!(keys, ["authentication", "password", "network-mode"]);
+    }
+
+    #[test]
     fn form_sheet_scrolls_repeat_rows_and_pins_hints() {
         let schema = FormSchema {
             title_key: "addrs",
