@@ -1318,6 +1318,67 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "strong-crypto, host-key-size, always-allow-password-login, forwarding-enabled."
     ),
     guide!(
+        "traffic-flow",
+        "Traffic Flow settings (`/ip traffic-flow`): export CPU-processed flows as NetFlow or \
+         IPFIX. Hardware-offloaded bridge traffic is not counted.",
+        "Point collectors at this router for ISP or campus accounting. Enable the service, pick \
+         interfaces (all or a list), then add Traffic Flow Targets. Sampling Interval and \
+         Sampling Space appear only when Packet Sampling is on.",
+        "Enabled, Interfaces, Cache Entries, Active Flow Timeout, Inactive Flow Timeout, Packet \
+         Sampling, Sampling Interval, Sampling Space.",
+        "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/traffic-flow/"
+    ),
+    guide!(
+        "traffic-flow-targets",
+        "Collectors that receive Traffic Flow exports (`/ip traffic-flow target`).",
+        "Add each NetFlow or IPFIX collector by Dst. Address, Port, and Version. v9 Template \
+         Refresh and v9 Template Timeout appear only for version 9 or ipfix.",
+        "Src. Address, Dst. Address, Port, Version, v9 Template Refresh, v9 Template Timeout, \
+         Disabled.",
+        "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/traffic-flow/"
+    ),
+    guide!(
+        "traffic-flow-ipfix",
+        "Which IPFIX information elements this router includes in exported records \
+         (`/ip traffic-flow ipfix`).",
+        "Tune the template after Version is ipfix on a target. Each row is a yes or no include \
+         flag, not the packet field itself.",
+        "Bytes, addresses, ports, NAT, TCP, ICMP, interfaces, protocol, ToS, TTL, and related \
+         include flags.",
+        "https://manual.mikrotik.com/docs/diagnostics-monitoring-and-troubleshooting/traffic-flow/"
+    ),
+    guide!(
+        "igmp-proxy",
+        "IGMP Proxy global timers (`/routing igmp-proxy`). Forwards IGMP and multicast when PIM \
+         is more than the topology needs. Exactly one upstream interface belongs on IGMP Proxy \
+         Interfaces.",
+        "IPTV or multicast handoff from a provider toward LAN subscribers. Bridge IGMP snooping \
+         is a different menu.",
+        "Query Interval, Query Response Interval, Last Member Query Interval, Robustness, Quick \
+         Leave.",
+        "https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/multicast/"
+    ),
+    guide!(
+        "igmp-proxy-interfaces",
+        "Interfaces that participate in IGMP Proxy (`/routing igmp-proxy interface`). Traffic on \
+         other interfaces is ignored. Alternative Subnets applies on the upstream interface.",
+        "Mark one uplink as Upstream toward the multicast source and add downstream subscriber \
+         interfaces. Both sides need IP addresses.",
+        "Interface, Upstream, Threshold, Alternative Subnets, Disabled, plus Status (Querier, \
+         Source IP Address, RX/TX counters).",
+        "https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/multicast/"
+    ),
+    guide!(
+        "igmp-proxy-mfc",
+        "Multicast forwarding cache for IGMP Proxy (`/routing igmp-proxy mfc`). Dynamic entries \
+         show what is flowing; a static rule for a group replaces dynamic rules for that group.",
+        "Inspect streams, or pin a group to an upstream interface and downstream list when the \
+         proxy interfaces are already set.",
+        "Group, Source, Upstream Interface, Downstream Interfaces, plus Status (Active Downstream \
+         Interfaces, Bytes, Packets, Wrong Packets).",
+        "https://manual.mikrotik.com/docs/user-guides/routing-and-networking-protocols/multicast/"
+    ),
+    guide!(
         "proxy",
         "HTTP proxy singleton (`/ip proxy`).",
         "Enable a cache/proxy on this router. Child lists cover access, cache, and direct.",
@@ -1663,5 +1724,29 @@ mod tests {
             live.body
                 .contains("https://manual.mikrotik.com/docs/cli-reference/routing/ospf/interface/")
         );
+    }
+
+    #[test]
+    fn traffic_flow_and_igmp_guides_track_the_manual() {
+        let flow = about_copy("traffic-flow").expect("traffic-flow");
+        assert_eq!(flow.title, "About Traffic Flow");
+        assert!(flow.kicker.contains("/ip/traffic-flow"));
+        assert!(flow.body.contains("NetFlow") || flow.body.contains("IPFIX"));
+        assert!(flow.body.contains("Packet Sampling"));
+        assert!(!flow.body.contains('\u{2014}'));
+
+        let targets = about_copy("traffic-flow-targets").expect("targets");
+        assert!(targets.body.contains("Dst. Address"));
+        assert!(targets.body.contains("ipfix"));
+
+        let proxy = about_copy("igmp-proxy").expect("igmp-proxy");
+        assert!(proxy.kicker.contains("/routing/igmp-proxy"));
+        assert!(proxy.body.contains("upstream"));
+        assert!(!proxy.body.contains('\u{2014}'));
+
+        let ifaces = about_copy("igmp-proxy-interfaces").expect("ifaces");
+        assert!(ifaces.body.contains("Upstream"));
+        let mfc = about_copy("igmp-proxy-mfc").expect("mfc");
+        assert!(mfc.body.contains("Group"));
     }
 }

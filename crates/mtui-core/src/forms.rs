@@ -168,14 +168,20 @@ pub fn with_leading_none(options: Vec<String>) -> Vec<String> {
 /// Logging Actions show only the knobs that belong to Type (`target`) and, for
 /// remote, to Remote Log Format and Remote Protocol. NTP Server shows Broadcast
 /// Addresses only when Broadcast is on, and Local Clock Stratum only when Use
-/// Local Clock is on. Inapplicable rows are omitted, not locked. Check
-/// Certificate appears only when protocol is `tls`.
+/// Local Clock is on. Traffic Flow shows Sampling Interval and Sampling Space
+/// only when Packet Sampling is on. Traffic Flow Targets show v9 template
+/// fields only for version `9` or `ipfix`. IGMP Proxy Interfaces show
+/// Alternative Subnets only when Upstream is on. Inapplicable rows are omitted,
+/// not locked. Check Certificate appears only when protocol is `tls`.
 #[must_use]
 #[allow(clippy::implicit_hasher)]
 pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, String>) -> bool {
     match resource_id {
         "logging-actions" => logging_action_field_visible(key, values),
         "ntp-server" => ntp_server_field_visible(key, values),
+        "traffic-flow" => traffic_flow_field_visible(key, values),
+        "traffic-flow-targets" => traffic_flow_target_field_visible(key, values),
+        "igmp-proxy-interfaces" => igmp_proxy_interface_field_visible(key, values),
         _ => true,
     }
 }
@@ -214,6 +220,38 @@ fn ntp_server_field_visible(key: &str, values: &HashMap<String, String>) -> bool
     match key {
         "broadcast-addresses" => flag_on(values, "broadcast"),
         "local-clock-stratum" => flag_on(values, "use-local-clock"),
+        _ => true,
+    }
+}
+
+fn traffic_flow_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    match key {
+        "sampling-interval" | "sampling-space" => flag_on(values, "packet-sampling"),
+        _ => true,
+    }
+}
+
+fn traffic_flow_version_uses_templates(values: &HashMap<String, String>) -> bool {
+    matches!(
+        values
+            .get("version")
+            .map_or("", String::as_str)
+            .to_ascii_lowercase()
+            .as_str(),
+        "9" | "ipfix"
+    )
+}
+
+fn traffic_flow_target_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    match key {
+        "v9-template-refresh" | "v9-template-timeout" => traffic_flow_version_uses_templates(values),
+        _ => true,
+    }
+}
+
+fn igmp_proxy_interface_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    match key {
+        "alternative-subnets" => flag_on(values, "upstream"),
         _ => true,
     }
 }
@@ -686,5 +724,81 @@ mod tests {
 
         values.insert("broadcast".into(), "false".into());
         assert!(!field_enabled("ntp-server", "broadcast-addresses", &values));
+    }
+
+    #[test]
+    fn traffic_flow_and_igmp_fields_follow_flags_and_version() {
+        let cases = [
+            (
+                "traffic-flow",
+                "packet-sampling",
+                "false",
+                "sampling-interval",
+                false,
+            ),
+            (
+                "traffic-flow",
+                "packet-sampling",
+                "yes",
+                "sampling-space",
+                true,
+            ),
+            (
+                "traffic-flow-targets",
+                "version",
+                "5",
+                "v9-template-refresh",
+                false,
+            ),
+            (
+                "traffic-flow-targets",
+                "version",
+                "9",
+                "v9-template-timeout",
+                true,
+            ),
+            (
+                "traffic-flow-targets",
+                "version",
+                "ipfix",
+                "v9-template-refresh",
+                true,
+            ),
+            (
+                "traffic-flow-targets",
+                "version",
+                "IPFIX",
+                "v9-template-timeout",
+                true,
+            ),
+            (
+                "igmp-proxy-interfaces",
+                "upstream",
+                "no",
+                "alternative-subnets",
+                false,
+            ),
+            (
+                "igmp-proxy-interfaces",
+                "upstream",
+                "true",
+                "alternative-subnets",
+                true,
+            ),
+        ];
+        for (resource, flag, value, field, visible) in cases {
+            let values = HashMap::from([(flag.to_string(), value.to_string())]);
+            assert_eq!(
+                field_visible(resource, field, &values),
+                visible,
+                "{resource} {field} with {flag}={value}"
+            );
+            assert_eq!(
+                field_enabled(resource, field, &values),
+                visible,
+                "{resource} {field} enabled with {flag}={value}"
+            );
+            assert!(field_visible(resource, flag, &values));
+        }
     }
 }

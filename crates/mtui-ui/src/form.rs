@@ -1465,6 +1465,7 @@ fn enum_display_value(key: &str, raw: &str) -> String {
         ("remote-log-format", "cef") => "CEF".into(),
         ("remote-protocol", "tls") => "TLS".into(),
         ("syslog-time-format", "iso8601") => "ISO 8601".into(),
+        ("version", "ipfix") => "IPFIX".into(),
         _ => raw.to_string(),
     }
 }
@@ -2145,6 +2146,136 @@ mod tests {
             Some("8")
         );
         assert_eq!(session.values.get("remote").map(String::as_str), Some("x"));
+    }
+
+    #[test]
+    fn traffic_flow_hides_sampling_and_opens_version_select() {
+        let schema = FormSchema {
+            title_key: "enabled",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[
+                    FieldSpec {
+                        key: "packet-sampling",
+                        label: "Packet Sampling",
+                        kind: FieldKind::Toggle,
+                    },
+                    FieldSpec {
+                        key: "sampling-interval",
+                        label: "Sampling Interval",
+                        kind: FieldKind::Number,
+                    },
+                    FieldSpec {
+                        key: "sampling-space",
+                        label: "Sampling Space",
+                        kind: FieldKind::Number,
+                    },
+                    FieldSpec {
+                        key: "interfaces",
+                        label: "Interfaces",
+                        kind: FieldKind::Repeat,
+                    },
+                ],
+            }],
+            create_sections: &[],
+        };
+        let mut row = HashMap::new();
+        row.insert("packet-sampling".into(), "false".into());
+        row.insert("interfaces".into(), "all".into());
+        let mut session = FormSession::edit("traffic-flow", "", &row, &schema);
+        let keys = |session: &FormSession, schema: &FormSchema| {
+            session
+                .visible_fields(schema)
+                .into_iter()
+                .map(|(_, field)| field.key)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(keys(&session, &schema), ["packet-sampling", "interfaces"]);
+        session.values.insert("packet-sampling".into(), "true".into());
+        assert_eq!(
+            keys(&session, &schema),
+            [
+                "packet-sampling",
+                "sampling-interval",
+                "sampling-space",
+                "interfaces"
+            ]
+        );
+        session.focus = 1;
+        session.insert_char(&schema, '2');
+        assert_eq!(
+            session.values.get("sampling-interval").map(String::as_str),
+            Some("2")
+        );
+        session.insert_char(&schema, 'x');
+        assert_eq!(
+            session.values.get("sampling-interval").map(String::as_str),
+            Some("2")
+        );
+
+        let target_schema = FormSchema {
+            title_key: "dst-address",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[
+                    FieldSpec {
+                        key: "version",
+                        label: "Version",
+                        kind: FieldKind::Enum {
+                            values: &["1", "5", "9", "ipfix"],
+                        },
+                    },
+                    FieldSpec {
+                        key: "v9-template-refresh",
+                        label: "v9 Template Refresh",
+                        kind: FieldKind::Number,
+                    },
+                    FieldSpec {
+                        key: "port",
+                        label: "Port",
+                        kind: FieldKind::Number,
+                    },
+                ],
+            }],
+            create_sections: &[],
+        };
+        let mut target = HashMap::new();
+        target.insert("version".into(), "5".into());
+        target.insert("port".into(), "2055".into());
+        let mut session = FormSession::edit("traffic-flow-targets", "*tf1", &target, &target_schema);
+        let keys = |session: &FormSession, schema: &FormSchema| {
+            session
+                .visible_fields(schema)
+                .into_iter()
+                .map(|(_, field)| field.key)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(keys(&session, &target_schema), ["version", "port"]);
+        session.values.insert("version".into(), "ipfix".into());
+        assert_eq!(
+            keys(&session, &target_schema),
+            ["version", "v9-template-refresh", "port"]
+        );
+        session.activate(&target_schema);
+        assert!(session.lookup_open());
+        session.lookup_insert_char('i');
+        session.lookup_insert_char('p');
+        session.lookup_confirm();
+        assert_eq!(
+            session.values.get("version").map(String::as_str),
+            Some("ipfix")
+        );
+        session.focus = 2;
+        session.insert_char(&target_schema, '9');
+        assert_eq!(session.values.get("port").map(String::as_str), Some("20559"));
+        session.insert_char(&target_schema, '6');
+        assert_eq!(session.values.get("port").map(String::as_str), Some("20559"));
     }
 
     #[test]

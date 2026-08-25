@@ -153,4 +153,46 @@ mod tests {
             Some(crate::secret::MASKED_VALUE)
         );
     }
+
+    #[test]
+    fn traffic_flow_and_igmp_decode_optional_and_reject_malformed() {
+        let cases = [
+            (
+                r#"{"enabled":"yes","interfaces":"all","cache-entries":"4k"}"#,
+                "",
+                "interfaces",
+                Some("all"),
+            ),
+            (
+                r#"{".id":"*tf1","dst-address":"192.0.2.10","port":"2055","version":"ipfix"}"#,
+                "*tf1",
+                "version",
+                Some("ipfix"),
+            ),
+            (
+                r#"{"query-interval":"2m5s","quick-leave":"false"}"#,
+                "",
+                "query-interval",
+                Some("2m5s"),
+            ),
+            (
+                r#"{".id":"*ig1","interface":"ether1","upstream":"true"}"#,
+                "*ig1",
+                "upstream",
+                Some("true"),
+            ),
+        ];
+        for (json, id, key, expected) in cases {
+            let resource: Resource = serde_json::from_str(json).expect(json);
+            assert_eq!(resource.id, id, "{json}");
+            assert_eq!(resource.field(key), expected, "{json}");
+            assert!(resource.field("missing-optional").is_none(), "{json}");
+        }
+
+        let malformed: Result<Resource, _> =
+            serde_json::from_str(r#"{"dst-address":192,"port":"2055"}"#);
+        assert!(malformed.is_err());
+        let not_object: Result<Resource, _> = serde_json::from_str("[1,2]");
+        assert!(not_object.is_err());
+    }
 }
