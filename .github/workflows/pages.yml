@@ -2,10 +2,9 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches:
-      - master
     tags:
       - "v*"
+  # Site updates from master: Actions → Deploy to GitHub Pages → Run workflow
   workflow_dispatch:
 
 permissions:
