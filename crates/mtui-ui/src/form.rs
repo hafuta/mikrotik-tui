@@ -225,6 +225,7 @@ impl FormSession {
                 values.entry(field.key.to_string()).or_default();
             }
         }
+        let original = values.clone();
         let repeat = repeat_from_schema(schema, &values);
         Self {
             resource_id: resource_id.into(),
@@ -234,7 +235,7 @@ impl FormSession {
             focus: 0,
             offset: 0,
             values,
-            original: HashMap::new(),
+            original,
             extras: Vec::new(),
             error: None,
             saving: false,
@@ -2744,6 +2745,24 @@ mod tests {
         assert!(rendered.contains("nightly"));
         assert!(rendered.contains("Password"));
         assert!(!rendered.contains("hidden"));
+    }
+
+    #[test]
+    fn prompt_with_defaults_is_not_dirty() {
+        let mut values = HashMap::new();
+        values.insert("file-system".into(), "ext4".into());
+        let session = FormSession::prompt_with(
+            "disks",
+            "*d1",
+            "format",
+            &mtui_core::FORMAT_DISK_PROMPT,
+            values,
+        );
+        assert!(!session.is_dirty());
+        assert_eq!(
+            session.values.get("file-system").map(String::as_str),
+            Some("ext4")
+        );
     }
 
     #[test]
