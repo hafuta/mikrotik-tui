@@ -2212,14 +2212,18 @@ mod tests {
         status_readonly(&SMB_USER_FORM);
         assert!(!SMB_SHARE_FORM.writable_keys().contains(&"default"));
         assert!(!SMB_USER_FORM.writable_keys().contains(&"dynamic"));
-        assert!(SMB_SHARE_FORM
-            .sections
-            .iter()
-            .all(|section| section.id != "advanced"));
-        assert!(SMB_USER_FORM
-            .sections
-            .iter()
-            .all(|section| section.id != "advanced"));
+        assert!(
+            SMB_SHARE_FORM
+                .sections
+                .iter()
+                .all(|section| section.id != "advanced")
+        );
+        assert!(
+            SMB_USER_FORM
+                .sections
+                .iter()
+                .all(|section| section.id != "advanced")
+        );
 
         let mut original = HashMap::new();
         original.insert("name".into(), "mtuser".into());

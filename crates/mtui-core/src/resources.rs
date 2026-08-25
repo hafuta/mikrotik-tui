@@ -5127,6 +5127,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn ip_group_covers_webfig_operator_screens() {
         assert_eq!(
             group_ids("ip-group"),
