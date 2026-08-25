@@ -7,6 +7,7 @@ use crate::resources::{FetchKind, ResourceSpec};
 pub const WIRELESS: ResourceSpec = ResourceSpec {
     id: "wireless",
     group: "interfaces-group",
+    cli_path: None,
     label: "Wireless",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wireless",
@@ -32,6 +33,7 @@ pub const WIRELESS: ResourceSpec = ResourceSpec {
 pub const WIRELESS_SECURITY_PROFILES: ResourceSpec = ResourceSpec {
     id: "wireless-security-profiles",
     group: "interfaces-group",
+    cli_path: None,
     label: "Security Profiles",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wireless/security-profiles",
@@ -50,6 +52,7 @@ pub const WIRELESS_SECURITY_PROFILES: ResourceSpec = ResourceSpec {
 pub const WIRELESS_ACCESS_LIST: ResourceSpec = ResourceSpec {
     id: "wireless-access-list",
     group: "interfaces-group",
+    cli_path: None,
     label: "Access List",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wireless/access-list",
@@ -68,6 +71,7 @@ pub const WIRELESS_ACCESS_LIST: ResourceSpec = ResourceSpec {
 pub const WIRELESS_REGISTRATION_TABLE: ResourceSpec = ResourceSpec {
     id: "wireless-registration-table",
     group: "interfaces-group",
+    cli_path: None,
     label: "Registration",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/wireless/registration-table",

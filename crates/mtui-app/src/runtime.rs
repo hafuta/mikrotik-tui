@@ -1,6 +1,6 @@
 //! Event loop: terminal + tokio worker bridge.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -269,6 +269,19 @@ fn dispatch_commands(
                 let tx = tx.clone();
                 rt.spawn(async move {
                     let msg = fetch_access(session, client, request_id, generation).await;
+                    let _ = tx.send(msg);
+                });
+            }
+            AppCommand::ProbeMenuPaths {
+                session,
+                generation,
+            } => {
+                let Some(client) = client else {
+                    continue;
+                };
+                let tx = tx.clone();
+                rt.spawn(async move {
+                    let msg = probe_menu_paths(session, client, generation).await;
                     let _ = tx.send(msg);
                 });
             }
@@ -842,6 +855,32 @@ fn send_if_session_event(
             generation,
             reason: err.message().to_string(),
         });
+    }
+}
+
+async fn probe_menu_paths(session: SessionId, client: Arc<Client>, generation: u64) -> WorkerMsg {
+    match crate::menu_paths::probe_missing_resource_ids(&client).await {
+        Ok(missing_ids) => WorkerMsg::MenuPathsResult {
+            session,
+            generation,
+            missing_ids,
+            error: None,
+        },
+        Err(err) => {
+            if err.is_link_loss() {
+                return WorkerMsg::SessionLost {
+                    session,
+                    generation,
+                    reason: err.message().to_string(),
+                };
+            }
+            WorkerMsg::MenuPathsResult {
+                session,
+                generation,
+                missing_ids: HashSet::new(),
+                error: Some(err.to_string()),
+            }
+        }
     }
 }
 

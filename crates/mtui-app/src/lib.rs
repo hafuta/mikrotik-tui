@@ -7,6 +7,7 @@ mod files_io;
 mod health;
 mod help;
 mod keys;
+mod menu_paths;
 mod render;
 mod runtime;
 mod safe_mode;

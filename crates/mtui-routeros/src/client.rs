@@ -1,6 +1,6 @@
 //! `RouterOS` classic TCP API client (`api-ssl` or plaintext `api`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -226,6 +226,23 @@ impl Client {
         Ok(())
     }
 
+    /// Child names under `path` via `/console/inspect request=child`.
+    ///
+    /// `path` is CLI segments (`["interface", "bridge"]`). An empty slice
+    /// inspects the command root, matching how `WebFig` learns which menus exist.
+    pub async fn inspect_children(&self, path: &[&str]) -> Result<HashSet<String>> {
+        let replies = self
+            .inner
+            .control
+            .request("inspect", inspect_children_words(path))
+            .await?;
+        Ok(replies
+            .into_iter()
+            .filter(Sentence::is_re)
+            .filter_map(|sentence| sentence.attr("name").map(str::to_owned))
+            .collect())
+    }
+
     /// Runs a console command (`enable`, `copy`, `fetch`, ...).
     pub async fn command(
         &self,
@@ -445,6 +462,14 @@ fn classify_connect(message: &str) -> Error {
     }
 }
 
+fn inspect_children_words(path: &[&str]) -> Vec<String> {
+    vec![
+        "/console/inspect".into(),
+        "=request=child".into(),
+        format!("=path={}", path.join(",")),
+    ]
+}
+
 fn command_path(endpoint: &str, command: &str) -> Result<String> {
     let path = api_path(endpoint, "command")?;
     Ok(format!("{path}/{command}"))
@@ -503,6 +528,22 @@ mod tests {
         assert_eq!(api_path("/interface", "test").unwrap(), "/interface");
         assert!(api_path("interface", "test").is_err());
         assert!(api_path("/interface/../system", "test").is_err());
+    }
+
+    #[test]
+    fn inspect_children_words_use_comma_path() {
+        assert_eq!(
+            inspect_children_words(&["interface", "bridge"]),
+            [
+                "/console/inspect",
+                "=request=child",
+                "=path=interface,bridge"
+            ]
+        );
+        assert_eq!(
+            inspect_children_words(&[]),
+            ["/console/inspect", "=request=child", "=path="]
+        );
     }
 
     #[test]

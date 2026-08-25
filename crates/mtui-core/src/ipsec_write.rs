@@ -8,6 +8,9 @@
 //! - `ipsec-profiles` → `/rest/ip/ipsec/profile`
 //! - `ipsec-installed-sa` → `/rest/ip/ipsec/installed-sa` (no form)
 //! - `ipsec-settings` → `/rest/ip/ipsec/settings`
+//! - `ipsec-key-rsa` → `/rest/ip/ipsec/key/rsa`
+//! - `ipsec-key-psk` → `/rest/ip/ipsec/key/psk`
+//! - `ipsec-key-qkd` → `/rest/ip/ipsec/key/qkd`
 //!
 //! Group id: `ip-group`.
 
@@ -303,21 +306,81 @@ pub static IPSEC_MODE_CONFIG_FORM: FormSchema = FormSchema {
     }],
 };
 
-pub static IPSEC_KEY_FORM: FormSchema = FormSchema {
+pub static IPSEC_KEY_RSA_FORM: FormSchema = FormSchema {
     title_key: "name",
     subtitle_keys: &["key-size"],
-    sections: &[FormSection {
-        id: "general",
-        label: "General",
-        read_only: false,
-        fields: &[NAME, f!("key-size", "Key size", FieldKind::Number), COMMENT],
-    }],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[NAME],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[f!("key-size", "Key size", FieldKind::Readonly)],
+        },
+    ],
     create_sections: &[FormSection {
         id: "general",
         label: "General",
         read_only: false,
         fields: &[NAME],
     }],
+};
+
+pub static IPSEC_KEY_PSK_FORM: FormSchema = FormSchema {
+    title_key: "peer",
+    subtitle_keys: &["id"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            PEER,
+            f!("id", "ID", FieldKind::Text),
+            f!("key", "Key", FieldKind::Secret),
+        ],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            PEER,
+            f!("id", "ID", FieldKind::Text),
+            f!("key", "Key", FieldKind::Secret),
+        ],
+    }],
+};
+
+pub static IPSEC_KEY_QKD_FORM: FormSchema = FormSchema {
+    title_key: "address",
+    subtitle_keys: &["kme-id"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                ADDRESS,
+                f!("cache-size", "Cache size", FieldKind::Number),
+                f!("certificate", "Certificate", LOOKUP_CERT),
+                f!("key-size", "Key size", FieldKind::Number),
+                f!("kme-id", "KME ID", FieldKind::Text),
+                f!("peer-sae-id", "Peer SAE ID", FieldKind::Text),
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[f!("cache-state", "Cache state", FieldKind::Readonly)],
+        },
+    ],
+    create_sections: &[],
 };
 
 #[cfg(test)]
@@ -521,6 +584,47 @@ mod tests {
                 .field("enc-algorithms")
                 .map(|field| field.kind),
             Some(FieldKind::Text)
+        );
+    }
+
+    #[test]
+    fn rsa_keys_are_named_with_readonly_size() {
+        assert_eq!(create_keys(&IPSEC_KEY_RSA_FORM), ["name"]);
+        assert!(IPSEC_KEY_RSA_FORM.writable_keys().contains(&"name"));
+        assert!(!IPSEC_KEY_RSA_FORM.writable_keys().contains(&"key-size"));
+        status_readonly(&IPSEC_KEY_RSA_FORM);
+    }
+
+    #[test]
+    fn psk_keys_use_peer_lookup_and_secret() {
+        assert_eq!(create_keys(&IPSEC_KEY_PSK_FORM), ["peer", "id", "key"]);
+        assert_lookup(&IPSEC_KEY_PSK_FORM, "peer", "ipsec-peers");
+        assert_eq!(
+            IPSEC_KEY_PSK_FORM.field("key").map(|field| field.kind),
+            Some(FieldKind::Secret)
+        );
+        assert_eq!(IPSEC_KEY_PSK_FORM.secret_keys(), ["key"]);
+        assert!(
+            IPSEC_KEY_PSK_FORM
+                .sections
+                .iter()
+                .all(|section| section.id != "advanced")
+        );
+    }
+
+    #[test]
+    fn qkd_is_singleton_edit_with_certificate_lookup() {
+        assert!(IPSEC_KEY_QKD_FORM.create_sections.is_empty());
+        assert_lookup(&IPSEC_KEY_QKD_FORM, "certificate", "certificates");
+        assert!(IPSEC_KEY_QKD_FORM.writable_keys().contains(&"address"));
+        assert!(IPSEC_KEY_QKD_FORM.writable_keys().contains(&"kme-id"));
+        assert!(!IPSEC_KEY_QKD_FORM.writable_keys().contains(&"cache-state"));
+        status_readonly(&IPSEC_KEY_QKD_FORM);
+        assert!(
+            IPSEC_KEY_QKD_FORM
+                .sections
+                .iter()
+                .all(|section| section.id != "advanced")
         );
     }
 }

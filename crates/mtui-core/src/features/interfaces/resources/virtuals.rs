@@ -7,6 +7,7 @@ use crate::resources::{FetchKind, ResourceSpec};
 pub const VLAN: ResourceSpec = ResourceSpec {
     id: "vlan",
     group: "interfaces-group",
+    cli_path: None,
     label: "VLAN",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/vlan",
@@ -32,6 +33,7 @@ pub const VLAN: ResourceSpec = ResourceSpec {
 pub const VXLAN: ResourceSpec = ResourceSpec {
     id: "vxlan",
     group: "interfaces-group",
+    cli_path: None,
     label: "VXLAN",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/vxlan",
@@ -58,6 +60,7 @@ pub const VXLAN: ResourceSpec = ResourceSpec {
 pub const VRRP: ResourceSpec = ResourceSpec {
     id: "vrrp",
     group: "interfaces-group",
+    cli_path: None,
     label: "VRRP",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/vrrp",
@@ -84,6 +87,7 @@ pub const VRRP: ResourceSpec = ResourceSpec {
 pub const BONDING: ResourceSpec = ResourceSpec {
     id: "bonding",
     group: "interfaces-group",
+    cli_path: None,
     label: "Bonding",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/bonding",
@@ -111,6 +115,7 @@ pub const BONDING: ResourceSpec = ResourceSpec {
 pub const MACVLAN: ResourceSpec = ResourceSpec {
     id: "macvlan",
     group: "interfaces-group",
+    cli_path: None,
     label: "MACVLAN",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/macvlan",
@@ -134,6 +139,7 @@ pub const MACVLAN: ResourceSpec = ResourceSpec {
 pub const VETH: ResourceSpec = ResourceSpec {
     id: "veth",
     group: "interfaces-group",
+    cli_path: None,
     label: "VETH",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/veth",
@@ -155,6 +161,7 @@ pub const VETH: ResourceSpec = ResourceSpec {
 pub const MACSEC: ResourceSpec = ResourceSpec {
     id: "macsec",
     group: "interfaces-group",
+    cli_path: None,
     label: "MACsec",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/macsec",
@@ -179,6 +186,7 @@ pub const MACSEC: ResourceSpec = ResourceSpec {
 pub const MACSEC_PROFILES: ResourceSpec = ResourceSpec {
     id: "macsec-profiles",
     group: "interfaces-group",
+    cli_path: None,
     label: "MACsec Profile",
     fetch: FetchKind::List {
         endpoint: "/rest/interface/macsec/profile",
@@ -195,6 +203,7 @@ pub const MACSEC_PROFILES: ResourceSpec = ResourceSpec {
 pub const VRF: ResourceSpec = ResourceSpec {
     id: "vrf",
     group: "interfaces-group",
+    cli_path: None,
     label: "VRF",
     fetch: FetchKind::List {
         endpoint: "/rest/ip/vrf",
@@ -212,6 +221,7 @@ pub const VRF: ResourceSpec = ResourceSpec {
 pub const DETECT_INTERNET: ResourceSpec = ResourceSpec {
     id: "detect-internet",
     group: "interfaces-group",
+    cli_path: None,
     label: "Detect Internet",
     fetch: FetchKind::System {
         endpoint: "/rest/interface/detect-internet",
