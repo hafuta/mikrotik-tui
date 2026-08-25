@@ -1,12 +1,15 @@
 //! Inspector viewport for a selected record.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use mtui_core::{FieldKind, FormSchema, field_visible};
 use ratatui::text::{Line, Span};
 
 use crate::layout::fit_line;
 use crate::paint::line_on_bg;
 use crate::styles::Styles;
+
+const HEADING_MARK: &str = "\u{001D}";
 
 const LEADING_KEYS: &[&str] = &[
     "name",
@@ -50,8 +53,26 @@ pub struct InspectorState {
 impl InspectorState {
     #[must_use]
     pub fn from_row(row: Option<&HashMap<String, String>>) -> Self {
-        let fields = match row {
-            Some(map) => {
+        Self::from_row_with_schema_for(row, None, None)
+    }
+
+    #[must_use]
+    pub fn from_row_with_schema(
+        row: Option<&HashMap<String, String>>,
+        schema: Option<&FormSchema>,
+    ) -> Self {
+        Self::from_row_with_schema_for(row, None, schema)
+    }
+
+    #[must_use]
+    pub fn from_row_with_schema_for(
+        row: Option<&HashMap<String, String>>,
+        resource_id: Option<&str>,
+        schema: Option<&FormSchema>,
+    ) -> Self {
+        let fields = match (row, schema) {
+            (Some(map), Some(schema)) => schema_fields(map, resource_id, schema),
+            (Some(map), None) => {
                 let mut v: Vec<_> = map
                     .iter()
                     .filter(|(key, _)| !key.starts_with('.'))
@@ -60,7 +81,7 @@ impl InspectorState {
                 v.sort_by(|a, b| field_order(&a.0).cmp(&field_order(&b.0)));
                 v
             }
-            None => Vec::new(),
+            _ => Vec::new(),
         };
         Self {
             fields,
@@ -129,11 +150,15 @@ impl InspectorState {
             .enumerate()
             .skip(self.offset)
             .map(|(idx, (key, value))| {
-                let line = Line::from(vec![
-                    Span::styled(format!("{key:<key_w$}"), styles.muted),
-                    Span::styled("   ", styles.muted),
-                    Span::styled(value.clone(), value_style(value, styles)),
-                ]);
+                let line = if value == HEADING_MARK {
+                    Line::from(vec![Span::styled(key.clone(), styles.text)])
+                } else {
+                    Line::from(vec![
+                        Span::styled(format!("{key:<key_w$}"), styles.muted),
+                        Span::styled("   ", styles.muted),
+                        Span::styled(value.clone(), value_style(value, styles)),
+                    ])
+                };
                 if focused && idx == self.selected {
                     fit_line(line_on_bg(line, styles.selection), width)
                 } else {
@@ -142,6 +167,57 @@ impl InspectorState {
             })
             .collect()
     }
+}
+
+fn schema_fields(
+    map: &HashMap<String, String>,
+    resource_id: Option<&str>,
+    schema: &FormSchema,
+) -> Vec<(String, String)> {
+    let mut fields = Vec::new();
+    let mut seen = HashSet::new();
+    for section in schema.sections {
+        let mut rows = Vec::new();
+        for field in section.fields {
+            seen.insert(field.key);
+            if resource_id.is_some_and(|id| !field_visible(id, field.key, map)) {
+                continue;
+            }
+            let raw = map.get(field.key).cloned().unwrap_or_default();
+            if raw.is_empty() && matches!(field.kind, FieldKind::Readonly) {
+                continue;
+            }
+            let value = if matches!(field.kind, FieldKind::Secret) && !raw.is_empty() {
+                "••••••••".to_string()
+            } else {
+                field.kind.display_value(&raw)
+            };
+            rows.push((field.label.to_string(), value));
+        }
+        if rows.is_empty() {
+            continue;
+        }
+        if !section.label.is_empty() {
+            fields.push((section.label.to_string(), HEADING_MARK.to_string()));
+        }
+        fields.extend(rows);
+    }
+    let mut extras: Vec<_> = map
+        .iter()
+        .filter(|(key, value)| {
+            !key.starts_with('.')
+                && !seen.contains(key.as_str())
+                && !matches!(key.as_str(), "caps" | "sfp")
+                && !value.is_empty()
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    extras.sort_by(|left, right| left.0.cmp(&right.0));
+    if !extras.is_empty() {
+        fields.push(("Other".to_string(), HEADING_MARK.to_string()));
+        fields.extend(extras);
+    }
+    fields
 }
 
 #[cfg(test)]
@@ -254,5 +330,88 @@ mod render_tests {
             .map(|(key, _)| key)
             .collect();
         assert_eq!(keys, ["name", "type", "comment", "mtu"]);
+    }
+
+    #[test]
+    fn schema_inspector_uses_section_captions_in_webfig_order() {
+        const SCHEMA: FormSchema = FormSchema {
+            title_key: "name",
+            subtitle_keys: &[],
+            sections: &[
+                mtui_core::FormSection {
+                    id: "general",
+                    label: "General",
+                    read_only: false,
+                    fields: &[
+                        mtui_core::FieldSpec {
+                            key: "disabled",
+                            label: "Enabled",
+                            kind: FieldKind::InvertedToggle,
+                        },
+                        mtui_core::FieldSpec {
+                            key: "name",
+                            label: "Name",
+                            kind: FieldKind::Text,
+                        },
+                    ],
+                },
+                mtui_core::FormSection {
+                    id: "status",
+                    label: "Status",
+                    read_only: true,
+                    fields: &[mtui_core::FieldSpec {
+                        key: "running",
+                        label: "Running",
+                        kind: FieldKind::Readonly,
+                    }],
+                },
+            ],
+            create_sections: &[],
+        };
+        let mut row = HashMap::new();
+        row.insert("disabled".to_string(), "false".to_string());
+        row.insert("name".to_string(), "ether1".to_string());
+        row.insert("running".to_string(), "true".to_string());
+        let labels: Vec<_> = InspectorState::from_row_with_schema(Some(&row), Some(&SCHEMA))
+            .fields
+            .into_iter()
+            .map(|(label, _)| label)
+            .collect();
+        assert_eq!(labels, ["General", "Enabled", "Name", "Status", "Running"]);
+    }
+
+    #[test]
+    fn ethernet_inspector_gates_sfp_on_print_attributes_not_name() {
+        let schema = mtui_core::resource_by_id("ethernet")
+            .and_then(|spec| spec.form)
+            .expect("ethernet form");
+        let named = HashMap::from([
+            ("name".to_string(), "sfp1".to_string()),
+            ("default-name".to_string(), "sfp1".to_string()),
+        ]);
+        let labels: Vec<_> =
+            InspectorState::from_row_with_schema_for(Some(&named), Some("ethernet"), Some(schema))
+                .fields
+                .into_iter()
+                .map(|(label, _)| label)
+                .collect();
+        assert!(!labels.iter().any(|label| label == "SFP"));
+        assert!(!labels.iter().any(|label| label == "PoE"));
+
+        let printed = HashMap::from([
+            ("name".to_string(), "uplink".to_string()),
+            ("sfp-shutdown-temperature".to_string(), "95C".to_string()),
+        ]);
+        let labels: Vec<_> = InspectorState::from_row_with_schema_for(
+            Some(&printed),
+            Some("ethernet"),
+            Some(schema),
+        )
+        .fields
+        .into_iter()
+        .map(|(label, _)| label)
+        .collect();
+        assert!(labels.iter().any(|label| label == "SFP"));
+        assert!(labels.iter().any(|label| label == "Ignore Rx LOS"));
     }
 }

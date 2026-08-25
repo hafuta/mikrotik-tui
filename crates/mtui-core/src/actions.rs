@@ -444,18 +444,12 @@ pub const ACTION_TRACEROUTE: ActionSpec = ActionSpec {
     when: ActionWhen::Always,
 };
 
-pub const INTERFACE_LIST_ACTIONS: &[ActionSpec] = &[
-    ACTION_ADD_TYPE,
-    ACTION_EDIT,
-    ACTION_TOGGLE,
-    ACTION_COPY,
-    ACTION_REMOVE,
-    ACTION_RESET,
-    ACTION_TORCH,
-];
-
-pub const ETHERNET_ACTIONS: &[ActionSpec] =
-    &[ACTION_EDIT, ACTION_TOGGLE, ACTION_RESET, ACTION_TORCH];
+#[allow(unused_imports)]
+pub use crate::features::interfaces::actions::{
+    ACTION_NEW_LIST, ACTION_NEW_LIST_MEMBER, ETHERNET_ACTIONS, INTERFACE_LIST_ACTIONS,
+    INTERFACE_LIST_DEF_ACTIONS, INTERFACE_LIST_MEMBER_ACTIONS, LTE_ACTIONS, RADIO_ACTIONS,
+    VRF_ACTIONS,
+};
 
 pub const PING_ACTIONS: &[ActionSpec] = &[ACTION_PING];
 
@@ -471,41 +465,6 @@ pub const VIRTUAL_IFACE_ACTIONS: &[ActionSpec] = &[
 ];
 
 pub const LIST_ACTIONS: &[ActionSpec] = &[ACTION_ADD, ACTION_EDIT, ACTION_COPY, ACTION_REMOVE];
-
-pub const ACTION_NEW_LIST: ActionSpec = ActionSpec {
-    id: "add",
-    label: "New list",
-    key: Some('n'),
-    enter: false,
-    needs_selection: false,
-    danger: false,
-    kind: ActionKind::Create,
-    when: ActionWhen::Always,
-};
-
-pub const ACTION_NEW_LIST_MEMBER: ActionSpec = ActionSpec {
-    id: "add",
-    label: "New list member",
-    key: Some('n'),
-    enter: false,
-    needs_selection: false,
-    danger: false,
-    kind: ActionKind::Create,
-    when: ActionWhen::Always,
-};
-
-/// Interface list *definitions* (`/interface/list`). Do not reuse for other `LIST_ACTIONS` screens.
-pub const INTERFACE_LIST_DEF_ACTIONS: &[ActionSpec] =
-    &[ACTION_NEW_LIST, ACTION_EDIT, ACTION_COPY, ACTION_REMOVE];
-
-/// Interface list membership (`/interface/list/member`).
-pub const INTERFACE_LIST_MEMBER_ACTIONS: &[ActionSpec] = &[
-    ACTION_NEW_LIST_MEMBER,
-    ACTION_EDIT,
-    ACTION_TOGGLE,
-    ACTION_COPY,
-    ACTION_REMOVE,
-];
 
 pub const ACTION_SIGN: ActionSpec = ActionSpec {
     id: "sign",
@@ -575,16 +534,6 @@ pub const ACTION_SCAN: ActionSpec = ActionSpec {
     when: ActionWhen::HasSelection,
 };
 
-pub const RADIO_ACTIONS: &[ActionSpec] = &[
-    ACTION_ADD,
-    ACTION_EDIT,
-    ACTION_TOGGLE,
-    ACTION_COPY,
-    ACTION_REMOVE,
-    ACTION_RESET,
-    ACTION_SCAN,
-];
-
 pub const ACTION_AT_CHAT: ActionSpec = ActionSpec {
     id: "at-chat",
     label: "AT chat",
@@ -598,11 +547,7 @@ pub const ACTION_AT_CHAT: ActionSpec = ActionSpec {
     when: ActionWhen::HasSelection,
 };
 
-pub const LTE_ACTIONS: &[ActionSpec] = &[ACTION_EDIT, ACTION_TOGGLE, ACTION_RESET, ACTION_AT_CHAT];
-
 pub const SINGLETON_EDIT_ACTIONS: &[ActionSpec] = &[ACTION_EDIT];
-
-pub const VRF_ACTIONS: &[ActionSpec] = &[ACTION_ADD, ACTION_EDIT, ACTION_COPY, ACTION_REMOVE];
 
 /// Firewall / bridge filter / NAT / mangle / switch rules.
 pub const FILTER_ACTIONS: &[ActionSpec] = &[
@@ -1184,32 +1129,10 @@ pub const SMS_ACTIONS: &[ActionSpec] = &[ACTION_SMS];
 /// Static ARP: add/edit/remove including dynamic rows.
 pub const ARP_ACTIONS: &[ActionSpec] = &[ACTION_ADD, ACTION_EDIT, ACTION_REMOVE_SELECTED];
 
-/// Create targets offered from the generic Interface screen.
-pub const INTERFACE_CREATE_TARGETS: &[(&str, &str)] = &[
-    ("vlan", "VLAN"),
-    ("eoip", "EoIP Tunnel"),
-    ("ipip", "IP Tunnel"),
-    ("gre", "GRE Tunnel"),
-    ("vxlan", "VXLAN"),
-    ("vrrp", "VRRP"),
-    ("bonding", "Bonding"),
-    ("macvlan", "MACVLAN"),
-    ("veth", "VETH"),
-    ("macsec", "MACsec"),
-    ("macsec-profiles", "MACsec Profile"),
-    ("lte-apn", "LTE APN"),
-    ("interface-lists", "Lists"),
-    ("interface-list-members", "List members"),
-    ("vrf", "VRF"),
-    ("wifi", "WiFi"),
-    ("6to4", "6to4 Tunnel"),
-    ("sit", "SIT Tunnel"),
-    ("gre6", "GRE6 Tunnel"),
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::features::interfaces::actions::INTERFACE_CREATE_TARGETS;
 
     #[test]
     fn slave_and_dynamic_hide_remove() {

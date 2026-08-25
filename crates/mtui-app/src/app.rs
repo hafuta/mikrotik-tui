@@ -10,8 +10,9 @@ use mtui_config::{
     PlatformCredentialStore, Profile, ProfileStore, read_ca_file, shared_log_store,
 };
 use mtui_core::{
-    ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet, installed_package_names,
-    resource_by_id, unavailable_menus_for_device,
+    ALL_RESOURCES, DASHBOARD_ID, ResourceSpec, ThemeRegistry, ThemeSet,
+    edit_resource_for_interface_type, installed_package_names, resource_by_id,
+    unavailable_menus_for_device,
 };
 
 use mtui_routeros::{
@@ -210,6 +211,14 @@ pub enum AppCommand {
         resource_id: String,
         value_key: String,
     },
+    FetchFormRecord {
+        session: SessionId,
+        request_id: u64,
+        generation: u64,
+        resource_id: String,
+        endpoint: String,
+        id: String,
+    },
     ListLocalDir {
         session: SessionId,
         generation: u64,
@@ -243,6 +252,7 @@ impl AppCommand {
             | Self::WriteLocalFile { session, .. }
             | Self::FetchRecord { session, .. }
             | Self::FetchLookup { session, .. }
+            | Self::FetchFormRecord { session, .. }
             | Self::ListLocalDir { session, .. }
             | Self::FetchSafeMode { session, .. } => Some(*session),
         }
@@ -268,6 +278,7 @@ impl AppCommand {
             | Self::WriteLocalFile { session, .. }
             | Self::FetchRecord { session, .. }
             | Self::FetchLookup { session, .. }
+            | Self::FetchFormRecord { session, .. }
             | Self::ListLocalDir { session, .. }
             | Self::FetchSafeMode { session, .. } => *session = id,
         }
@@ -1344,7 +1355,7 @@ impl App {
                 if announce {
                     self.status = resource_id;
                 }
-                Vec::new()
+                self.hydrate_selected_typed_interface()
             }
             WorkerMsg::DashboardResult {
                 generation,
@@ -1427,6 +1438,15 @@ impl App {
                 }
                 Vec::new()
             }
+            WorkerMsg::FormRecordResult {
+                request_id,
+                generation,
+                resource_id,
+                id,
+                fields,
+                error,
+                ..
+            } => self.apply_form_record(request_id, generation, &resource_id, &id, fields, error),
             WorkerMsg::ListLocalDirResult {
                 generation,
                 dir,
@@ -1478,7 +1498,7 @@ impl App {
                 let visible = self.inspector_visible_rows();
                 self.inspector.clamp_to_visible(visible);
                 self.note_data_ok();
-                Vec::new()
+                self.hydrate_selected_typed_interface()
             }
             WorkerMsg::WanSample {
                 generation,
@@ -2011,13 +2031,77 @@ impl App {
     pub(crate) fn refresh_inspector(&mut self, preserve_offset: bool) {
         let offset = self.inspector.offset;
         let selected = self.inspector.selected;
-        self.inspector = InspectorState::from_row(self.table.selected_row());
+        let spec = resource_by_id(&self.current_resource);
+        let typed = spec.filter(|item| item.id == "interfaces").and_then(|_| {
+            self.table
+                .selected_row()
+                .and_then(|row| row.get("type"))
+                .and_then(|iface_type| edit_resource_for_interface_type(iface_type))
+                .and_then(resource_by_id)
+        });
+        let (schema_id, schema) = typed.map_or_else(
+            || (spec.map(|item| item.id), spec.and_then(|item| item.form)),
+            |item| (Some(item.id), item.form),
+        );
+        self.inspector =
+            InspectorState::from_row_with_schema_for(self.table.selected_row(), schema_id, schema);
         if preserve_offset {
             self.inspector.selected = selected;
             self.inspector.offset = offset;
             let visible = self.inspector_visible_rows();
             self.inspector.clamp_to_visible(visible);
         }
+    }
+
+    fn apply_form_record(
+        &mut self,
+        request_id: u64,
+        generation: u64,
+        resource_id: &str,
+        id: &str,
+        fields: Option<HashMap<String, String>>,
+        error: Option<String>,
+    ) -> Vec<AppCommand> {
+        if generation != self.poll_generation {
+            return Vec::new();
+        }
+        if let Overlay::Form(session) = &mut self.overlay
+            && session.hydrate_request_id == Some(request_id)
+            && session.resource_id == resource_id
+            && session.record_id == id
+        {
+            session.hydrate_request_id = None;
+            if let Some(err) = error {
+                session.error = Some(err);
+            } else if let Some(ref row) = fields
+                && let Some(schema) = resource_by_id(resource_id).and_then(|spec| spec.form)
+            {
+                session.absorb_record(row, schema);
+                session.clamp(schema);
+            }
+        }
+        if let Some(row) = fields {
+            let selected = self
+                .table
+                .selected_row()
+                .and_then(|row| row.get(".id"))
+                .map(String::as_str)
+                == Some(id);
+            for table_row in &mut self.table.rows {
+                if table_row.get(".id").map(String::as_str) == Some(id) {
+                    for (key, value) in row {
+                        if key != ".id" {
+                            table_row.insert(key, value);
+                        }
+                    }
+                    break;
+                }
+            }
+            if selected {
+                self.refresh_inspector(true);
+            }
+        }
+        Vec::new()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2798,7 +2882,7 @@ mod palette_catalog_tests {
             );
         }
         assert_eq!(by_id["dashboard"].title, "Dashboard");
-        for spec in ALL_RESOURCES {
+        for spec in ALL_RESOURCES.iter() {
             let command = by_id
                 .get(spec.id)
                 .unwrap_or_else(|| panic!("missing palette command for {}", spec.id));
@@ -2814,6 +2898,13 @@ mod secret_mask_tests {
     use super::*;
     use crate::event::{AppEvent, WorkerMsg};
     use mtui_routeros::{MASKED_VALUE, Resource};
+
+    fn assert_inspector_hides_markers(fields: &[(String, String)]) {
+        assert!(
+            !fields.iter().any(|(_, value)| value.contains("MARKER")),
+            "{fields:?}"
+        );
+    }
 
     #[test]
     fn resource_rows_mask_marker_secrets_before_table_and_inspector() {
@@ -2850,17 +2941,22 @@ mod secret_mask_tests {
             table_row.get("preshared-key").map(String::as_str),
             Some(MASKED_VALUE)
         );
+        assert_inspector_hides_markers(&app.inspector.fields);
         assert!(
             app.inspector
                 .fields
                 .iter()
-                .all(|(key, value)| { key == "name" || value == MASKED_VALUE })
+                .any(|(label, value)| { label == "Private key" && value == MASKED_VALUE }),
+            "{:?}",
+            app.inspector.fields
         );
         assert!(
-            !app.inspector
+            app.inspector
                 .fields
                 .iter()
-                .any(|(_, value)| value.contains("MARKER"))
+                .any(|(label, value)| { label == "preshared-key" && value == MASKED_VALUE }),
+            "{:?}",
+            app.inspector.fields
         );
     }
 
@@ -2895,16 +2991,14 @@ mod secret_mask_tests {
             table_row.get("password").map(String::as_str),
             Some(MASKED_VALUE)
         );
+        assert_inspector_hides_markers(&app.inspector.fields);
         assert!(
-            app.inspector.fields.iter().all(|(key, value)| {
-                key == "name" || key == "read-only" || value == MASKED_VALUE
-            })
-        );
-        assert!(
-            !app.inspector
+            app.inspector
                 .fields
                 .iter()
-                .any(|(_, value)| value.contains("MARKER"))
+                .any(|(label, value)| { label == "Password" && value == MASKED_VALUE }),
+            "{:?}",
+            app.inspector.fields
         );
     }
 

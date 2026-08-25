@@ -97,7 +97,7 @@ impl Sentence {
         Error::trap(kind, operation, category, message)
     }
 
-    /// Redacted one-line form for application logs (never dumps full `!re` tables).
+    /// Redacted one-line form for logs. Secret attribute values are masked.
     #[must_use]
     pub fn log_line(&self) -> String {
         let mut parts = Vec::with_capacity(self.words.len());
@@ -223,6 +223,22 @@ mod tests {
         let line = sentence.log_line();
         assert!(!line.contains("hunter2"));
         assert!(line.contains("password"));
+    }
+
+    #[test]
+    fn log_line_keeps_non_secret_re_attributes() {
+        let sentence = Sentence::new(vec![
+            "!re".into(),
+            "=.id=*1".into(),
+            "=name=ether1".into(),
+            "=poe-out=auto-on".into(),
+            ".tag=2".into(),
+        ]);
+        let line = sentence.log_line();
+        assert!(line.contains("!re"));
+        assert!(line.contains("=name=ether1"));
+        assert!(line.contains("=poe-out=auto-on"));
+        assert!(line.contains(".tag=2"));
     }
 
     #[test]
