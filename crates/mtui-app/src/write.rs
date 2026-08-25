@@ -1859,6 +1859,175 @@ mod tests {
         assert!(matches!(app.overlay, Overlay::None));
     }
 
+    fn ospf_interface_row(id: &str, address: &str, state: &str) -> Resource {
+        let mut fields = HashMap::new();
+        fields.insert("address".into(), address.into());
+        fields.insert("area".into(), "backbone".into());
+        fields.insert("state".into(), state.into());
+        fields.insert("network-type".into(), "broadcast".into());
+        fields.insert("cost".into(), "10".into());
+        Resource {
+            id: id.into(),
+            fields,
+        }
+    }
+
+    #[test]
+    fn ospf_interface_json_optional_fields_and_malformed() {
+        let cases: &[(&str, bool, Option<&str>, Option<&str>)] = &[
+            (
+                r#"{".id":"*1","address":"10.1.1.1%ether1","area":"backbone","state":"dr","cost":"10","bdr":"10.1.1.2"}"#,
+                true,
+                Some("10.1.1.1%ether1"),
+                Some("10.1.1.2"),
+            ),
+            (
+                r#"{".id":"*2","address":"172.16.1.1%gre1","area":"backbone","state":"ptp","network-type":"ptp"}"#,
+                true,
+                Some("172.16.1.1%gre1"),
+                None,
+            ),
+            (
+                r#"{"address":"10.0.0.1%lo"}"#,
+                true,
+                Some("10.0.0.1%lo"),
+                None,
+            ),
+            (r#"{".id":"*3","cost":10}"#, false, None, None),
+            ("[", false, None, None),
+        ];
+        for (json, ok, address, bdr) in cases {
+            let parsed: Result<Resource, _> = serde_json::from_str(json);
+            assert_eq!(parsed.is_ok(), *ok, "{json}");
+            if *ok {
+                let row = parsed.expect("resource");
+                assert_eq!(row.field("address"), *address, "{json}");
+                assert_eq!(row.field("bdr"), *bdr, "{json}");
+            }
+        }
+    }
+
+    #[test]
+    fn ospf_interface_enter_opens_readonly_sheet_and_n_does_not_add() {
+        let mut app = load_named_rows(
+            "ospf-interfaces",
+            vec![ospf_interface_row("*oi1", "10.0.0.1%ether2", "dr")],
+        );
+        let hints = app.footer_action_hints();
+        assert!(
+            hints.iter().any(|(key, _)| key == "e"),
+            "inspect should be offered: {hints:?}"
+        );
+        assert!(
+            !hints.iter().any(|(key, _)| key == "n"),
+            "runtime menu must not add: {hints:?}"
+        );
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('n'))));
+        assert!(matches!(app.overlay, Overlay::None));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected inspect sheet, got {:?}", app.overlay);
+        };
+        assert_eq!(session.resource_id, "ospf-interfaces");
+        assert_eq!(session.mode, mtui_ui::FormMode::Edit);
+        assert_eq!(
+            session.values.get("address").map(String::as_str),
+            Some("10.0.0.1%ether2")
+        );
+        assert_eq!(session.values.get("state").map(String::as_str), Some("dr"));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('x'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("sheet should stay open");
+        };
+        assert_eq!(
+            session.values.get("address").map(String::as_str),
+            Some("10.0.0.1%ether2")
+        );
+        assert!(!session.is_dirty());
+        let cmds = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL,
+        )));
+        assert!(cmds.is_empty());
+        assert!(matches!(app.overlay, Overlay::None));
+        assert_eq!(app.status, "No changes");
+    }
+
+    #[test]
+    fn ospf_interface_empty_enter_does_not_open_sheet() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("ospf-interfaces");
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(matches!(app.overlay, Overlay::None));
+    }
+
+    #[test]
+    fn ospf_interface_keeps_rows_on_error_and_ignores_stale() {
+        let mut app = load_named_rows(
+            "ospf-interfaces",
+            vec![
+                ospf_interface_row("*oi1", "10.0.0.1%ether2", "dr"),
+                ospf_interface_row("*oi2", "10.0.0.1%lo", "passive"),
+            ],
+        );
+        app.table.selected = 1;
+        let selected = app
+            .table
+            .selected_row()
+            .and_then(|row| row.get(".id").cloned());
+        assert_eq!(selected.as_deref(), Some("*oi2"));
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "ospf-interfaces".into(),
+            rows: vec![ospf_interface_row("*oi1", "10.0.0.1%ether2", "dr")],
+            error: Some("failure: timeout".into()),
+        }));
+        assert_eq!(app.table.rows.len(), 2);
+        assert!(app.status.contains("Refresh failed"));
+        let stale_generation = app.poll_generation;
+        app.poll_generation = stale_generation.wrapping_add(1);
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: stale_generation,
+            resource_id: "ospf-interfaces".into(),
+            rows: vec![ospf_interface_row("*oi9", "192.0.2.1%ether9", "down")],
+            error: None,
+        }));
+        assert_eq!(app.table.rows.len(), 2);
+        assert_eq!(
+            app.table
+                .selected_row()
+                .and_then(|row| row.get(".id").map(String::as_str)),
+            Some("*oi2")
+        );
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "ospf-interfaces".into(),
+            rows: vec![
+                ospf_interface_row("*oi1", "10.0.0.1%ether2", "bdr"),
+                ospf_interface_row("*oi2", "10.0.0.1%lo", "passive"),
+            ],
+            error: None,
+        }));
+        assert_eq!(
+            app.table
+                .selected_row()
+                .and_then(|row| row.get(".id").map(String::as_str)),
+            Some("*oi2")
+        );
+        assert_eq!(
+            app.table.rows[0].get("state").map(String::as_str),
+            Some("bdr")
+        );
+    }
+
     fn certificates_loaded() -> App {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;

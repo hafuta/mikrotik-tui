@@ -6,12 +6,13 @@
 //! - `ospf-instances` → `/rest/routing/ospf/instance` (`OSPF_INSTANCE_FORM`)
 //! - `ospf-areas` → `/rest/routing/ospf/area` (`MEMBER_ACTIONS`, `OSPF_AREA_FORM`)
 //! - `ospf-interface-templates` → `/rest/routing/ospf/interface-template` (`MEMBER_ACTIONS`, `OSPF_INTERFACE_TEMPLATE_FORM`)
+//! - `ospf-interfaces` → `/rest/routing/ospf/interface` (`ACTION_EDIT`, `OSPF_INTERFACE_FORM`, Status-only)
 //! - `bgp-connections` → `/rest/routing/bgp/connection` (`BGP_CONNECTION_FORM`)
 //! - `bgp-templates` → `/rest/routing/bgp/template` (`MEMBER_ACTIONS`, `BGP_TEMPLATE_FORM`)
 //!
 //! Group id: `routing-group`.
-//! `RouterOS` 7 OSPF interface config is `/routing/ospf/interface-template`; there is no
-//! `/routing/ospf/interface` form.
+//! `RouterOS` 7 writes OSPF interface parameters on `/routing/ospf/interface-template`.
+//! `/routing/ospf/interface` is the matched live object (cost, state, DR/BDR).
 
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
@@ -47,6 +48,21 @@ const LOOKUP_IFACES: FieldKind = FieldKind::Lookup {
 };
 
 const OSPF_AREA_TYPE_VALUES: &[&str] = &["backbone", "standard", "stub", "nssa"];
+const OSPF_NETWORK_TYPE_VALUES: &[&str] = &[
+    "broadcast",
+    "nbma",
+    "ptp",
+    "ptmp",
+    "ptp-unnumbered",
+    "virtual-link",
+];
+const OSPF_NETWORK_TYPE: FieldSpec = f!(
+    "type",
+    "Type",
+    FieldKind::Enum {
+        values: OSPF_NETWORK_TYPE_VALUES,
+    }
+);
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
@@ -163,7 +179,7 @@ pub static OSPF_INTERFACE_TEMPLATE_FORM: FormSchema = FormSchema {
             OSPF_INSTANCE,
             OSPF_AREA,
             f!("interfaces", "Interfaces", LOOKUP_IFACES),
-            f!("type", "Type", FieldKind::Text),
+            OSPF_NETWORK_TYPE,
             COMMENT,
             DISABLED,
         ],
@@ -174,6 +190,37 @@ pub static OSPF_INTERFACE_TEMPLATE_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[OSPF_INSTANCE, OSPF_AREA],
     }],
+};
+
+/// Live `/routing/ospf/interface` rows. `RouterOS` marks this menu read-only.
+pub static OSPF_INTERFACE_FORM: FormSchema = FormSchema {
+    title_key: "address",
+    subtitle_keys: &["state"],
+    sections: &[FormSection {
+        id: "status",
+        label: "Status",
+        read_only: true,
+        fields: &[
+            f!("address", "Address", FieldKind::Readonly),
+            f!("area", "Area", FieldKind::Readonly),
+            f!("state", "State", FieldKind::Readonly),
+            f!("network-type", "Network Type", FieldKind::Readonly),
+            f!("cost", "Cost", FieldKind::Readonly),
+            f!("priority", "Priority", FieldKind::Readonly),
+            f!("dr", "DR", FieldKind::Readonly),
+            f!("bdr", "BDR", FieldKind::Readonly),
+            f!("hello-interval", "Hello Interval", FieldKind::Readonly),
+            f!("dead-interval", "Dead Interval", FieldKind::Readonly),
+            f!(
+                "retransmit-interval",
+                "Retransmit Interval",
+                FieldKind::Readonly
+            ),
+            f!("transmit-delay", "Transmit Delay", FieldKind::Readonly),
+            f!("dynamic", "Dynamic", FieldKind::Readonly),
+        ],
+    }],
+    create_sections: &[],
 };
 
 pub static BGP_CONNECTION_FORM: FormSchema = FormSchema {
@@ -349,7 +396,7 @@ pub static ROUTING_ID_FORM: FormSchema = FormSchema {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forms::patch_body;
+    use crate::forms::{extra_status_fields, patch_body};
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
@@ -479,7 +526,159 @@ mod tests {
                 "disabled",
             ]
         );
+        assert_eq!(
+            OSPF_INTERFACE_TEMPLATE_FORM
+                .field("type")
+                .map(|field| field.kind),
+            Some(FieldKind::Enum {
+                values: OSPF_NETWORK_TYPE_VALUES
+            })
+        );
         assert!(OSPF_INTERFACE_TEMPLATE_FORM.field("interface").is_none());
+        assert!(OSPF_INTERFACE_TEMPLATE_FORM.field("cost").is_none());
+        assert!(OSPF_INTERFACE_TEMPLATE_FORM.field("state").is_none());
+    }
+
+    #[test]
+    fn ospf_interface_runtime_form_is_status_only() {
+        assert!(OSPF_INTERFACE_FORM.create_sections.is_empty());
+        assert!(OSPF_INTERFACE_FORM.writable_keys().is_empty());
+        assert_eq!(OSPF_INTERFACE_FORM.sections.len(), 1);
+        assert_eq!(OSPF_INTERFACE_FORM.sections[0].id, "status");
+        assert!(OSPF_INTERFACE_FORM.sections[0].read_only);
+        assert!(
+            OSPF_INTERFACE_FORM
+                .sections
+                .iter()
+                .all(|section| section.id != "advanced")
+        );
+        for field in OSPF_INTERFACE_FORM.sections[0].fields {
+            assert_eq!(field.kind, FieldKind::Readonly, "{}", field.key);
+        }
+        assert_eq!(
+            OSPF_INTERFACE_FORM
+                .field("address")
+                .map(|field| field.label),
+            Some("Address")
+        );
+        assert_eq!(
+            OSPF_INTERFACE_FORM
+                .field("network-type")
+                .map(|field| field.label),
+            Some("Network Type")
+        );
+        assert_eq!(
+            OSPF_INTERFACE_FORM
+                .field("hello-interval")
+                .map(|field| field.label),
+            Some("Hello Interval")
+        );
+        assert!(OSPF_INTERFACE_FORM.field("interfaces").is_none());
+        assert!(OSPF_INTERFACE_FORM.field("disabled").is_none());
+        assert!(OSPF_INTERFACE_FORM.field("type").is_none());
+        assert!(
+            OSPF_INTERFACE_FORM
+                .sections
+                .iter()
+                .flat_map(|section| section.fields)
+                .all(|field| !matches!(
+                    field.kind,
+                    FieldKind::Text
+                        | FieldKind::Enum { .. }
+                        | FieldKind::Lookup { .. }
+                        | FieldKind::Repeat
+                        | FieldKind::Toggle
+                        | FieldKind::Number
+                        | FieldKind::Secret
+                ))
+        );
+    }
+
+    #[test]
+    fn ospf_interface_runtime_rows_keep_optional_fields() {
+        struct Case {
+            name: &'static str,
+            fields: &'static [(&'static str, &'static str)],
+            address: Option<&'static str>,
+            bdr: Option<&'static str>,
+            extra: &'static [&'static str],
+        }
+        let cases = [
+            Case {
+                name: "broadcast dr",
+                fields: &[
+                    ("address", "10.1.1.1%ether1"),
+                    ("area", "backbone"),
+                    ("state", "dr"),
+                    ("network-type", "broadcast"),
+                    ("cost", "10"),
+                    ("bdr", "10.1.1.2"),
+                ],
+                address: Some("10.1.1.1%ether1"),
+                bdr: Some("10.1.1.2"),
+                extra: &[],
+            },
+            Case {
+                name: "ptp omits dr bdr",
+                fields: &[
+                    ("address", "172.16.1.1%gre1"),
+                    ("area", "backbone"),
+                    ("state", "ptp"),
+                    ("network-type", "ptp"),
+                    ("cost", "1"),
+                ],
+                address: Some("172.16.1.1%gre1"),
+                bdr: None,
+                extra: &[],
+            },
+            Case {
+                name: "unknown instance key is a status extra",
+                fields: &[
+                    ("address", "10.0.0.1%loopback"),
+                    ("area", "backbone"),
+                    ("state", "passive"),
+                    ("instance", "ospf-main"),
+                ],
+                address: Some("10.0.0.1%loopback"),
+                bdr: None,
+                extra: &["instance"],
+            },
+        ];
+        for case in cases {
+            let row: HashMap<String, String> = case
+                .fields
+                .iter()
+                .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+                .collect();
+            assert_eq!(
+                row.get("address").map(String::as_str),
+                case.address,
+                "{}",
+                case.name
+            );
+            assert_eq!(
+                row.get("bdr").map(String::as_str),
+                case.bdr,
+                "{}",
+                case.name
+            );
+            let extras = extra_status_fields(&OSPF_INTERFACE_FORM, &row);
+            let extra_keys: Vec<&str> = extras.iter().map(|(key, _)| key.as_str()).collect();
+            assert_eq!(extra_keys, case.extra, "{}", case.name);
+        }
+    }
+
+    #[test]
+    fn ospf_interface_runtime_never_encodes_a_patch() {
+        let mut original = HashMap::new();
+        original.insert("address".into(), "10.1.1.1%ether1".into());
+        original.insert("cost".into(), "10".into());
+        original.insert("state".into(), "dr".into());
+        let mut current = original.clone();
+        current.insert("cost".into(), "20".into());
+        current.insert("state".into(), "bdr".into());
+        let body = patch_body(&OSPF_INTERFACE_FORM, &original, &current, "********");
+        assert!(body.is_empty(), "{body:?}");
     }
 
     #[test]

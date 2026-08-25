@@ -3555,7 +3555,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
     ResourceSpec {
         id: "ospf-interface-templates",
         group: "routing-group",
-        label: "OSPF Interfaces",
+        label: "OSPF Interface Templates",
         fetch: FetchKind::List {
             endpoint: "/rest/routing/ospf/interface-template",
         },
@@ -3570,6 +3570,26 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         refresh: Duration::from_secs(15),
         actions: crate::actions::MEMBER_ACTIONS,
         form: Some(&crate::routing_write::OSPF_INTERFACE_TEMPLATE_FORM),
+    },
+    ResourceSpec {
+        id: "ospf-interfaces",
+        group: "routing-group",
+        label: "OSPF Interface",
+        fetch: FetchKind::List {
+            endpoint: "/rest/routing/ospf/interface",
+        },
+        columns: &[
+            col!("address", "Address", 22),
+            col!("area", "Area", 12),
+            col!("state", "State", 10),
+            col!("network-type", "Type", 12),
+            col!("cost", "Cost", 6),
+            col!("dr", "DR", 16),
+            col!("bdr", "BDR", 16),
+        ],
+        refresh: Duration::from_secs(5),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::routing_write::OSPF_INTERFACE_FORM),
     },
     ResourceSpec {
         id: "bgp-connections",
@@ -4232,6 +4252,60 @@ mod tests {
     }
 
     #[test]
+    fn ospf_interface_runtime_is_not_the_template_menu() {
+        let live = resource_by_id("ospf-interfaces").expect("ospf-interfaces");
+        let templates =
+            resource_by_id("ospf-interface-templates").expect("ospf-interface-templates");
+        assert!(!live.is_singleton());
+        assert_eq!(live.endpoint(), "/rest/routing/ospf/interface");
+        assert_eq!(live.cli_path(), "/routing/ospf/interface");
+        assert_eq!(live.group, "routing-group");
+        assert_eq!(live.label, "OSPF Interface");
+        assert_eq!(templates.label, "OSPF Interface Templates");
+        assert_eq!(
+            templates.endpoint(),
+            "/rest/routing/ospf/interface-template"
+        );
+        assert_ne!(live.endpoint(), templates.endpoint());
+        assert_eq!(
+            live.actions
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>(),
+            ["edit"]
+        );
+        assert!(live.form.is_some());
+        assert!(
+            live.form
+                .is_some_and(|form| form.writable_keys().is_empty())
+        );
+        assert!(
+            templates
+                .form
+                .is_some_and(|form| !form.writable_keys().is_empty())
+        );
+        assert_eq!(
+            column_keys("ospf-interfaces"),
+            [
+                "address",
+                "area",
+                "state",
+                "network-type",
+                "cost",
+                "dr",
+                "bdr",
+            ]
+        );
+        assert!(!column_keys("ospf-interface-templates").contains(&"cost"));
+        assert!(!column_keys("ospf-interface-templates").contains(&"state"));
+        assert!(!column_keys("ospf-interfaces").contains(&"interfaces"));
+        assert!(!column_keys("ospf-interfaces").contains(&"disabled"));
+        let neighbors = resource_by_id("ospf-neighbors").expect("ospf-neighbors");
+        assert!(neighbors.form.is_none());
+        assert!(neighbors.actions.is_empty());
+    }
+
+    #[test]
     fn ping_and_traceroute_are_local_fetch() {
         let ping = resource_by_id("ping").expect("ping");
         let traceroute = resource_by_id("traceroute").expect("traceroute");
@@ -4821,6 +4895,7 @@ mod tests {
                 "ospf-instances",
                 "ospf-areas",
                 "ospf-interface-templates",
+                "ospf-interfaces",
                 "bgp-connections",
                 "bgp-templates",
                 "rip-instances",

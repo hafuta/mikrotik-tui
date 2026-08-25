@@ -2387,6 +2387,48 @@ mod tests {
     }
 
     #[test]
+    fn ospf_interface_status_sheet_hides_tabs_and_pins_hints() {
+        let spec = mtui_core::resource_by_id("ospf-interfaces").expect("ospf-interfaces");
+        let schema = spec.form.expect("status form");
+        let mut row = HashMap::new();
+        row.insert("address".into(), "10.1.1.1%ether1".into());
+        row.insert("area".into(), "backbone".into());
+        row.insert("state".into(), "dr".into());
+        row.insert("network-type".into(), "broadcast".into());
+        row.insert("cost".into(), "10".into());
+        row.insert("hello-interval".into(), "10s".into());
+        row.insert("instance".into(), "default".into());
+        let session = FormSession::edit(spec.id, "*1", &row, schema);
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, schema, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(rendered.contains("Address"), "{rendered}");
+        assert!(rendered.contains("Network Type"), "{rendered}");
+        assert!(rendered.contains("Hello Interval"), "{rendered}");
+        assert!(rendered.contains("10.1.1.1%ether1"), "{rendered}");
+        assert!(rendered.contains("instance"), "{rendered}");
+        assert!(!rendered.contains("[1 Status]"), "{rendered}");
+        assert!(rendered.contains("esc"), "{rendered}");
+        assert!(
+            rendered.contains("read only") || rendered.contains("ctrl+s"),
+            "{rendered}"
+        );
+    }
+
+    #[test]
     fn sign_prompt_shows_ca_field() {
         let session = FormSession::prompt_with(
             "certificates",
