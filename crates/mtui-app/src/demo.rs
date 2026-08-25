@@ -637,6 +637,87 @@ impl DemoStore {
             )],
         );
         self.rows.insert(
+            "romon".into(),
+            vec![resource(
+                "",
+                &[
+                    ("enabled", "false"),
+                    ("id", "00:00:00:00:00:00"),
+                    ("secrets", "demo-romon-secret"),
+                    ("current-id", "74:4D:28:00:00:01"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "romon-ports".into(),
+            vec![
+                resource(
+                    "*rp1",
+                    &[
+                        ("interface", "all"),
+                        ("forbid", "false"),
+                        ("cost", "100"),
+                        ("secrets", ""),
+                        ("disabled", "false"),
+                    ],
+                ),
+                resource(
+                    "*rp2",
+                    &[
+                        ("interface", "ether1"),
+                        ("forbid", "false"),
+                        ("cost", "200"),
+                        ("secrets", ""),
+                        ("disabled", "false"),
+                        ("comment", "WAN"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "graphing".into(),
+            vec![resource(
+                "",
+                &[("store-every", "5min"), ("page-refresh", "300")],
+            )],
+        );
+        self.rows.insert(
+            "graphing-interface".into(),
+            vec![resource(
+                "*gi1",
+                &[
+                    ("interface", "all"),
+                    ("allow-address", "0.0.0.0/0"),
+                    ("store-on-disk", "true"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "graphing-queue".into(),
+            vec![resource(
+                "*gq1",
+                &[
+                    ("simple-queue", "all"),
+                    ("allow-address", "0.0.0.0/0"),
+                    ("allow-target", "true"),
+                    ("store-on-disk", "true"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "graphing-resource".into(),
+            vec![resource(
+                "*gr1",
+                &[
+                    ("allow-address", "192.0.2.0/24"),
+                    ("store-on-disk", "false"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
             "safe-mode".into(),
             vec![resource(
                 "",
@@ -1037,6 +1118,40 @@ mod tests {
             store.rows("igmp-proxy-mfc")[0].field("group"),
             Some("239.1.1.1")
         );
+    }
+
+    #[test]
+    fn demo_romon_and_graphing_are_seeded() {
+        let mut store = DemoStore::new();
+        let romon = store.rows("romon");
+        assert_eq!(romon.len(), 1);
+        assert_eq!(romon[0].id, "");
+        assert_eq!(romon[0].field("enabled"), Some("false"));
+        assert_eq!(romon[0].field("secrets"), Some("demo-romon-secret"));
+        assert_eq!(store.rows("romon-ports").len(), 2);
+        assert_eq!(
+            store.lookup_values("romon-ports", "interface"),
+            vec!["all".to_string(), "ether1".to_string()]
+        );
+        assert_eq!(store.rows("graphing")[0].field("store-every"), Some("5min"));
+        assert_eq!(store.rows("graphing-interface").len(), 1);
+        assert_eq!(
+            store.rows("graphing-queue")[0].field("simple-queue"),
+            Some("all")
+        );
+        assert_eq!(
+            store.rows("graphing-resource")[0].field("allow-address"),
+            Some("192.0.2.0/24")
+        );
+        assert_eq!(
+            store.apply(&MutationOp::Patch {
+                endpoint: "/rest/tool/romon".into(),
+                id: None,
+                fields: BTreeMap::from([("enabled".into(), "true".into())]),
+            }),
+            Ok(())
+        );
+        assert_eq!(store.rows("romon")[0].field("enabled"), Some("true"));
     }
 
     #[test]

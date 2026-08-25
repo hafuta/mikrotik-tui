@@ -2882,6 +2882,49 @@ mod secret_mask_tests {
     }
 
     #[test]
+    fn romon_secrets_are_masked_in_table_and_inspector() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("romon");
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("enabled".into(), "true".into());
+        fields.insert("id".into(), "00:00:00:00:00:00".into());
+        fields.insert("secrets".into(), "MARKER-SECRET".into());
+        fields.insert("current-id".into(), "74:4D:28:00:00:01".into());
+        let row = Resource {
+            id: String::new(),
+            fields,
+        };
+
+        let cmds = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "romon".into(),
+            rows: vec![row],
+            error: None,
+        }));
+        assert!(cmds.is_empty());
+
+        let table_row = app.table.selected_row().expect("row");
+        assert_eq!(
+            table_row.get("secrets").map(String::as_str),
+            Some(MASKED_VALUE)
+        );
+        assert_eq!(
+            table_row.get("current-id").map(String::as_str),
+            Some("74:4D:28:00:00:01")
+        );
+        assert!(
+            !app.inspector
+                .fields
+                .iter()
+                .any(|(_, value)| value.contains("MARKER"))
+        );
+    }
+
+    #[test]
     fn y_key_copies_current_row_to_clipboard() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
