@@ -572,11 +572,16 @@ pub(crate) fn overlay_scroll_max(app: &App) -> u16 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use mtui_routeros::Resource;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
     use super::draw;
     use crate::app::{App, Overlay, Screen};
+    use crate::event::{AppEvent, WorkerMsg};
     use crate::safe_mode::SafeModeAfter;
     use crate::session::LinkState;
 
@@ -637,12 +642,6 @@ mod tests {
 
     #[test]
     fn bulk_confirm_on_interfaces_is_a_centered_overlay() {
-        use std::collections::HashMap;
-
-        use crate::event::{AppEvent, WorkerMsg};
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use mtui_routeros::Resource;
-
         fn row(id: &str, name: &str) -> Resource {
             let mut fields = HashMap::new();
             fields.insert("name".into(), name.into());
@@ -683,13 +682,6 @@ mod tests {
 
     #[test]
     fn narrow_interfaces_table_does_not_panic_with_checks() {
-        use std::collections::HashMap;
-
-        use crate::event::{AppEvent, WorkerMsg};
-        use mtui_routeros::Resource;
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
-
         let mut app = live_main();
         app.terminal_width = 40;
         app.terminal_height = 10;
@@ -717,12 +709,6 @@ mod tests {
 
     #[test]
     fn ipv6_firewall_connections_table_and_remove_overlay() {
-        use std::collections::HashMap;
-
-        use crate::event::{AppEvent, WorkerMsg};
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-        use mtui_routeros::Resource;
-
         let mut app = live_main();
         app.select_resource("ipv6-firewall-connections");
         let mut fields = HashMap::new();
@@ -770,5 +756,40 @@ mod tests {
         terminal
             .draw(|frame| draw(frame, &app))
             .expect("narrow connections draw");
+    }
+
+    #[test]
+    fn ospf_interface_inspect_overlay_is_centered_status_sheet() {
+        let mut app = live_main();
+        app.select_resource("ospf-interfaces");
+        let mut fields = HashMap::new();
+        fields.insert("address".into(), "10.1.1.1%ether1".into());
+        fields.insert("area".into(), "backbone".into());
+        fields.insert("state".into(), "dr".into());
+        fields.insert("network-type".into(), "broadcast".into());
+        fields.insert("cost".into(), "10".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "ospf-interfaces".into(),
+            rows: vec![Resource {
+                id: "*1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = crate::app::Pane::Content;
+        let _ = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        assert!(matches!(app.overlay, Overlay::Form(_)));
+        let rendered = canvas(&app);
+        assert!(rendered.contains("Address"), "{rendered}");
+        assert!(rendered.contains("Network Type"), "{rendered}");
+        assert!(rendered.contains("10.1.1.1%ether1"), "{rendered}");
+        assert!(!rendered.contains("[1 Status]"), "{rendered}");
+        assert!(rendered.contains("esc"), "{rendered}");
     }
 }

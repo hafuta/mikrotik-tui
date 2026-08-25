@@ -919,9 +919,16 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "ospf-interface-templates",
         "OSPF interface templates (RouterOS v7): which interfaces sit in which area.",
-        "Bind instance+area to one or more interfaces. There is no separate \
-         /routing/ospf/interface menu in v7.",
+        "Bind instance and area to one or more interfaces. Live cost and adjacency state \
+         are on OSPF Interface, not on this template.",
         "instance, area, interfaces, type, disabled."
+    ),
+    guide!(
+        "ospf-interfaces",
+        "Live OSPF interfaces after templates match: address, area, state, cost, and DR/BDR.",
+        "Watch interface state and metric. Change cost or network type on OSPF Interface \
+         Templates. Monitor-only; there is no Add.",
+        "address, area, state, network-type, cost, dr, bdr."
     ),
     guide!(
         "bgp-connections",
@@ -1636,6 +1643,25 @@ mod tests {
         assert!(
             !copy.body.contains('\u{2014}'),
             "about copy must not use em dashes"
+        );
+    }
+
+    #[test]
+    fn ospf_interface_guide_is_runtime_not_a_template() {
+        let live = about_copy("ospf-interfaces").expect("ospf-interfaces");
+        let templates = about_copy("ospf-interface-templates").expect("templates");
+        assert_eq!(live.title, "About OSPF Interface");
+        assert_eq!(templates.title, "About OSPF Interface Templates");
+        assert!(live.kicker.contains("/routing/ospf/interface"));
+        assert!(!live.kicker.contains("interface-template"));
+        assert!(templates.kicker.contains("interface-template"));
+        assert!(live.body.contains("Monitor-only"));
+        assert!(live.body.contains("cost"));
+        assert!(templates.body.contains("OSPF Interface"));
+        assert!(!templates.body.contains("no separate"));
+        assert!(
+            live.body
+                .contains("https://manual.mikrotik.com/docs/cli-reference/routing/ospf/interface/")
         );
     }
 }

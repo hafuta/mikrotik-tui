@@ -405,6 +405,51 @@ impl DemoStore {
             )],
         );
         self.rows.insert(
+            "ospf-interface-templates".into(),
+            vec![resource(
+                "*oi0",
+                &[
+                    ("instance", "default"),
+                    ("area", "backbone"),
+                    ("interfaces", "ether2"),
+                    ("type", "broadcast"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "ospf-interfaces".into(),
+            vec![
+                resource(
+                    "*oi1",
+                    &[
+                        ("address", "10.0.0.1%ether2"),
+                        ("area", "backbone"),
+                        ("state", "dr"),
+                        ("network-type", "broadcast"),
+                        ("cost", "10"),
+                        ("priority", "128"),
+                        ("dr", "10.0.0.1"),
+                        ("bdr", "10.0.0.2"),
+                        ("hello-interval", "10s"),
+                        ("dead-interval", "40s"),
+                        ("dynamic", "true"),
+                    ],
+                ),
+                resource(
+                    "*oi2",
+                    &[
+                        ("address", "10.0.0.1%lo"),
+                        ("area", "backbone"),
+                        ("state", "passive"),
+                        ("network-type", "broadcast"),
+                        ("cost", "1"),
+                        ("dynamic", "true"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
             "logs".into(),
             vec![
                 resource(
@@ -806,6 +851,12 @@ mod tests {
         assert_eq!(
             store.rows("ipv6-firewall-connections")[0].field("src-address"),
             Some("2001:db8:1::10")
+        );
+        assert_eq!(store.rows("ospf-interfaces").len(), 2);
+        assert_eq!(store.rows("ospf-interfaces")[0].field("state"), Some("dr"));
+        assert_eq!(
+            store.rows("ospf-interface-templates")[0].field("interfaces"),
+            Some("ether2")
         );
     }
 
