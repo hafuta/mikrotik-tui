@@ -226,6 +226,74 @@ mod tests {
     }
 
     #[test]
+    fn ipv6_firewall_connection_re_preserves_optional_fields() {
+        struct Case {
+            words: &'static [&'static str],
+            id: &'static str,
+            src_port: Option<&'static str>,
+            tcp_state: Option<&'static str>,
+        }
+        let cases = [
+            Case {
+                words: &[
+                    "!re",
+                    "=.id=*36",
+                    "=src-address=2001:db8:1::10",
+                    "=dst-address=2001:db8:2::1",
+                    "=protocol=tcp",
+                    "=src-port=53100",
+                    "=dst-port=443",
+                    "=tcp-state=established",
+                    "=timeout=23h59m",
+                    "=orig-rate=1200",
+                    "=repl-rate=8500",
+                    "=connection-mark=",
+                    "=reply-dst-address=2001:db8:1::10",
+                ],
+                id: "*36",
+                src_port: Some("53100"),
+                tcp_state: Some("established"),
+            },
+            Case {
+                words: &[
+                    "!re",
+                    "=.id=*37",
+                    "=src-address=2001:db8:1::20",
+                    "=dst-address=2001:db8::53",
+                    "=protocol=udp",
+                    "=timeout=10s",
+                ],
+                id: "*37",
+                src_port: None,
+                tcp_state: None,
+            },
+        ];
+        for case in cases {
+            let sentence =
+                Sentence::new(case.words.iter().map(|word| (*word).to_string()).collect());
+            assert!(sentence.is_re(), "{:?}", case.words);
+            let resource = sentence.into_resource();
+            assert_eq!(resource.id, case.id);
+            assert!(resource.field("src-address").unwrap().contains("2001:db8"));
+            assert_eq!(resource.field("src-port"), case.src_port);
+            assert_eq!(resource.field("tcp-state"), case.tcp_state);
+        }
+    }
+
+    #[test]
+    fn ipv6_firewall_connection_remove_trap_is_not_found() {
+        let sentence = Sentence::new(vec![
+            "!trap".into(),
+            "=message=no such item".into(),
+            "=category=1".into(),
+        ]);
+        let err = sentence.trap_error("delete");
+        assert_eq!(err.kind(), ErrorKind::NotFound);
+        assert_eq!(err.message(), "no such item");
+        assert_eq!(err.operation(), "delete");
+    }
+
+    #[test]
     fn listen_merge_updates_and_removes() {
         let mut rows = vec![Resource {
             id: "*1".into(),

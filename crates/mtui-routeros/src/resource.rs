@@ -121,6 +121,26 @@ mod tests {
     }
 
     #[test]
+    fn ipv6_firewall_connection_json_optional_and_malformed() {
+        let full: Resource = serde_json::from_str(
+            r#"{".id":"*36","src-address":"2001:db8:1::10","dst-address":"2001:db8:2::1","protocol":"tcp","src-port":"53100","timeout":"23h59m"}"#,
+        )
+        .expect("full connection");
+        assert_eq!(full.id, "*36");
+        assert_eq!(full.field("src-port"), Some("53100"));
+        assert_eq!(full.field("tcp-state"), None);
+
+        let missing_id: Resource =
+            serde_json::from_str(r#"{"protocol":"udp","timeout":"10s"}"#).expect("optional id");
+        assert_eq!(missing_id.id, "");
+        assert_eq!(missing_id.field("timeout"), Some("10s"));
+
+        let malformed: Result<Resource, _> =
+            serde_json::from_str(r#"{"src-address":"2001:db8::1","timeout":10}"#);
+        assert!(malformed.is_err());
+    }
+
+    #[test]
     fn display_row_includes_id_and_masks_secrets() {
         let resource: Resource =
             serde_json::from_str(r#"{".id":"*1","name":"wlan1","password":"hunter2"}"#)

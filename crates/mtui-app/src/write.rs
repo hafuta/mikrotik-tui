@@ -3089,11 +3089,11 @@ mod tests {
         assert_eq!(app.current_resource, "ipv6-firewall-filter");
 
         app.select_resource("ipv6-firewall-connections");
-        let gen = app.poll_generation;
+        let poll_gen = app.poll_generation;
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
             session: app.test_session(),
             request_id: app.request_id,
-            generation: gen,
+            generation: poll_gen,
             resource_id: "ipv6-firewall-connections".into(),
             rows: vec![connection_row("*36", "2001:db8:1::10")],
             error: None,
@@ -3102,7 +3102,7 @@ mod tests {
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
             session: app.test_session(),
             request_id: app.request_id,
-            generation: gen,
+            generation: poll_gen,
             resource_id: "ipv6-firewall-connections".into(),
             rows: Vec::new(),
             error: Some("no such command prefix".into()),

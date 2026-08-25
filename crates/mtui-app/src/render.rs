@@ -714,4 +714,61 @@ mod tests {
             .draw(|frame| draw(frame, &app))
             .expect("narrow draw");
     }
+
+    #[test]
+    fn ipv6_firewall_connections_table_and_remove_overlay() {
+        use std::collections::HashMap;
+
+        use crate::event::{AppEvent, WorkerMsg};
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use mtui_routeros::Resource;
+
+        let mut app = live_main();
+        app.select_resource("ipv6-firewall-connections");
+        let mut fields = HashMap::new();
+        fields.insert("src-address".into(), "2001:db8:1::10".into());
+        fields.insert("dst-address".into(), "2001:db8:2::1".into());
+        fields.insert("protocol".into(), "tcp".into());
+        fields.insert("src-port".into(), "53100".into());
+        fields.insert("dst-port".into(), "443".into());
+        fields.insert("tcp-state".into(), "established".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "ipv6-firewall-connections".into(),
+            rows: vec![Resource {
+                id: "*36".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = crate::app::Pane::Content;
+        let populated = canvas(&app);
+        assert!(populated.contains("2001:db8:1::10"), "{populated}");
+        assert!(populated.contains("2001:db8:2::1"), "{populated}");
+        assert!(populated.contains("x Remove"), "{populated}");
+        assert!(!populated.contains("[ Confirm ]"), "{populated}");
+
+        let _ = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Char('x'),
+            KeyModifiers::NONE,
+        )));
+        let rendered = canvas(&app);
+        assert!(rendered.contains("[ Confirm ]"), "{rendered}");
+        assert!(rendered.contains("[ Cancel ]"), "{rendered}");
+        let first = rendered.lines().next().expect("row");
+        assert!(
+            !first.contains("Confirm"),
+            "remove dialog should not append below the layout: {rendered}"
+        );
+
+        app.terminal_width = 40;
+        app.terminal_height = 12;
+        let backend = TestBackend::new(40, 12);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| draw(frame, &app))
+            .expect("narrow connections draw");
+    }
 }

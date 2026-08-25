@@ -4813,34 +4813,6 @@ mod tests {
                 "ipv6-firewall-connections",
             ]
         );
-        let ipv6_connections =
-            resource_by_id("ipv6-firewall-connections").expect("ipv6-firewall-connections");
-        assert_eq!(
-            ipv6_connections.endpoint(),
-            "/rest/ipv6/firewall/connection"
-        );
-        assert!(ipv6_connections.form.is_none());
-        let ipv6_connection_actions: Vec<_> = ipv6_connections
-            .actions
-            .iter()
-            .map(|action| action.id)
-            .collect();
-        assert_eq!(ipv6_connection_actions, ["remove"]);
-        assert_eq!(
-            column_keys("ipv6-firewall-connections"),
-            [
-                "src-address",
-                "dst-address",
-                "protocol",
-                "src-port",
-                "dst-port",
-                "tcp-state",
-                "timeout",
-                "orig-rate",
-                "repl-rate",
-                "connection-mark",
-            ]
-        );
         assert_eq!(
             group_ids("routing-group"),
             [
@@ -4904,6 +4876,42 @@ mod tests {
         assert!(labels.contains(&"ipv6-group"));
         assert!(labels.contains(&"radius-group"));
         assert_eq!(labels.last().copied(), Some("system-group"));
+    }
+
+    #[test]
+    fn ipv6_firewall_connections_mirror_ipv4() {
+        let ipv6_connections =
+            resource_by_id("ipv6-firewall-connections").expect("ipv6-firewall-connections");
+        assert_eq!(
+            ipv6_connections.endpoint(),
+            "/rest/ipv6/firewall/connection"
+        );
+        assert!(ipv6_connections.form.is_none());
+        let ipv6_connection_actions: Vec<_> = ipv6_connections
+            .actions
+            .iter()
+            .map(|action| action.id)
+            .collect();
+        assert_eq!(ipv6_connection_actions, ["remove"]);
+        assert_eq!(
+            column_keys("ipv6-firewall-connections"),
+            [
+                "src-address",
+                "dst-address",
+                "protocol",
+                "src-port",
+                "dst-port",
+                "tcp-state",
+                "timeout",
+                "orig-rate",
+                "repl-rate",
+                "connection-mark",
+            ]
+        );
+        assert_eq!(
+            column_keys("ipv6-firewall-connections"),
+            column_keys("firewall-connections")
+        );
     }
 
     #[test]

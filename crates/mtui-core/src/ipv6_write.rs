@@ -860,4 +860,15 @@ mod tests {
         assert_eq!(body.get("gateway").map(String::as_str), Some("fe80::2"));
         assert!(!body.contains_key("active"));
     }
+
+    #[test]
+    fn ipv6_firewall_connections_have_no_field_sheet() {
+        let spec = crate::resources::resource_by_id("ipv6-firewall-connections")
+            .expect("ipv6-firewall-connections");
+        assert!(
+            spec.form.is_none(),
+            "conntrack is inspect/remove only; do not ship a Text sheet"
+        );
+        assert!(spec.actions.iter().all(|action| action.id == "remove"));
+    }
 }

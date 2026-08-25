@@ -1629,7 +1629,9 @@ mod tests {
         assert!(guide.fields.contains("src/dst-address"));
         assert_eq!(
             guide.docs_url,
-            Some("https://manual.mikrotik.com/docs/firewall-and-quality-of-service/connection-tracking/")
+            Some(
+                "https://manual.mikrotik.com/docs/firewall-and-quality-of-service/connection-tracking/"
+            )
         );
         assert!(
             !copy.body.contains('\u{2014}'),
