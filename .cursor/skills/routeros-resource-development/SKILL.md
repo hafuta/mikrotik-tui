@@ -61,7 +61,11 @@ Address and Remote Log Format; Remote Protocol is `udp`, `tcp`, or `tls`;
 Check Certificate appears only for `tls`; Syslog Facility and Syslog
 Severity appear only for BSD syslog (`syslog`); Timestamp Format for
 `syslog` or `cef`; CEF Event Delimiter only for `cef`. Remote-log TLS
-exists on RouterOS 7.23 and newer.
+exists on RouterOS 7.23 and newer. NTP Server shows Broadcast Addresses
+only when Broadcast is on, and Local Clock Stratum only when Use Local
+Clock is on (modes stay independent toggles, not a Type combo). VRF is a
+Lookup; Local Clock Stratum is Number; Auth. Key stays Text (key id, not
+the secret).
 
 Enum **display** may differ from the API string (`syslog` → `BSD syslog`)
 while the Select list and PATCH still use the API value. Space/Enter on an

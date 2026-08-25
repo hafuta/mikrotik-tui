@@ -108,14 +108,25 @@ pub fn accepts_number_char(key: &str, current: &str, ch: char) -> bool {
 /// Whether a sheet field should appear given current values.
 ///
 /// Logging Actions show only the knobs that belong to Type (`target`) and, for
-/// remote, to Remote Log Format and Remote Protocol. Inapplicable rows are
-/// omitted, not locked. Check Certificate appears only when protocol is `tls`.
+/// remote, to Remote Log Format and Remote Protocol. NTP Server shows Broadcast
+/// Addresses only when Broadcast is on, and Local Clock Stratum only when Use
+/// Local Clock is on. Inapplicable rows are omitted, not locked. Check
+/// Certificate appears only when protocol is `tls`.
 #[must_use]
 #[allow(clippy::implicit_hasher)]
 pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, String>) -> bool {
-    if resource_id != "logging-actions" {
-        return true;
+    match resource_id {
+        "logging-actions" => logging_action_field_visible(key, values),
+        "ntp-server" => ntp_server_field_visible(key, values),
+        _ => true,
     }
+}
+
+fn flag_on(values: &HashMap<String, String>, key: &str) -> bool {
+    crate::actions::truthy(values.get(key).map(String::as_str))
+}
+
+fn logging_action_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
     let target = values.get("target").map_or("", String::as_str);
     let format = values
         .get("remote-log-format")
@@ -137,6 +148,14 @@ pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, Stri
         "email-to" | "email-cc" | "email-start-tls" => target == "email",
         "script" => target == "script",
         "remember" => matches!(target, "memory" | "echo"),
+        _ => true,
+    }
+}
+
+fn ntp_server_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    match key {
+        "broadcast-addresses" => flag_on(values, "broadcast"),
+        "local-clock-stratum" => flag_on(values, "use-local-clock"),
         _ => true,
     }
 }
@@ -560,5 +579,27 @@ mod tests {
             "cef-event-delimiter",
             &values
         ));
+    }
+
+    #[test]
+    fn ntp_server_fields_follow_broadcast_and_local_clock() {
+        let mut values = HashMap::new();
+        values.insert("broadcast".into(), "false".into());
+        values.insert("use-local-clock".into(), "false".into());
+        assert!(field_visible("ntp-server", "enabled", &values));
+        assert!(field_visible("ntp-server", "vrf", &values));
+        assert!(!field_visible("ntp-server", "broadcast-addresses", &values));
+        assert!(!field_visible("ntp-server", "local-clock-stratum", &values));
+
+        values.insert("broadcast".into(), "true".into());
+        assert!(field_visible("ntp-server", "broadcast-addresses", &values));
+        assert!(!field_visible("ntp-server", "local-clock-stratum", &values));
+
+        values.insert("use-local-clock".into(), "yes".into());
+        assert!(field_visible("ntp-server", "local-clock-stratum", &values));
+        assert!(field_enabled("ntp-server", "local-clock-stratum", &values));
+
+        values.insert("broadcast".into(), "false".into());
+        assert!(!field_enabled("ntp-server", "broadcast-addresses", &values));
     }
 }

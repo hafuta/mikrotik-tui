@@ -253,17 +253,17 @@ pub static NTP_SERVER_FORM: FormSchema = FormSchema {
             f!("manycast", "Manycast", FieldKind::Toggle),
             f!(
                 "broadcast-addresses",
-                "Broadcast addresses",
+                "Broadcast Addresses",
                 FieldKind::Text
             ),
-            f!("vrf", "VRF", FieldKind::Text),
-            f!("use-local-clock", "Use local clock", FieldKind::Toggle),
+            f!("vrf", "VRF", LOOKUP_VRF),
+            f!("use-local-clock", "Use Local Clock", FieldKind::Toggle),
             f!(
                 "local-clock-stratum",
-                "Local clock stratum",
-                FieldKind::Text
+                "Local Clock Stratum",
+                FieldKind::Number
             ),
-            f!("auth-key", "Auth key", FieldKind::Text),
+            f!("auth-key", "Auth. Key", FieldKind::Text),
         ],
     }],
     create_sections: &[],
@@ -929,6 +929,25 @@ mod tests {
             ]
         );
         assert!(no_advanced(&NTP_SERVER_FORM));
+        assert_lookup(&NTP_SERVER_FORM, "vrf", "vrf", "name");
+        assert_eq!(
+            NTP_SERVER_FORM
+                .field("local-clock-stratum")
+                .map(|field| field.kind),
+            Some(FieldKind::Number)
+        );
+        assert_label(
+            &NTP_SERVER_FORM,
+            "broadcast-addresses",
+            "Broadcast Addresses",
+        );
+        assert_label(&NTP_SERVER_FORM, "use-local-clock", "Use Local Clock");
+        assert_label(
+            &NTP_SERVER_FORM,
+            "local-clock-stratum",
+            "Local Clock Stratum",
+        );
+        assert_label(&NTP_SERVER_FORM, "auth-key", "Auth. Key");
         assert_eq!(
             NTP_SERVER_FORM.field("auth-key").map(|field| field.kind),
             Some(FieldKind::Text)
