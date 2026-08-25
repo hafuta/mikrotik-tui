@@ -244,7 +244,9 @@ fn traffic_flow_version_uses_templates(values: &HashMap<String, String>) -> bool
 
 fn traffic_flow_target_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
     match key {
-        "v9-template-refresh" | "v9-template-timeout" => traffic_flow_version_uses_templates(values),
+        "v9-template-refresh" | "v9-template-timeout" => {
+            traffic_flow_version_uses_templates(values)
+        }
         _ => true,
     }
 }

@@ -2149,7 +2149,7 @@ mod tests {
     }
 
     #[test]
-    fn traffic_flow_hides_sampling_and_opens_version_select() {
+    fn traffic_flow_hides_sampling_until_enabled() {
         let schema = FormSchema {
             title_key: "enabled",
             subtitle_keys: &[],
@@ -2194,7 +2194,9 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(keys(&session, &schema), ["packet-sampling", "interfaces"]);
-        session.values.insert("packet-sampling".into(), "true".into());
+        session
+            .values
+            .insert("packet-sampling".into(), "true".into());
         assert_eq!(
             keys(&session, &schema),
             [
@@ -2215,7 +2217,10 @@ mod tests {
             session.values.get("sampling-interval").map(String::as_str),
             Some("2")
         );
+    }
 
+    #[test]
+    fn traffic_flow_target_opens_version_select_and_caps_port() {
         let target_schema = FormSchema {
             title_key: "dst-address",
             subtitle_keys: &[],
@@ -2248,7 +2253,8 @@ mod tests {
         let mut target = HashMap::new();
         target.insert("version".into(), "5".into());
         target.insert("port".into(), "2055".into());
-        let mut session = FormSession::edit("traffic-flow-targets", "*tf1", &target, &target_schema);
+        let mut session =
+            FormSession::edit("traffic-flow-targets", "*tf1", &target, &target_schema);
         let keys = |session: &FormSession, schema: &FormSchema| {
             session
                 .visible_fields(schema)
@@ -2273,9 +2279,15 @@ mod tests {
         );
         session.focus = 2;
         session.insert_char(&target_schema, '9');
-        assert_eq!(session.values.get("port").map(String::as_str), Some("20559"));
+        assert_eq!(
+            session.values.get("port").map(String::as_str),
+            Some("20559")
+        );
         session.insert_char(&target_schema, '6');
-        assert_eq!(session.values.get("port").map(String::as_str), Some("20559"));
+        assert_eq!(
+            session.values.get("port").map(String::as_str),
+            Some("20559")
+        );
     }
 
     #[test]

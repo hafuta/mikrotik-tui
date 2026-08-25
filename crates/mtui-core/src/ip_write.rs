@@ -1511,7 +1511,11 @@ pub static IGMP_PROXY_INTERFACE_FORM: FormSchema = FormSchema {
             read_only: true,
             fields: &[
                 f!("querier", "Querier", FieldKind::Readonly),
-                f!("source-ip-address", "Source IP Address", FieldKind::Readonly),
+                f!(
+                    "source-ip-address",
+                    "Source IP Address",
+                    FieldKind::Readonly
+                ),
                 f!("rx-bytes", "RX Bytes", FieldKind::Readonly),
                 f!("rx-packets", "RX Packets", FieldKind::Readonly),
                 f!("tx-bytes", "TX Bytes", FieldKind::Readonly),
@@ -1538,7 +1542,11 @@ pub static IGMP_PROXY_MFC_FORM: FormSchema = FormSchema {
             fields: &[
                 f!("group", "Group", FieldKind::Text),
                 f!("source", "Source", FieldKind::Text),
-                f!("upstream-interface", "Upstream Interface", LOOKUP_INTERFACES),
+                f!(
+                    "upstream-interface",
+                    "Upstream Interface",
+                    LOOKUP_INTERFACES
+                ),
                 f!(
                     "downstream-interfaces",
                     "Downstream Interfaces",
@@ -1569,7 +1577,11 @@ pub static IGMP_PROXY_MFC_FORM: FormSchema = FormSchema {
         fields: &[
             f!("group", "Group", FieldKind::Text),
             f!("source", "Source", FieldKind::Text),
-            f!("upstream-interface", "Upstream Interface", LOOKUP_INTERFACES),
+            f!(
+                "upstream-interface",
+                "Upstream Interface",
+                LOOKUP_INTERFACES
+            ),
         ],
     }],
 };
@@ -1826,10 +1838,7 @@ mod tests {
                 "sampling-space",
             ]
         );
-        assert_eq!(
-            field_kind(&TRAFFIC_FLOW_FORM, "enabled"),
-            FieldKind::Toggle
-        );
+        assert_eq!(field_kind(&TRAFFIC_FLOW_FORM, "enabled"), FieldKind::Toggle);
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_FORM, "interfaces"),
             FieldKind::Repeat
@@ -1862,7 +1871,10 @@ mod tests {
             "Active Flow Timeout",
         );
         assert_label(&TRAFFIC_FLOW_FORM, "packet-sampling", "Packet Sampling");
+    }
 
+    #[test]
+    fn traffic_flow_target_and_ipfix_use_webfig_field_kinds() {
         assert_eq!(
             create_keys(&TRAFFIC_FLOW_TARGET_FORM),
             ["dst-address", "port", "version"]
@@ -1879,11 +1891,7 @@ mod tests {
             field_kind(&TRAFFIC_FLOW_TARGET_FORM, "port"),
             FieldKind::Number
         );
-        assert_enum(
-            &TRAFFIC_FLOW_TARGET_FORM,
-            "version",
-            TRAFFIC_FLOW_VERSIONS,
-        );
+        assert_enum(&TRAFFIC_FLOW_TARGET_FORM, "version", TRAFFIC_FLOW_VERSIONS);
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_TARGET_FORM, "v9-template-refresh"),
             FieldKind::Number
@@ -1910,9 +1918,19 @@ mod tests {
             assert_ne!(field.kind, FieldKind::Text, "{}", field.key);
             assert_ne!(field.kind, FieldKind::Number, "{}", field.key);
         }
-        assert_eq!(field_kind(&TRAFFIC_FLOW_IPFIX_FORM, "src-port"), FieldKind::Toggle);
-        assert_eq!(field_kind(&TRAFFIC_FLOW_IPFIX_FORM, "bytes"), FieldKind::Toggle);
-        assert_label(&TRAFFIC_FLOW_IPFIX_FORM, "ip-total-length", "IP Total Length");
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_IPFIX_FORM, "src-port"),
+            FieldKind::Toggle
+        );
+        assert_eq!(
+            field_kind(&TRAFFIC_FLOW_IPFIX_FORM, "bytes"),
+            FieldKind::Toggle
+        );
+        assert_label(
+            &TRAFFIC_FLOW_IPFIX_FORM,
+            "ip-total-length",
+            "IP Total Length",
+        );
     }
 
     #[test]
