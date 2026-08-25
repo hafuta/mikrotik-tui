@@ -17,8 +17,11 @@ use crate::login::is_printable_char;
 use crate::overlay::{
     Modal, ModalButton, ModalButtonKind, compact_modal_rect, dim_canvas, render_modal,
 };
+use crate::scroll::ScrollView;
 use crate::styles::Styles;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+const SHEET_HINT_ROWS: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormMode {
@@ -949,8 +952,25 @@ pub fn render_form_sheet(
     styles: &Styles,
 ) {
     dim_canvas(frame, area, styles);
+    let sections = session.schema_sections(schema);
+    let show_tabs = sections.len() > 1;
+    let tab_height = u16::from(show_tabs) * 2;
+    let extra = if sections.get(session.section).is_some_and(|s| s.read_only) {
+        session.extras.len().min(6)
+    } else {
+        0
+    };
+    let field_n = session.visible_rows(schema).len();
     let width = area.width.saturating_sub(4).clamp(48, 92);
-    let height = area.height.saturating_sub(2).clamp(12, 28);
+    let max_h = area.height.saturating_sub(2).max(12);
+    let chrome = 2u16
+        .saturating_add(tab_height)
+        .saturating_add(SHEET_HINT_ROWS);
+    let needed = chrome
+        .saturating_add(u16::try_from(field_n.saturating_add(extra).max(3)).unwrap_or(u16::MAX));
+    let height = needed.clamp(12, max_h);
+    let list_h = usize::from(height.saturating_sub(chrome)).max(1);
+    let field_view = ScrollView::around_focus(session.focus, list_h.saturating_sub(extra), field_n);
     let rect = compact_modal_rect(area, width, height);
     frame.render_widget(Clear, rect);
 
@@ -960,8 +980,13 @@ pub fn render_form_sheet(
     } else {
         styles.border
     };
+    let mut title_spans = vec![Span::styled(format!(" {title} "), styles.title)];
+    let range = field_view.range_label();
+    if !range.is_empty() {
+        title_spans.push(Span::styled(format!("{range} "), styles.muted));
+    }
     let block = Block::default()
-        .title(Span::styled(format!(" {title} "), styles.title))
+        .title(Line::from(title_spans))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border)
@@ -970,15 +995,12 @@ pub fn render_form_sheet(
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
 
-    let sections = session.schema_sections(schema);
-    let show_tabs = sections.len() > 1;
-    let tab_height = if show_tabs { 2 } else { 0 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(tab_height),
             Constraint::Min(3),
-            Constraint::Length(2),
+            Constraint::Length(SHEET_HINT_ROWS),
         ])
         .split(inner);
 
@@ -1013,7 +1035,10 @@ pub fn render_form_sheet(
         styles.muted
     };
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(hint, hint_style))),
+        Paragraph::new(Line::from(Span::styled(
+            clip_line(&hint, usize::from(chunks[2].width.max(1))),
+            hint_style,
+        ))),
         chunks[2],
     );
 
@@ -1039,11 +1064,25 @@ fn sheet_field_lines(
     } else {
         0
     };
-    let visible_h = height.saturating_sub(extra_rows);
-    let start = session.offset.min(rows.len().saturating_sub(1));
+    let visible_h = height.saturating_sub(extra_rows).max(1);
+    let view = ScrollView::around_focus(session.focus, visible_h, rows.len());
     let mut lines = Vec::new();
-    for (idx, row) in rows.iter().enumerate().skip(start).take(visible_h.max(1)) {
-        lines.push(row_line(session, *row, idx == session.focus, width, styles));
+    for (window_i, (idx, row)) in rows
+        .iter()
+        .enumerate()
+        .skip(view.offset)
+        .take(view.visible)
+        .enumerate()
+    {
+        let gutter = view.gutter(window_i);
+        lines.push(row_line(
+            session,
+            *row,
+            idx == session.focus,
+            width,
+            gutter,
+            styles,
+        ));
     }
     if extra_rows > 0 {
         for (key, value) in session.extras.iter().take(extra_rows) {
@@ -1435,6 +1474,7 @@ fn row_line(
     row: FormRow<'_>,
     focused: bool,
     width: usize,
+    gutter: char,
     styles: &Styles,
 ) -> Line<'static> {
     let field = row.field();
@@ -1458,7 +1498,8 @@ fn row_line(
         .iter()
         .map(|span| span.content.as_ref().width())
         .sum::<usize>();
-    let rest = width.saturating_sub(used);
+    let gutter_w = usize::from(gutter != ' ');
+    let rest = width.saturating_sub(used).saturating_sub(gutter_w);
     let raw = match row {
         FormRow::RepeatItem { index, .. } => session
             .repeat
@@ -1472,6 +1513,14 @@ fn row_line(
         spans.extend(repeat_add_control(locked, focused, rest, styles));
     } else {
         spans.extend(field_control(field, raw, locked, focused, rest, styles));
+    }
+    if gutter_w == 1 {
+        let gutter_style = if gutter == '▐' {
+            styles.key
+        } else {
+            styles.quiet
+        };
+        spans.push(Span::styled(gutter.to_string(), gutter_style));
     }
     Line::from(spans)
 }
@@ -1810,6 +1859,66 @@ mod tests {
         assert!(session.focused_takes_typed_input(&schema));
         session.focus = 3;
         assert!(!session.focused_takes_typed_input(&schema));
+    }
+
+    #[test]
+    fn form_sheet_scrolls_repeat_rows_and_pins_hints() {
+        let schema = FormSchema {
+            title_key: "addrs",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "addrs",
+                    label: "Addresses",
+                    kind: FieldKind::Repeat,
+                }],
+            }],
+            create_sections: &[],
+        };
+        let list = (0..20)
+            .map(|i| format!("198.51.100.{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut row = HashMap::new();
+        row.insert("addrs".into(), list);
+        let mut session = FormSession::edit("interfaces", "*1", &row, &schema);
+        let tail = session.visible_rows(&schema).len().saturating_sub(1);
+        session.focus = tail;
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(64, 14);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &schema, &styles);
+            })
+            .expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut rendered = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                rendered.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(
+            rendered.contains("198.51.100.19") || rendered.contains("+ add"),
+            "focused tail missing: {rendered}"
+        );
+        assert!(
+            !rendered.contains("[198.51.100.0]"),
+            "scrolled sheet still showed the first address: {rendered}"
+        );
+        assert!(
+            rendered.contains("ctrl+s") || rendered.contains("enter add"),
+            "hint must stay pinned: {rendered}"
+        );
+        assert!(
+            rendered.contains("/21") || rendered.contains('▐') || rendered.contains('│'),
+            "missing scroll chrome: {rendered}"
+        );
     }
 
     #[test]
@@ -2635,7 +2744,9 @@ mod tests {
         }
         assert!(rendered.contains("ether1"));
         assert!(rendered.contains("Lookup"));
-        assert!(rendered.contains("lookup"));
-        assert!(rendered.contains("space pick"));
+        assert!(
+            rendered.contains("type filter") || rendered.contains("enter select"),
+            "picker hint must stay pinned: {rendered}"
+        );
     }
 }

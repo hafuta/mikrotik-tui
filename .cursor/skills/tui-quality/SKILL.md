@@ -50,6 +50,11 @@ description: Build and review ratatui TUI behavior for correctness, responsivene
 - `FieldKind::Repeat` expands into one row per value plus an add row.
   Enter on add (or on a filled item) appends a row. Backspace on an empty
   item removes it. The API value stays a comma-separated RouterOS list.
+- Overlay lists that overflow (action menus, type pickers, property
+  sheets) scroll an internal viewport. Keep filter/title and key hints
+  pinned outside that viewport. Show overflow with a `n-m/total` range
+  on the title and a right-edge track/thumb (`│` / `▐`), not a
+  background fill. Focused rows must stay in view.
 - Add a regression test whenever addressing flicker, bleed, stale redraws, or
   viewport jumps; visual stability is part of correctness.
 
