@@ -543,22 +543,7 @@ impl App {
         }
         let label = action_label(action, row);
         let mut body = confirm_body(action.id, &label, &record_name);
-        if self.safe_mode.we_hold()
-            && matches!(
-                action.id,
-                "reboot"
-                    | "shutdown"
-                    | "upgrade"
-                    | "reset-configuration"
-                    | "backup-load"
-                    | "format"
-                    | "eject"
-            )
-        {
-            body.push_str(
-                "\n\nSafe Mode cannot undo reboot, shutdown, firmware upgrade, or reset.",
-            );
-        }
+        append_safe_mode_irreversible_warning(&mut body, action.id, self.safe_mode.we_hold());
         self.overlay = Overlay::Confirm(ConfirmSession {
             title: label,
             body,
@@ -1659,6 +1644,24 @@ fn bulk_command(command: ActionCommand) -> bool {
             | ActionCommand::MakeStatic
             | ActionCommand::Release
     )
+}
+
+fn append_safe_mode_irreversible_warning(body: &mut String, action_id: &str, we_hold: bool) {
+    if !we_hold {
+        return;
+    }
+    if matches!(
+        action_id,
+        "reboot"
+            | "shutdown"
+            | "upgrade"
+            | "reset-configuration"
+            | "backup-load"
+            | "format"
+            | "eject"
+    ) {
+        body.push_str("\n\nSafe Mode cannot undo reboot, shutdown, firmware upgrade, or reset.");
+    }
 }
 
 fn confirm_body(action_id: &str, label: &str, record_name: &str) -> String {
