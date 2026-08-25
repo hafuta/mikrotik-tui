@@ -1299,7 +1299,9 @@ mod tests {
             Some(FieldKind::Secret)
         );
         assert_eq!(
-            LTE_APN_FORM.field("use-network-apn").map(|field| field.kind),
+            LTE_APN_FORM
+                .field("use-network-apn")
+                .map(|field| field.kind),
             Some(FieldKind::Toggle)
         );
         assert_eq!(

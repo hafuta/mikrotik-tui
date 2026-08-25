@@ -295,7 +295,7 @@ fn lte_apn_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
         "user" | "password" => {
             matches!(
                 values.get("authentication").map(String::as_str),
-                Some("pap") | Some("chap")
+                Some("pap" | "chap")
             )
         }
         "passthrough-mac" | "passthrough-subnet-selection" => values

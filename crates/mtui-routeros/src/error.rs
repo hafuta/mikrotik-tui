@@ -224,7 +224,12 @@ mod tests {
     #[test]
     fn lte_apn_errors_keep_resource_operation_and_cause() {
         let cases = [
-            (ErrorKind::Api, "list", "no such item", "routeros: list: api: no such item"),
+            (
+                ErrorKind::Api,
+                "list",
+                "no such item",
+                "routeros: list: api: no such item",
+            ),
             (
                 ErrorKind::Timeout,
                 "list",

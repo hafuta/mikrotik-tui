@@ -1708,10 +1708,10 @@ mod tests {
             let Overlay::Form(session) = &mut app.overlay else {
                 panic!("expected form");
             };
+            session.values.insert("apn".into(), "lte.provider".into());
             session
                 .values
-                .insert("apn".into(), "lte.provider".into());
-            session.values.insert("password".into(), "typed-secret".into());
+                .insert("password".into(), "typed-secret".into());
         }
         let preview = app.update(AppEvent::Input(ctrl_s()));
         assert!(preview.is_empty());

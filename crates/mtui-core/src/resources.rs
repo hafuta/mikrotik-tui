@@ -4854,6 +4854,16 @@ mod tests {
             resource_by_id("macsec-profiles").map(ResourceSpec::endpoint),
             Some("/rest/interface/macsec/profile")
         );
+        assert!(
+            ALL_RESOURCES
+                .iter()
+                .filter(|spec| spec.group == "interfaces-group")
+                .all(|spec| !spec.columns.is_empty())
+        );
+    }
+
+    #[test]
+    fn lte_apn_is_a_list_under_interfaces() {
         assert_eq!(
             resource_by_id("lte-apn").map(|spec| spec.label),
             Some("LTE APN")
@@ -4894,12 +4904,7 @@ mod tests {
             ]
         );
         assert!(resource_by_id("lte-apn").is_some_and(|spec| spec.form.is_some()));
-        assert!(
-            ALL_RESOURCES
-                .iter()
-                .filter(|spec| spec.group == "interfaces-group")
-                .all(|spec| !spec.columns.is_empty())
-        );
+        assert!(!resource_by_id("lte-apn").is_some_and(ResourceSpec::is_singleton));
     }
 
     #[test]
