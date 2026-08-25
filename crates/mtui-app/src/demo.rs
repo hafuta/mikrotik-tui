@@ -1,6 +1,6 @@
 //! In-memory fixture profile so navigation can be learned without a router.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use mtui_routeros::Resource;
 
@@ -1195,6 +1195,15 @@ pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>>
                     ("policy", "read,write,policy,test,reboot,sniff,api"),
                 ],
             )],
+            error: None,
+        }]),
+        AppCommand::ProbeMenuPaths {
+            session,
+            generation,
+        } => Some(vec![WorkerMsg::MenuPathsResult {
+            session: *session,
+            generation: *generation,
+            missing_ids: HashSet::new(),
             error: None,
         }]),
         AppCommand::FetchHeader {

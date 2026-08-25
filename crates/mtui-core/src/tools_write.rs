@@ -2,7 +2,7 @@
 //!
 //! Catalog wiring (do not register here):
 //! - `netwatch` → `/rest/tool/netwatch` (`NETWATCH_FORM`)
-//! - `email` → `/rest/tool/email` (`EMAIL_FORM`)
+//! - `email` → `/rest/tool/e-mail` (`EMAIL_FORM`)
 //! - `romon` → `/rest/tool/romon` (`ROMON_FORM`)
 //! - `romon-ports` → `/rest/tool/romon/port` (`ROMON_PORT_FORM`)
 //! - `graphing` → `/rest/tool/graphing` (`GRAPHING_FORM`)

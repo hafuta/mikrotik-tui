@@ -2539,16 +2539,46 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::ipsec_write::IPSEC_MODE_CONFIG_FORM),
     },
     ResourceSpec {
-        id: "ipsec-key",
+        id: "ipsec-key-rsa",
         group: "ip-group",
-        label: "IPsec Keys",
+        label: "IPsec RSA Keys",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/key",
+            endpoint: "/rest/ip/ipsec/key/rsa",
         },
         columns: &[col!("name", "Name", 18), col!("key-size", "Size", 8)],
         refresh: Duration::from_secs(30),
         actions: crate::actions::LIST_ACTIONS,
-        form: Some(&crate::ipsec_write::IPSEC_KEY_FORM),
+        form: Some(&crate::ipsec_write::IPSEC_KEY_RSA_FORM),
+    },
+    ResourceSpec {
+        id: "ipsec-key-psk",
+        group: "ip-group",
+        label: "IPsec PSKs",
+        fetch: FetchKind::List {
+            endpoint: "/rest/ip/ipsec/key/psk",
+        },
+        columns: &[col!("peer", "Peer", 18), col!("id", "ID", 24)],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::LIST_ACTIONS,
+        form: Some(&crate::ipsec_write::IPSEC_KEY_PSK_FORM),
+    },
+    ResourceSpec {
+        id: "ipsec-key-qkd",
+        group: "ip-group",
+        label: "IPsec QKD",
+        fetch: FetchKind::System {
+            endpoint: "/rest/ip/ipsec/key/qkd",
+        },
+        columns: &[
+            col!("address", "Address", 22),
+            col!("kme-id", "KME ID", 16),
+            col!("peer-sae-id", "Peer SAE", 16),
+            col!("key-size", "Size", 8),
+            col!("cache-state", "Cache", 8),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::ipsec_write::IPSEC_KEY_QKD_FORM),
     },
     ResourceSpec {
         id: "cloud",
@@ -4223,7 +4253,7 @@ pub static ALL_RESOURCES: &[ResourceSpec] = &[
         group: "tools-group",
         label: "Email",
         fetch: FetchKind::System {
-            endpoint: "/rest/tool/email",
+            endpoint: "/rest/tool/e-mail",
         },
         columns: &[
             col!("server", "Server", 22),
@@ -5416,7 +5446,9 @@ mod tests {
                 "ipsec-installed-sa",
                 "ipsec-settings",
                 "ipsec-mode-config",
-                "ipsec-key",
+                "ipsec-key-rsa",
+                "ipsec-key-psk",
+                "ipsec-key-qkd",
                 "cloud",
                 "kid-control",
                 "kid-control-devices",
@@ -5454,6 +5486,21 @@ mod tests {
         assert_unique_endpoints("ip-group");
         assert!(resource_by_id("dns").is_some_and(ResourceSpec::is_singleton));
         assert!(resource_by_id("ipsec-settings").is_some_and(ResourceSpec::is_singleton));
+        assert!(resource_by_id("ipsec-key-qkd").is_some_and(ResourceSpec::is_singleton));
+        assert!(!resource_by_id("ipsec-key-rsa").is_some_and(ResourceSpec::is_singleton));
+        assert_eq!(
+            resource_by_id("ipsec-key-rsa").map(ResourceSpec::endpoint),
+            Some("/rest/ip/ipsec/key/rsa")
+        );
+        assert_eq!(
+            resource_by_id("ipsec-key-psk").map(ResourceSpec::endpoint),
+            Some("/rest/ip/ipsec/key/psk")
+        );
+        assert_eq!(
+            resource_by_id("ipsec-key-qkd").map(ResourceSpec::endpoint),
+            Some("/rest/ip/ipsec/key/qkd")
+        );
+        assert_eq!(column_keys("ipsec-key-psk"), ["peer", "id"]);
         assert!(resource_by_id("routes").is_some_and(|spec| spec.form.is_some()));
         assert!(resource_by_id("neighbors").is_some_and(|spec| spec.form.is_none()));
         assert!(resource_by_id("ipsec-installed-sa").is_some_and(|spec| spec.form.is_none()));
@@ -5563,6 +5610,9 @@ mod tests {
                 "sms",
             ]
         );
+        let email = resource_by_id("email").expect("email");
+        assert_eq!(email.endpoint(), "/rest/tool/e-mail");
+        assert_eq!(email.cli_path(), "/tool/e-mail");
         assert_eq!(group_ids("radius-group"), ["radius", "radius-incoming"]);
         for group in [
             "ipv6-group",

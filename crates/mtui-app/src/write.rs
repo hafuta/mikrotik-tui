@@ -6,10 +6,10 @@ use std::path::Path;
 
 use mtui_core::{
     AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
-    CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, FORMAT_DISK_PROMPT, IMPORT_CONFIG_PROMPT,
-    INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, LICENSE_IMPORT_PROMPT, RESET_CONFIG_PROMPT,
-    SMS_PROMPT, WOL_PROMPT, action_label, field_enabled, neighbor_connect_target, patch_body,
-    resource_by_id, supports_bulk_select, truthy,
+    CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, FORMAT_DISK_PROMPT, FormSchema,
+    IMPORT_CONFIG_PROMPT, INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, LICENSE_IMPORT_PROMPT,
+    RESET_CONFIG_PROMPT, SMS_PROMPT, WOL_PROMPT, action_label, field_enabled,
+    neighbor_connect_target, patch_body, resource_by_id, supports_bulk_select, truthy,
 };
 use mtui_routeros::MASKED_VALUE;
 use mtui_ui::{
@@ -1560,8 +1560,22 @@ impl App {
         }]
     }
 
-    pub(crate) fn row_to_display(rows: Vec<mtui_routeros::Resource>) -> Vec<Row> {
-        rows.into_iter().map(|row| row.display_row()).collect()
+    pub(crate) fn row_to_display(&self, rows: Vec<mtui_routeros::Resource>) -> Vec<Row> {
+        let extra_secrets = resource_by_id(&self.current_resource)
+            .and_then(|spec| spec.form)
+            .map(FormSchema::secret_keys)
+            .unwrap_or_default();
+        rows.into_iter()
+            .map(|row| {
+                let mut display = row.display_row();
+                for key in &extra_secrets {
+                    if display.contains_key(*key) {
+                        display.insert((*key).to_string(), MASKED_VALUE.to_string());
+                    }
+                }
+                display
+            })
+            .collect()
     }
 }
 
@@ -3777,7 +3791,7 @@ mod tests {
             generation: poll_gen,
             resource_id: "ipv6-firewall-connections".into(),
             rows: Vec::new(),
-            error: Some("no such command prefix".into()),
+            error: Some("request timed out".into()),
         }));
         assert_eq!(app.table.row_count(), 1);
         assert!(app.status.contains("Refresh failed"));
@@ -3905,7 +3919,7 @@ mod tests {
             generation: poll_gen,
             resource_id: "romon-ports".into(),
             rows: Vec::new(),
-            error: Some("no such command prefix".into()),
+            error: Some("request timed out".into()),
         }));
         assert_eq!(app.table.row_count(), 1);
         assert!(app.status.contains("Refresh failed"));

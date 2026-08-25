@@ -1396,10 +1396,27 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "name, address-pool, address-prefix-length, split-include, system-dns."
     ),
     guide!(
-        "ipsec-key",
-        "IPsec private keys generated or imported on the router.",
-        "RSA/private keys for IPsec identities. Key material is a secret.",
-        "name, key-size."
+        "ipsec-key-rsa",
+        "RSA keys under `/ip/ipsec/key/rsa` (print lives here, not on `/ip/ipsec/key`).",
+        "Named RSA keys used by IPsec identities. `/ip/ipsec/key` itself only exports.",
+        "name, key-size.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/103841835/IPsec"
+    ),
+    guide!(
+        "ipsec-key-psk",
+        "Peer-bound pre-shared keys under `/ip/ipsec/key/psk`.",
+        "Use when an identity authenticates with a PSK stored next to a peer and id, not \
+         a generated RSA key.",
+        "peer, id, key.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/103841835/IPsec"
+    ),
+    guide!(
+        "ipsec-key-qkd",
+        "Quantum key-distribution client settings (`/ip/ipsec/key/qkd`). One object, not a list.",
+        "Point the router at a KME when an IPsec profile uses post-quantum PPK via QKD. \
+         Missing on builds without that command.",
+        "address, cache-size, certificate, key-size, kme-id, peer-sae-id, cache-state.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/341770268/QKD"
     ),
     guide!(
         "cloud",

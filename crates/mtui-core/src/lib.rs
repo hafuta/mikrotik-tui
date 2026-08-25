@@ -43,8 +43,10 @@ pub use actions::{
     resolve_actions, truthy,
 };
 pub use capabilities::{
-    BULK_SELECT_RESOURCES, CONTAINER_PACKAGES, WIFI_PACKAGES, WIRELESS_PACKAGES,
-    installed_package_names, required_packages, supports_bulk_select, unavailable_menus,
+    BULK_SELECT_RESOURCES, CONTAINER_PACKAGES, MISSING_PATH_REASON, WIFI_PACKAGES,
+    WIRELESS_PACKAGES, cli_path_available, inspect_parent_key, installed_package_names,
+    is_missing_command_prefix, menu_path_segments, merge_unavailable_menus, required_packages,
+    supports_bulk_select, unavailable_from_menu_tree, unavailable_menus,
     unavailable_menus_for_device,
 };
 pub use forms::{

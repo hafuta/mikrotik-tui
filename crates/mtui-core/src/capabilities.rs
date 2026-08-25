@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::resources::ALL_RESOURCES;
+use crate::resources::{ALL_RESOURCES, DASHBOARD_ID, ResourceSpec};
 
 /// Extra `RouterOS` packages that can expose `WiFi` Wave2 / `wifi-qcom` menus.
 pub const WIFI_PACKAGES: &[&str] = &["wifi-qcom", "wifi-qcom-ac"];
@@ -12,6 +12,9 @@ pub const WIRELESS_PACKAGES: &[&str] = &["wireless"];
 
 /// Extra package that exposes `/container`, VETH, and `/app`.
 pub const CONTAINER_PACKAGES: &[&str] = &["container"];
+
+/// Badge when `/console/inspect` (or a print) shows the command path is absent.
+pub const MISSING_PATH_REASON: &str = "path";
 
 const CONTAINER_MENUS: &[&str] = &[
     "veth",
@@ -122,6 +125,84 @@ pub fn unavailable_menus_for_device(
         out.insert(spec.id.to_string(), label);
     }
     out
+}
+
+/// CLI segments for a catalog screen (`["interface", "bridge", "port-controller"]`).
+#[must_use]
+pub fn menu_path_segments(spec: &ResourceSpec) -> Option<Vec<&str>> {
+    let path = spec.cli_path();
+    if path.is_empty() || spec.id == DASHBOARD_ID {
+        return None;
+    }
+    let segments: Vec<&str> = path
+        .trim_matches('/')
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    (!segments.is_empty()).then_some(segments)
+}
+
+/// Parent key used with `/console/inspect request=child` (`""` is the root).
+#[must_use]
+pub fn inspect_parent_key(prefix: &[&str]) -> String {
+    prefix.join(",")
+}
+
+/// True when every segment appears as a child of the previous inspect parent.
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn cli_path_available(segments: &[&str], tree: &HashMap<String, HashSet<String>>) -> bool {
+    let mut prefix = Vec::new();
+    for segment in segments {
+        let children = tree.get(&inspect_parent_key(&prefix));
+        let Some(children) = children else {
+            return false;
+        };
+        if !children.contains(*segment) {
+            return false;
+        }
+        prefix.push(*segment);
+    }
+    true
+}
+
+/// Resource ids whose catalog path is not in the live inspect tree.
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn unavailable_from_menu_tree(
+    tree: &HashMap<String, HashSet<String>>,
+) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for spec in ALL_RESOURCES {
+        let Some(segments) = menu_path_segments(spec) else {
+            continue;
+        };
+        if !cli_path_available(&segments, tree) {
+            out.insert(spec.id.to_string(), MISSING_PATH_REASON.to_string());
+        }
+    }
+    out
+}
+
+/// Overlay `extra` onto `primary`. `primary` wins when both hide the same id
+/// so a missing wifi package still badges `wifi-qcom` rather than `path`.
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn merge_unavailable_menus(
+    primary: HashMap<String, String>,
+    extra: HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut out = extra;
+    out.extend(primary);
+    out
+}
+
+/// `RouterOS` trap when the command tree has no such menu (hardware or package).
+#[must_use]
+pub fn is_missing_command_prefix(message: &str) -> bool {
+    message
+        .to_ascii_lowercase()
+        .contains("no such command prefix")
 }
 
 fn architecture_gap(resource_id: &str, architecture: &str, cpu: &str) -> Option<String> {
@@ -287,5 +368,135 @@ mod tests {
         assert!(!missing.contains_key("apps"));
         let missing = unavailable_menus_for_device(&installed, "", "anything");
         assert!(!missing.contains_key("containers"));
+    }
+
+    fn child_set(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|name| (*name).to_string()).collect()
+    }
+
+    fn hex_like_bridge_tree() -> HashMap<String, HashSet<String>> {
+        let mut tree = HashMap::new();
+        tree.insert(
+            String::new(),
+            child_set(&["interface", "ip", "system", "tool"]),
+        );
+        tree.insert(
+            "interface".into(),
+            child_set(&["bridge", "ethernet", "vlan", "list"]),
+        );
+        tree.insert(
+            "interface,bridge".into(),
+            child_set(&[
+                "port", "host", "vlan", "filter", "nat", "settings", "mdb", "msti",
+            ]),
+        );
+        tree
+    }
+
+    #[test]
+    fn port_controller_segments_match_catalog() {
+        let spec = ALL_RESOURCES
+            .iter()
+            .find(|spec| spec.id == "bridge-port-controller")
+            .expect("catalogued");
+        assert_eq!(
+            menu_path_segments(spec).as_deref(),
+            Some(["interface", "bridge", "port-controller"].as_slice())
+        );
+    }
+
+    #[test]
+    fn email_tool_segments_use_hyphenated_cli_name() {
+        let spec = ALL_RESOURCES
+            .iter()
+            .find(|spec| spec.id == "email")
+            .expect("catalogued");
+        assert_eq!(
+            menu_path_segments(spec).as_deref(),
+            Some(["tool", "e-mail"].as_slice())
+        );
+    }
+
+    #[test]
+    fn ipsec_key_print_lives_on_rsa_psk_and_qkd_children() {
+        let cases: &[(&str, &[&str])] = &[
+            ("ipsec-key-rsa", &["ip", "ipsec", "key", "rsa"]),
+            ("ipsec-key-psk", &["ip", "ipsec", "key", "psk"]),
+            ("ipsec-key-qkd", &["ip", "ipsec", "key", "qkd"]),
+        ];
+        for (id, expected) in cases {
+            let spec = ALL_RESOURCES
+                .iter()
+                .find(|spec| spec.id == *id)
+                .unwrap_or_else(|| panic!("{id}"));
+            assert_eq!(menu_path_segments(spec).as_deref(), Some(*expected), "{id}");
+        }
+        assert!(ALL_RESOURCES.iter().all(|spec| spec.id != "ipsec-key"));
+    }
+
+    #[test]
+    fn missing_path_hides_port_controller_when_bridge_lacks_the_child() {
+        let missing = unavailable_from_menu_tree(&hex_like_bridge_tree());
+        assert_eq!(
+            missing.get("bridge-port-controller").map(String::as_str),
+            Some(MISSING_PATH_REASON)
+        );
+        assert_eq!(
+            missing.get("bridge-port-extender").map(String::as_str),
+            Some(MISSING_PATH_REASON)
+        );
+        assert!(!missing.contains_key("bridges"));
+        assert!(!missing.contains_key("bridge-settings"));
+        assert!(!missing.contains_key("interfaces"));
+    }
+
+    #[test]
+    fn path_gate_also_hides_wifi_when_the_command_is_absent() {
+        let missing = unavailable_from_menu_tree(&hex_like_bridge_tree());
+        assert_eq!(
+            missing.get("wifi").map(String::as_str),
+            Some(MISSING_PATH_REASON)
+        );
+        assert_eq!(
+            missing.get("wifi-cap").map(String::as_str),
+            Some(MISSING_PATH_REASON)
+        );
+    }
+
+    #[test]
+    fn package_label_wins_over_missing_path() {
+        let mut packages = HashMap::new();
+        packages.insert("wifi".into(), "wifi-qcom".into());
+        let mut paths = HashMap::new();
+        paths.insert("wifi".into(), MISSING_PATH_REASON.into());
+        paths.insert("bridge-port-controller".into(), MISSING_PATH_REASON.into());
+        let merged = merge_unavailable_menus(packages, paths);
+        assert_eq!(merged.get("wifi").map(String::as_str), Some("wifi-qcom"));
+        assert_eq!(
+            merged.get("bridge-port-controller").map(String::as_str),
+            Some(MISSING_PATH_REASON)
+        );
+    }
+
+    #[test]
+    fn architecture_still_hides_apps_when_the_path_exists() {
+        let mut installed = HashSet::new();
+        installed.insert("container".into());
+        let packages = unavailable_menus_for_device(&installed, "arm", "EN7562CT");
+        let mut tree = HashMap::new();
+        tree.insert(String::new(), child_set(&["container", "app"]));
+        tree.insert("container".into(), child_set(&["config", "envs", "mounts"]));
+        let paths = unavailable_from_menu_tree(&tree);
+        assert!(!paths.contains_key("apps"));
+        let merged = merge_unavailable_menus(packages, paths);
+        assert_eq!(merged.get("apps").map(String::as_str), Some("architecture"));
+    }
+
+    #[test]
+    fn missing_command_prefix_detects_trap_copy() {
+        assert!(is_missing_command_prefix(
+            "failure: no such command prefix (6)"
+        ));
+        assert!(!is_missing_command_prefix("request timed out"));
     }
 }

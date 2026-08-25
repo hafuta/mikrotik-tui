@@ -102,6 +102,8 @@ pub struct Session {
     pub(crate) last_safe_mode_verb: Option<SafeModeVerb>,
     pub(crate) safe_mode_after: SafeModeAfter,
     pub(crate) installed_packages: HashSet<String>,
+    pub(crate) missing_path_ids: HashSet<String>,
+    pub(crate) menu_paths_generation: u64,
 }
 
 impl Session {
@@ -160,6 +162,8 @@ impl Session {
             last_safe_mode_verb: None,
             safe_mode_after: SafeModeAfter::None,
             installed_packages: HashSet::new(),
+            missing_path_ids: HashSet::new(),
+            menu_paths_generation: 0,
         }
     }
 
