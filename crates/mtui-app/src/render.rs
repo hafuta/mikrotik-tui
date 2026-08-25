@@ -824,7 +824,7 @@ mod tests {
         assert!(rendered.contains("Secrets"), "{rendered}");
         assert!(rendered.contains("Status"), "{rendered}");
         assert!(!rendered.contains("shared"), "{rendered}");
-        assert!(rendered.contains("esc"), "{rendered}");
+        assert!(rendered.contains("space toggle"), "{rendered}");
         let _ = app.update(AppEvent::Input(KeyEvent::new(
             KeyCode::Esc,
             KeyModifiers::NONE,
@@ -852,6 +852,7 @@ mod tests {
         let rendered = canvas(&app);
         assert!(rendered.contains("Store Every"), "{rendered}");
         assert!(rendered.contains("Page Refresh"), "{rendered}");
+        assert!(rendered.contains("space pick"), "{rendered}");
         assert!(rendered.contains("esc"), "{rendered}");
     }
 }

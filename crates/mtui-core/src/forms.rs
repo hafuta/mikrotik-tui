@@ -157,7 +157,7 @@ pub fn with_leading_none(options: Vec<String>) -> Vec<String> {
     prepend_unique("none", options)
 }
 
-/// Put `all` first when the combo includes the RouterOS wildcard interface or queue.
+/// Put `all` first when the combo includes the `RouterOS` wildcard interface or queue.
 #[must_use]
 pub fn with_leading_all(options: Vec<String>) -> Vec<String> {
     prepend_unique("all", options)

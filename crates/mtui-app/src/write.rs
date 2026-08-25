@@ -3387,6 +3387,14 @@ mod tests {
 
         app.select_resource("romon-ports");
         let poll_gen = app.poll_generation;
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: poll_gen,
+            resource_id: "romon-ports".into(),
+            rows: vec![romon_port_row("*rp1", "all")],
+            error: None,
+        }));
         app.table.select_id("*rp1");
         let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
             session: app.test_session(),
