@@ -2271,25 +2271,27 @@ fn palette_commands_filtered(
             .with_description(spec.label)
             .with_path(spec.cli_path())
     }));
-    if show_hidden {
-        return commands;
-    }
     commands
         .into_iter()
-        .filter(|command| !palette_target_hidden(&command.id, hidden, unavailable))
+        .filter(|command| {
+            !palette_target_unavailable(&command.id, unavailable)
+                && (show_hidden || !palette_target_user_hidden(&command.id, hidden))
+        })
         .collect()
 }
 
-fn palette_target_hidden(
-    id: &str,
-    hidden: &HashSet<String>,
-    unavailable: &HashMap<String, String>,
-) -> bool {
-    if hidden.contains(id) || unavailable.contains_key(id) {
+fn palette_target_user_hidden(id: &str, hidden: &HashSet<String>) -> bool {
+    if hidden.contains(id) {
         return true;
     }
-    resource_by_id(id)
-        .is_some_and(|spec| hidden.contains(spec.group) || unavailable.contains_key(spec.group))
+    resource_by_id(id).is_some_and(|spec| hidden.contains(spec.group))
+}
+
+fn palette_target_unavailable(id: &str, unavailable: &HashMap<String, String>) -> bool {
+    if unavailable.contains_key(id) {
+        return true;
+    }
+    resource_by_id(id).is_some_and(|spec| unavailable.contains_key(spec.group))
 }
 
 fn nonempty_field<'src>(resource: &'src Resource, key: &str) -> Option<&'src str> {

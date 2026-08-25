@@ -46,7 +46,10 @@ pub fn flatten_nav_filtered(
     for item in items {
         let group_hidden = hidden.contains(&item.id);
         let group_unavailable = unavailable.contains_key(&item.id);
-        if concealed(group_hidden || group_unavailable, show_hidden) {
+        if group_unavailable {
+            continue;
+        }
+        if user_concealed(group_hidden, show_hidden) {
             continue;
         }
         let is_group = !item.children.is_empty();
@@ -54,13 +57,11 @@ pub fn flatten_nav_filtered(
             .children
             .iter()
             .filter(|child| {
-                !concealed(
-                    hidden.contains(&child.id) || unavailable.contains_key(&child.id),
-                    show_hidden,
-                )
+                !unavailable.contains_key(&child.id)
+                    && !user_concealed(hidden.contains(&child.id), show_hidden)
             })
             .count();
-        if is_group && visible_children == 0 && !show_hidden {
+        if is_group && visible_children == 0 && !group_hidden {
             continue;
         }
         let is_expanded = is_group && expanded == Some(item.id.as_str());
@@ -79,8 +80,11 @@ pub fn flatten_nav_filtered(
         }
         for child in &item.children {
             let child_hidden = hidden.contains(&child.id) || group_hidden;
-            let child_unavailable = unavailable.contains_key(&child.id) || group_unavailable;
-            if concealed(child_hidden || child_unavailable, show_hidden) {
+            let child_unavailable = unavailable.contains_key(&child.id);
+            if child_unavailable {
+                continue;
+            }
+            if user_concealed(child_hidden, show_hidden) {
                 continue;
             }
             out.push(FlatNavEntry {
@@ -101,7 +105,7 @@ pub fn flatten_nav_filtered(
     out
 }
 
-fn concealed(tucked: bool, show_hidden: bool) -> bool {
+fn user_concealed(tucked: bool, show_hidden: bool) -> bool {
     tucked && !show_hidden
 }
 
@@ -131,18 +135,24 @@ fn subsume_hidden_children(items: &[NavItem], hidden: &mut HashSet<String>, id: 
     }
 }
 
-fn visible_leaf_count(items: &[NavItem], hidden: &HashSet<String>) -> usize {
+fn visible_leaf_count(
+    items: &[NavItem],
+    hidden: &HashSet<String>,
+    unavailable: &HashMap<String, String>,
+) -> usize {
     items
         .iter()
         .map(|item| {
-            if hidden.contains(&item.id) {
+            if hidden.contains(&item.id) || unavailable.contains_key(&item.id) {
                 0
             } else if item.children.is_empty() {
                 1
             } else {
                 item.children
                     .iter()
-                    .filter(|child| !hidden.contains(&child.id))
+                    .filter(|child| {
+                        !hidden.contains(&child.id) && !unavailable.contains_key(&child.id)
+                    })
                     .count()
             }
         })
@@ -225,7 +235,8 @@ impl NavState {
         self.rebuild();
     }
 
-    /// Mark menus missing from this device's package set (id → package label).
+    /// Mark menus this device cannot offer (missing package or architecture).
+    /// They stay out of the tree even when showing user-hidden rows.
     pub fn set_unavailable(&mut self, ids: HashMap<String, String>) {
         self.unavailable = ids.into_iter().filter(|(id, _)| !id.is_empty()).collect();
         self.rebuild();
@@ -282,7 +293,7 @@ impl NavState {
         next.insert(id.to_string());
         subsume_hidden_children(&self.tree, &mut next, id);
         collapse_empty_groups(&self.tree, &mut next);
-        if visible_leaf_count(&self.tree, &next) == 0 {
+        if visible_leaf_count(&self.tree, &next, &self.unavailable) == 0 {
             return ToggleHidden::LastVisible;
         }
         if self
@@ -316,7 +327,7 @@ impl NavState {
         next.insert(id.to_string());
         subsume_hidden_children(&self.tree, &mut next, id);
         collapse_empty_groups(&self.tree, &mut next);
-        visible_leaf_count(&self.tree, &next) == 0
+        visible_leaf_count(&self.tree, &next, &self.unavailable) == 0
     }
 
     /// Parent category that would also hide if `id` is its last visible child.
@@ -330,7 +341,11 @@ impl NavState {
         let remaining = parent
             .children
             .iter()
-            .filter(|child| child.id != id && !self.hidden.contains(&child.id))
+            .filter(|child| {
+                child.id != id
+                    && !self.hidden.contains(&child.id)
+                    && !self.unavailable.contains_key(&child.id)
+            })
             .count();
         (remaining == 0).then_some(parent_id)
     }
@@ -352,7 +367,7 @@ impl NavState {
     #[must_use]
     pub fn first_openable_id(&self) -> Option<String> {
         for item in &self.tree {
-            if self.concealed(&item.id) {
+            if self.omitted_from_nav(&item.id) {
                 continue;
             }
             if item.children.is_empty() {
@@ -361,7 +376,7 @@ impl NavState {
             if let Some(child) = item
                 .children
                 .iter()
-                .find(|child| !self.concealed(&child.id))
+                .find(|child| !self.omitted_from_nav(&child.id))
             {
                 return Some(child.id.clone());
             }
@@ -369,8 +384,8 @@ impl NavState {
         None
     }
 
-    fn concealed(&self, id: &str) -> bool {
-        !self.show_hidden && (self.hidden.contains(id) || self.unavailable.contains_key(id))
+    fn omitted_from_nav(&self, id: &str) -> bool {
+        self.unavailable.contains_key(id) || (!self.show_hidden && self.hidden.contains(id))
     }
 
     fn parent_of(&self, id: &str) -> Option<&str> {
@@ -385,6 +400,13 @@ impl NavState {
     /// Select `id`, expanding its category (and collapsing others) so the
     /// matching row is visible. Group ids select that group's first child.
     pub fn select_id(&mut self, id: &str) -> bool {
+        if self.unavailable.contains_key(id)
+            || self
+                .parent_of(id)
+                .is_some_and(|parent| self.unavailable.contains_key(parent))
+        {
+            return false;
+        }
         let Some(target) = self.reveal_target(id) else {
             return false;
         };
@@ -418,12 +440,10 @@ impl NavState {
                 .children
                 .iter()
                 .find(|child| {
-                    self.show_hidden
-                        || (!self.hidden.contains(&child.id)
-                            && !self.unavailable.contains_key(&child.id))
+                    !self.unavailable.contains_key(&child.id)
+                        && (self.show_hidden || !self.hidden.contains(&child.id))
                 })
-                .or_else(|| item.children.first())
-                .map_or_else(|| item.id.clone(), |child| child.id.clone());
+                .map(|child| child.id.clone())?;
             return Some(RevealTarget {
                 selected,
                 expanded: Some(item.id.clone()),
@@ -926,21 +946,35 @@ mod render_tests {
     }
 
     #[test]
-    fn unavailable_menus_are_hidden_until_revealed_and_badged() {
+    fn unavailable_menus_stay_out_when_showing_hidden() {
         let mut state = NavState::new(&tree());
         let mut missing = HashMap::new();
         missing.insert("arp".into(), "hotspot".into());
         state.set_unavailable(missing);
         assert!(!visible_ids(&state).contains(&"arp"));
+        assert!(!visible_ids(&state).contains(&"ip-group"));
         state.set_show_hidden(true);
-        assert!(state.select_id("arp"));
+        assert!(!visible_ids(&state).contains(&"arp"));
+        assert!(!state.select_id("arp"));
         let styles = styles();
         let lines = state.render_lines(false, None, &styles, 32);
-        let arp = lines
-            .iter()
-            .map(line_text)
-            .find(|line| line.contains("ARP"))
-            .expect("arp");
-        assert!(arp.contains("!hotspot"), "{arp}");
+        assert!(
+            lines
+                .iter()
+                .map(line_text)
+                .all(|line| !line.contains("ARP")),
+        );
+    }
+
+    #[test]
+    fn last_visible_ignores_unavailable_leaves() {
+        let mut state = NavState::new(&tree());
+        let mut missing = HashMap::new();
+        missing.insert("dashboard".into(), "package".into());
+        missing.insert("bridges".into(), "package".into());
+        missing.insert("bridge-vlans".into(), "package".into());
+        state.set_unavailable(missing);
+        assert_eq!(state.toggle_hidden("ip-group"), ToggleHidden::LastVisible);
+        assert!(!state.hidden.contains("ip-group"));
     }
 }

@@ -2449,6 +2449,18 @@ mod nav_accordion_tests {
         app.toggle_show_hidden_menus();
         assert!(app.palette.commands.iter().any(|cmd| cmd.id == "vlan"));
     }
+
+    #[test]
+    fn palette_omits_unavailable_resources_even_when_showing_hidden() {
+        let mut app = main_app();
+        let mut missing = std::collections::HashMap::new();
+        missing.insert("wifi".into(), "wifi-qcom".into());
+        app.nav.set_unavailable(missing);
+        app.rebuild_palette();
+        assert!(app.palette.commands.iter().all(|cmd| cmd.id != "wifi"));
+        app.toggle_show_hidden_menus();
+        assert!(app.palette.commands.iter().all(|cmd| cmd.id != "wifi"));
+    }
 }
 
 #[cfg(test)]
