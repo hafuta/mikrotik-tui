@@ -1601,8 +1601,8 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "logs",
-        "Live log tail from `/log` (topics + message). This client keeps a bounded local \
-         buffer; it does not delete logs on the router when you clear the view.",
+        "Live log tail from `/log` (topics + message), newest first. This client keeps a \
+         bounded local buffer; it does not delete logs on the router when you clear the view.",
         "Debug events and errors. Configure what is recorded under Logging.",
         "time, topics, message. Space pauses the view; severity filter is local."
     ),

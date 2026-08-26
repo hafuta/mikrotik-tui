@@ -1395,6 +1395,7 @@ impl App {
             Vec::new()
         } else if self.on_table_content() {
             self.table.page_by(direction);
+            self.pause_log_follow_if_leaving_newest(direction);
             self.after_table_cursor()
         } else if self.pane == Pane::Nav {
             self.nav.page_by(direction);
@@ -1434,6 +1435,7 @@ impl App {
             Vec::new()
         } else if self.on_table_content() {
             self.table.select_last();
+            self.pause_log_follow_if_leaving_newest(1);
             self.after_table_cursor()
         } else if self.pane == Pane::Nav {
             self.nav.select_last();
@@ -1473,9 +1475,7 @@ impl App {
             }
             Pane::Content => {
                 self.table.move_selection(delta);
-                if self.current_resource == "logs" && delta < 0 {
-                    self.log_follow = false;
-                }
+                self.pause_log_follow_if_leaving_newest(delta);
                 self.after_table_cursor()
             }
             Pane::Inspector => {
@@ -1494,6 +1494,12 @@ impl App {
                 self.sync_console_viewport();
                 Vec::new()
             }
+        }
+    }
+
+    fn pause_log_follow_if_leaving_newest(&mut self, delta: isize) {
+        if self.current_resource == "logs" && delta > 0 {
+            self.log_follow = false;
         }
     }
 

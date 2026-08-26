@@ -118,24 +118,64 @@ async fn run_ui(
             }
             msg = rx.recv() => {
                 if let Some(msg) = msg {
-                    let cmds = app.update(AppEvent::Worker(msg));
-                    dispatch_commands(rt, &tx, &mut app, &mut ios, cmds);
+                    apply_worker_frame(rt, &tx, &mut app, &mut ios, &mut rx, msg);
                 }
             }
-            () = tokio::time::sleep(Duration::from_millis(16)) => {
-                while event::poll(Duration::from_millis(0))? {
-                    match event::read()? {
-                        Event::Key(key) if key.kind == KeyEventKind::Press => {
-                            let cmds = app.update(AppEvent::Input(key));
-                            dispatch_commands(rt, &tx, &mut app, &mut ios, cmds);
-                        }
-                        Event::Resize(width, height) => {
-                            let _ = app.update(AppEvent::Resize { width, height });
-                        }
-                        _ => {}
-                    }
-                }
+            () = tokio::time::sleep(Duration::from_millis(16)) => {}
+        }
+        drain_input(rt, &tx, &mut app, &mut ios)?;
+    }
+    Ok(())
+}
+
+/// Cap so a listen/follow dump cannot redraw once per row and starve keys.
+const WORKER_MSGS_PER_FRAME: usize = 32;
+
+fn apply_worker_frame(
+    rt: &tokio::runtime::Runtime,
+    tx: &mpsc::UnboundedSender<WorkerMsg>,
+    app: &mut App,
+    ios: &mut HashMap<SessionId, SessionIo>,
+    rx: &mut mpsc::UnboundedReceiver<WorkerMsg>,
+    first: WorkerMsg,
+) {
+    for msg in take_worker_batch(rx, first) {
+        let cmds = app.update(AppEvent::Worker(msg));
+        dispatch_commands(rt, tx, app, ios, cmds);
+    }
+}
+
+fn take_worker_batch(
+    rx: &mut mpsc::UnboundedReceiver<WorkerMsg>,
+    first: WorkerMsg,
+) -> Vec<WorkerMsg> {
+    let mut batch = Vec::with_capacity(WORKER_MSGS_PER_FRAME);
+    batch.push(first);
+    while batch.len() < WORKER_MSGS_PER_FRAME {
+        match rx.try_recv() {
+            Ok(msg) => batch.push(msg),
+            Err(_) => break,
+        }
+    }
+    batch
+}
+
+fn drain_input(
+    rt: &tokio::runtime::Runtime,
+    tx: &mpsc::UnboundedSender<WorkerMsg>,
+    app: &mut App,
+    ios: &mut HashMap<SessionId, SessionIo>,
+) -> anyhow::Result<()> {
+    while event::poll(Duration::from_millis(0))? {
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                let cmds = app.update(AppEvent::Input(key));
+                dispatch_commands(rt, tx, app, ios, cmds);
             }
+            Event::Resize(width, height) => {
+                let _ = app.update(AppEvent::Resize { width, height });
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -1429,9 +1469,29 @@ async fn stream_probe(
 
 #[cfg(test)]
 mod tests {
-    use super::lookup_option_values;
+    use super::{WORKER_MSGS_PER_FRAME, lookup_option_values, take_worker_batch};
+    use crate::event::WorkerMsg;
+    use crate::session::SessionId;
     use mtui_routeros::Resource;
     use std::collections::HashMap;
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn worker_batch_stops_at_frame_cap() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        for i in 0..100_u32 {
+            tx.send(WorkerMsg::ProbeResult {
+                session: SessionId::raw(1),
+                fingerprint: Some(i.to_string()),
+                error: None,
+            })
+            .expect("send");
+        }
+        let first = rx.try_recv().expect("first");
+        let batch = take_worker_batch(&mut rx, first);
+        assert_eq!(batch.len(), WORKER_MSGS_PER_FRAME);
+        assert!(rx.try_recv().is_ok());
+    }
 
     #[test]
     fn lookup_skips_empty_values_and_dedupes() {

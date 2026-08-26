@@ -265,10 +265,9 @@ impl Client {
             .await
     }
 
-    /// `/log/print` with `follow`.
+    /// `/log/print` with `follow-only` so history is not replayed after `/log/print`.
     pub async fn follow_log(&self) -> Result<ApiStream> {
-        self.open_stream("follow", vec!["/log/print".into(), "=follow=".into()])
-            .await
+        self.open_stream("follow", log_follow_words()).await
     }
 
     /// `/interface/monitor-traffic` for one interface.
@@ -314,6 +313,10 @@ impl Client {
             session: self.inner.stream.clone(),
         })
     }
+}
+
+fn log_follow_words() -> Vec<String> {
+    vec!["/log/print".into(), "=follow-only=".into()]
 }
 
 /// Streaming `!re` replies until cancel or `!done`.
@@ -555,6 +558,11 @@ mod tests {
             inspect_children_words(&[]),
             ["/console/inspect", "=request=child", "=path="]
         );
+    }
+
+    #[test]
+    fn log_follow_uses_follow_only() {
+        assert_eq!(log_follow_words(), ["/log/print", "=follow-only="]);
     }
 
     #[test]

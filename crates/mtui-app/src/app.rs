@@ -2110,9 +2110,14 @@ impl App {
 
     pub(crate) fn rebuild_log_table(&mut self) {
         let sev = self.log_severity;
+        let selected_id = self
+            .table
+            .selected_row()
+            .and_then(|row| row.get(".id").cloned());
         let rows: Vec<_> = self
             .log_buffer
             .iter()
+            .rev()
             .filter(|r| match sev {
                 LogSeverity::All => true,
                 other => r
@@ -2121,12 +2126,14 @@ impl App {
                     .to_ascii_lowercase()
                     .contains(other.label()),
             })
-            .map(Resource::masked_fields)
+            .map(Resource::display_row)
             .collect();
         let previous = self.table.selected;
         self.table.set_rows(rows);
         if self.log_follow && self.table.row_count() > 0 {
-            self.table.select_last();
+            self.table.select_first();
+        } else if let Some(id) = selected_id {
+            self.table.select_id(&id);
         }
         self.sync_table_viewport();
         self.refresh_inspector(self.table.selected == previous && !self.log_follow);
@@ -2998,6 +3005,13 @@ mod log_ingest_tests {
         }));
     }
 
+    fn first_log_message(app: &App) -> Option<String> {
+        app.table
+            .visible_rows()
+            .first()
+            .and_then(|row| row.get("message").cloned())
+    }
+
     #[test]
     fn log_print_caps_buffer_and_jumps_to_newest_once() {
         let mut app = logs_app();
@@ -3005,7 +3019,8 @@ mod log_ingest_tests {
         print_logs(&mut app, rows);
         assert_eq!(app.log_buffer.len(), LOG_BUFFER_CAP);
         assert_eq!(app.table.row_count(), LOG_BUFFER_CAP);
-        assert_eq!(app.table.selected, LOG_BUFFER_CAP - 1);
+        assert_eq!(app.table.selected, 0);
+        assert_eq!(first_log_message(&app).as_deref(), Some("msg600"));
         let selected = app.table.selected;
         let offset = app.table.row_offset;
         follow_log(&mut app, log_row("*1", 1));
@@ -3014,6 +3029,7 @@ mod log_ingest_tests {
         assert_eq!(app.table.row_count(), LOG_BUFFER_CAP);
         assert_eq!(app.table.selected, selected);
         assert_eq!(app.table.row_offset, offset);
+        assert_eq!(first_log_message(&app).as_deref(), Some("msg600"));
     }
 
     #[test]
@@ -3031,11 +3047,34 @@ mod log_ingest_tests {
         assert!(!app.log_hold_follow_paint);
         assert_eq!(app.log_buffer.len(), 3);
         assert_eq!(app.table.row_count(), 3);
-        assert_eq!(app.table.selected, 2);
+        assert_eq!(app.table.selected, 0);
+        assert_eq!(first_log_message(&app).as_deref(), Some("msg3"));
         follow_log(&mut app, log_row("*4", 4));
         assert_eq!(app.log_buffer.len(), 4);
         assert_eq!(app.table.row_count(), 4);
-        assert_eq!(app.table.selected, 3);
+        assert_eq!(app.table.selected, 0);
+        assert_eq!(first_log_message(&app).as_deref(), Some("msg4"));
+    }
+
+    #[test]
+    fn log_scroll_down_keeps_the_same_row_when_a_newer_line_arrives() {
+        let mut app = logs_app();
+        print_logs(
+            &mut app,
+            vec![log_row("*1", 1), log_row("*2", 2), log_row("*3", 3)],
+        );
+        app.table.move_selection(1);
+        app.log_follow = false;
+        follow_log(&mut app, log_row("*4", 4));
+        assert_eq!(app.table.selected, 2);
+        assert_eq!(
+            app.table
+                .selected_row()
+                .and_then(|row| row.get("message"))
+                .map(String::as_str),
+            Some("msg2")
+        );
+        assert_eq!(first_log_message(&app).as_deref(), Some("msg4"));
     }
 }
 
