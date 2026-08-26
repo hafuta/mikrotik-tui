@@ -2467,7 +2467,7 @@ mod tests {
             !app.inspector
                 .fields
                 .iter()
-                .any(|(label, _)| label == "L3 HW")
+                .any(|(label, _)| label == "L3 HW Offloading")
         );
 
         let _ = app.update(AppEvent::Worker(WorkerMsg::FormRecordResult {
@@ -2483,7 +2483,7 @@ mod tests {
             app.inspector
                 .fields
                 .iter()
-                .any(|(label, _)| label == "L3 HW"),
+                .any(|(label, _)| label == "L3 HW Offloading"),
             "details pane should show switch L3 once print arrives: {:?}",
             app.inspector
                 .fields
@@ -2530,7 +2530,7 @@ mod tests {
             !app.inspector
                 .fields
                 .iter()
-                .any(|(label, _)| label == "L3 HW")
+                .any(|(label, _)| label == "L3 HW Offloading")
         );
 
         let _ = app.update(AppEvent::Worker(WorkerMsg::FormRecordResult {
@@ -2546,7 +2546,7 @@ mod tests {
             app.inspector
                 .fields
                 .iter()
-                .any(|(label, _)| label == "L3 HW"),
+                .any(|(label, _)| label == "L3 HW Offloading"),
             "details pane should show port L3 once print arrives: {:?}",
             app.inspector
                 .fields

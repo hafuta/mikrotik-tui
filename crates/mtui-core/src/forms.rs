@@ -807,7 +807,14 @@ fn declared_field_state(
     {
         return Some(state);
     }
-    evaluate_field_rules(crate::switch_write::FIELD_RULES, resource_id, key, values)
+    if let Some(state) = crate::features::switch::rules::form_field_state(resource_id, key, values)
+    {
+        return Some(state);
+    }
+    if let Some(state) = crate::features::ip::rules::form_field_state(resource_id, key, values) {
+        return Some(state);
+    }
+    crate::features::ipv6::rules::form_field_state(resource_id, key, values)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
