@@ -14,7 +14,11 @@ description: Develop and review MikroTik RouterOS resources, API mappings, mutat
    password, secret, passphrase, private-key, and pre-shared-key values before
    they reach a component; add a marker-secret regression test.
 7. Add table-driven tests for decoding, encoding, optional fields, RouterOS error replies, cancellation, and malformed data. Use fakes; tests must not require a router.
-8. Run `cargo fmt`, the affected crate tests, and `cargo test --workspace`.
+8. Run `cargo fmt`, Clippy with `-D warnings` (`just prepush` / `just check`),
+   the affected crate tests, and `cargo test --workspace`. In `//!` / `///`,
+   wrap CamelCase product names in backticks (`` `WireGuard` ``). Otherwise
+   Clippy `doc_markdown` fails CI with `item in documentation is missing
+   backticks`.
 9. Add a `ScreenGuide` in `about.rs` for every new resource id (and dashboard).
    Paraphrase the RouterOS manual; do not invent protocol claims or copy
    property tables. Prefer a conceptual `manual.mikrotik.com` URL when one

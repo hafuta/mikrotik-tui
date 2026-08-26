@@ -15,6 +15,7 @@ description: >-
 5. Keep secrets out of models used by `render`, debug formatting, and logs; request credentials only at the connection boundary.
 6. Test update transitions and view invariants with fixed dimensions. Cover resize, repeated keys, empty data, errors, cancellation, and stale messages without sleeps or live network access.
 7. Before push run `just prepush` (format, then Clippy `-D warnings`, then tests). CI runs `just check` (fmt `--check`, same Clippy, same tests). Never Clippy then format. Keep OS-gated tests in their own `cfg` modules so unused imports cannot appear only on Linux or only on Windows. The compiler is pinned in `rust-toolchain.toml`.
+8. Clippy `doc_markdown` fails CI with `item in documentation is missing backticks`. CamelCase in `//!` / `///` is treated as a type name. Write `` `WireGuard` ``, not WireGuard. Same for other product or type-like words (not `PPP`, which is all caps). Do not `allow` this lint. Fix the prose, then re-run Clippy.
 
 ## Rendering invariants
 
