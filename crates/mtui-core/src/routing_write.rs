@@ -1,14 +1,14 @@
 //! Form schemas for the Routing nav group.
 //!
 //! Catalog wiring (do not register here):
-//! - `routing-tables` → `/rest/routing/table` (`ROUTING_TABLE_FORM`)
-//! - `routing-rules` → `/rest/routing/rule` (`ROUTING_RULE_FORM`)
-//! - `ospf-instances` → `/rest/routing/ospf/instance` (`OSPF_INSTANCE_FORM`)
-//! - `ospf-areas` → `/rest/routing/ospf/area` (`MEMBER_ACTIONS`, `OSPF_AREA_FORM`)
-//! - `ospf-interface-templates` → `/rest/routing/ospf/interface-template` (`MEMBER_ACTIONS`, `OSPF_INTERFACE_TEMPLATE_FORM`)
-//! - `ospf-interfaces` → `/rest/routing/ospf/interface` (`ACTION_EDIT`, `OSPF_INTERFACE_FORM`, Status-only)
-//! - `bgp-connections` → `/rest/routing/bgp/connection` (`BGP_CONNECTION_FORM`)
-//! - `bgp-templates` → `/rest/routing/bgp/template` (`MEMBER_ACTIONS`, `BGP_TEMPLATE_FORM`)
+//! - `routing-tables` → `/routing/table` (`ROUTING_TABLE_FORM`)
+//! - `routing-rules` → `/routing/rule` (`ROUTING_RULE_FORM`)
+//! - `ospf-instances` → `/routing/ospf/instance` (`OSPF_INSTANCE_FORM`)
+//! - `ospf-areas` → `/routing/ospf/area` (`MEMBER_ACTIONS`, `OSPF_AREA_FORM`)
+//! - `ospf-interface-templates` → `/routing/ospf/interface-template` (`MEMBER_ACTIONS`, `OSPF_INTERFACE_TEMPLATE_FORM`)
+//! - `ospf-interfaces` → `/routing/ospf/interface` (`ACTION_EDIT`, `OSPF_INTERFACE_FORM`, Status-only)
+//! - `bgp-connections` → `/routing/bgp/connection` (`BGP_CONNECTION_FORM`)
+//! - `bgp-templates` → `/routing/bgp/template` (`MEMBER_ACTIONS`, `BGP_TEMPLATE_FORM`)
 //!
 //! Group id: `routing-group`.
 //! `RouterOS` 7 writes OSPF interface parameters on `/routing/ospf/interface-template`.
@@ -450,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn bgp_uses_dotted_rest_keys() {
+    fn bgp_uses_dotted_api_keys() {
         assert!(
             BGP_CONNECTION_FORM
                 .writable_keys()

@@ -38,9 +38,9 @@ pub struct ResourceSpec {
     pub refresh: Duration,
     pub actions: &'static [ActionSpec],
     pub form: Option<&'static FormSchema>,
-    /// CLI path for inspect, about, and the command palette when it is not
-    /// the REST endpoint with `/rest` stripped. Nav group is not this prefix:
-    /// Certificates sits under System but lives at `/certificate`.
+    /// CLI path for inspect, about, and the command palette when it differs
+    /// from [`Self::endpoint`]. Nav group is not this prefix: Certificates
+    /// sits under System but lives at `/certificate`.
     pub cli_path: Option<&'static str>,
 }
 
@@ -60,15 +60,27 @@ impl ResourceSpec {
         }
         match self.fetch {
             FetchKind::Local => self.id,
-            FetchKind::List { endpoint } | FetchKind::System { endpoint } => {
-                endpoint.trim_start_matches("/rest")
-            }
+            FetchKind::List { endpoint } | FetchKind::System { endpoint } => endpoint,
         }
     }
 
     #[must_use]
     pub fn is_singleton(&self) -> bool {
         matches!(self.fetch, FetchKind::System { .. })
+    }
+
+    /// Watchdog, Reset Configuration, and `RouterBOARD` extra pages render the
+    /// property sheet in the content pane instead of a table plus modal.
+    #[must_use]
+    pub fn is_inline_form(&self) -> bool {
+        matches!(
+            self.id,
+            "watchdog"
+                | "reset-configuration"
+                | "routerboard-settings"
+                | "routerboard-mode-button"
+                | "routerboard-reset-button"
+        )
     }
 
     #[must_use]
@@ -99,7 +111,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "WireGuard",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/wireguard",
+            endpoint: "/interface/wireguard",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -122,7 +134,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "WireGuard Peers",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/wireguard/peers",
+            endpoint: "/interface/wireguard/peers",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -151,7 +163,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Secrets",
         fetch: FetchKind::List {
-            endpoint: "/rest/ppp/secret",
+            endpoint: "/ppp/secret",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -175,7 +187,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Profiles",
         fetch: FetchKind::List {
-            endpoint: "/rest/ppp/profile",
+            endpoint: "/ppp/profile",
         },
         columns: &[
             col!("name", "Name", 20),
@@ -201,7 +213,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Active",
         fetch: FetchKind::List {
-            endpoint: "/rest/ppp/active",
+            endpoint: "/ppp/active",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -224,7 +236,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "AAA",
         fetch: FetchKind::System {
-            endpoint: "/rest/ppp/aaa",
+            endpoint: "/ppp/aaa",
         },
         columns: &[
             col!("use-radius", "RADIUS", 8),
@@ -242,7 +254,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "PPP Client",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/ppp-client",
+            endpoint: "/interface/ppp-client",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -266,7 +278,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "PPPoE Clients",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/pppoe-client",
+            endpoint: "/interface/pppoe-client",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -293,7 +305,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "PPPoE Servers",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/pppoe-server/server",
+            endpoint: "/interface/pppoe-server/server",
         },
         columns: &[
             col!("service-name", "Service", 16),
@@ -318,7 +330,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "PPPoE Sessions",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/pppoe-server",
+            endpoint: "/interface/pppoe-server",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -339,7 +351,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "PPTP Clients",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/pptp-client",
+            endpoint: "/interface/pptp-client",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -362,7 +374,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "PPTP Sessions",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/pptp-server",
+            endpoint: "/interface/pptp-server",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -381,7 +393,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "PPTP Server",
         fetch: FetchKind::System {
-            endpoint: "/rest/interface/pptp-server/server",
+            endpoint: "/interface/pptp-server/server",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -402,7 +414,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "L2TP Clients",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/l2tp-client",
+            endpoint: "/interface/l2tp-client",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -427,7 +439,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "L2TP Sessions",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/l2tp-server",
+            endpoint: "/interface/l2tp-server",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -446,7 +458,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "L2TP Server",
         fetch: FetchKind::System {
-            endpoint: "/rest/interface/l2tp-server/server",
+            endpoint: "/interface/l2tp-server/server",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -469,7 +481,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "SSTP Clients",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/sstp-client",
+            endpoint: "/interface/sstp-client",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -494,7 +506,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "SSTP Sessions",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/sstp-server",
+            endpoint: "/interface/sstp-server",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -513,7 +525,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "SSTP Server",
         fetch: FetchKind::System {
-            endpoint: "/rest/interface/sstp-server/server",
+            endpoint: "/interface/sstp-server/server",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -536,7 +548,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "OpenVPN Clients",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/ovpn-client",
+            endpoint: "/interface/ovpn-client",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -564,7 +576,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "OpenVPN Sessions",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/ovpn-server",
+            endpoint: "/interface/ovpn-server",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -583,7 +595,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "OpenVPN Server",
         fetch: FetchKind::System {
-            endpoint: "/rest/interface/ovpn-server/server",
+            endpoint: "/interface/ovpn-server/server",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -606,7 +618,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Bridge",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge",
+            endpoint: "/interface/bridge",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -637,7 +649,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Ports",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge/port",
+            endpoint: "/interface/bridge/port",
         },
         columns: &[
             col!("interface", "Interface", 18),
@@ -668,7 +680,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Hosts",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge/host",
+            endpoint: "/interface/bridge/host",
         },
         columns: &[
             col!("mac-address", "MAC address", 18),
@@ -691,7 +703,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "VLANs",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge/vlan",
+            endpoint: "/interface/bridge/vlan",
         },
         columns: &[
             col!("bridge", "Bridge", 16),
@@ -714,7 +726,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "MDB",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge/mdb",
+            endpoint: "/interface/bridge/mdb",
         },
         columns: &[
             col!("group", "Group", 22),
@@ -734,7 +746,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "MSTIs",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge/msti",
+            endpoint: "/interface/bridge/msti",
         },
         columns: &[
             col!("bridge", "Bridge", 16),
@@ -753,7 +765,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Filter",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge/filter",
+            endpoint: "/interface/bridge/filter",
         },
         columns: &[
             col!("chain", "Chain", 10),
@@ -783,7 +795,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "NAT",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge/nat",
+            endpoint: "/interface/bridge/nat",
         },
         columns: &[
             col!("chain", "Chain", 10),
@@ -810,7 +822,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Settings",
         fetch: FetchKind::System {
-            endpoint: "/rest/interface/bridge/settings",
+            endpoint: "/interface/bridge/settings",
         },
         columns: &[
             col!("use-ip-firewall", "IP firewall", 12),
@@ -833,7 +845,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Port Controller",
         fetch: FetchKind::System {
-            endpoint: "/rest/interface/bridge/port-controller",
+            endpoint: "/interface/bridge/port-controller",
         },
         columns: &[
             col!("bridge", "Bridge", 16),
@@ -850,7 +862,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Controller Devices",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge/port-controller/device",
+            endpoint: "/interface/bridge/port-controller/device",
         },
         columns: &[
             col!("name", "Name", 16),
@@ -869,7 +881,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Controller Ports",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/bridge/port-controller/port",
+            endpoint: "/interface/bridge/port-controller/port",
         },
         columns: &[
             col!("name", "Name", 20),
@@ -890,7 +902,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Port Extender",
         fetch: FetchKind::System {
-            endpoint: "/rest/interface/bridge/port-extender",
+            endpoint: "/interface/bridge/port-extender",
         },
         columns: &[
             col!("switch", "Switch", 12),
@@ -907,7 +919,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Switch",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/ethernet/switch",
+            endpoint: "/interface/ethernet/switch",
         },
         columns: &[
             col!("name", "Name", 12),
@@ -929,7 +941,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Ports",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/ethernet/switch/port",
+            endpoint: "/interface/ethernet/switch/port",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -954,7 +966,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "VLANs",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/ethernet/switch/vlan",
+            endpoint: "/interface/ethernet/switch/vlan",
         },
         columns: &[
             col!("switch", "Switch", 12),
@@ -973,7 +985,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Hosts",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/ethernet/switch/host",
+            endpoint: "/interface/ethernet/switch/host",
         },
         columns: &[
             col!("switch", "Switch", 12),
@@ -997,7 +1009,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Rules",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/ethernet/switch/rule",
+            endpoint: "/interface/ethernet/switch/rule",
         },
         columns: &[
             col!("switch", "Switch", 12),
@@ -1028,7 +1040,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Port Isolation",
         fetch: FetchKind::List {
-            endpoint: "/rest/interface/ethernet/switch/port-isolation",
+            endpoint: "/interface/ethernet/switch/port-isolation",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -1045,7 +1057,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "L3HW Settings",
         fetch: FetchKind::System {
-            endpoint: "/rest/interface/ethernet/switch/l3hw-settings",
+            endpoint: "/interface/ethernet/switch/l3hw-settings",
         },
         columns: &[
             col!("autorestart", "Autorestart", 12),
@@ -1064,7 +1076,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "ARP",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/arp",
+            endpoint: "/ip/arp",
         },
         columns: &[
             col!("address", "Address", 18),
@@ -1083,7 +1095,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Addresses",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/address",
+            endpoint: "/ip/address",
         },
         columns: &[
             col!("address", "Address", 20),
@@ -1102,7 +1114,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dhcp-server",
+            endpoint: "/ip/dhcp-server",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -1121,7 +1133,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Networks",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dhcp-server/network",
+            endpoint: "/ip/dhcp-server/network",
         },
         columns: &[
             col!("address", "Network", 20),
@@ -1139,7 +1151,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Leases",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dhcp-server/lease",
+            endpoint: "/ip/dhcp-server/lease",
         },
         columns: &[
             col!("address", "Address", 18),
@@ -1158,7 +1170,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP Relay",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dhcp-relay",
+            endpoint: "/ip/dhcp-relay",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -1178,7 +1190,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP Options",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dhcp-server/option",
+            endpoint: "/ip/dhcp-server/option",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -1196,7 +1208,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP Option Sets",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dhcp-server/option/sets",
+            endpoint: "/ip/dhcp-server/option/sets",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -1213,7 +1225,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Firewall",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/firewall/filter",
+            endpoint: "/ip/firewall/filter",
         },
         columns: &[
             col!("chain", "Chain", 10),
@@ -1241,9 +1253,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         group: "system-group",
         cli_path: Some("/user"),
         label: "Users",
-        fetch: FetchKind::List {
-            endpoint: "/rest/user",
-        },
+        fetch: FetchKind::List { endpoint: "/user" },
         columns: &[
             col!("name", "Name", 18),
             col!("group", "Group", 14),
@@ -1255,12 +1265,29 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::system_write::USER_FORM),
     },
     ResourceSpec {
+        id: "special-login",
+        group: "system-group",
+        cli_path: Some("/special-login"),
+        label: "Special Login",
+        fetch: FetchKind::List {
+            endpoint: "/special-login",
+        },
+        columns: &[
+            col!("user", "User", 16),
+            col!("port", "Port", 14),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::system_write::SPECIAL_LOGIN_FORM),
+    },
+    ResourceSpec {
         id: "routerboard",
         group: "system-group",
         cli_path: None,
         label: "RouterBOARD",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/routerboard",
+            endpoint: "/system/routerboard",
         },
         columns: &[
             col!("model", "Model", 18),
@@ -1273,12 +1300,63 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         form: None,
     },
     ResourceSpec {
+        id: "routerboard-settings",
+        group: "system-group",
+        cli_path: Some("/system/routerboard/settings"),
+        label: "RouterBOARD Settings",
+        fetch: FetchKind::System {
+            endpoint: "/system/routerboard/settings",
+        },
+        columns: &[
+            col!("boot-device", "Boot device", 28),
+            col!("boot-os", "Boot OS", 12),
+            col!("auto-upgrade", "Auto", 6),
+        ],
+        refresh: Duration::from_secs(60),
+        actions: &[],
+        form: Some(&crate::system_write::ROUTERBOARD_SETTINGS_FORM),
+    },
+    ResourceSpec {
+        id: "routerboard-mode-button",
+        group: "system-group",
+        cli_path: Some("/system/routerboard/mode-button"),
+        label: "Mode Button",
+        fetch: FetchKind::System {
+            endpoint: "/system/routerboard/mode-button",
+        },
+        columns: &[
+            col!("enabled", "Enabled", 8),
+            col!("hold-time", "Hold", 10),
+            col!("on-event", "On event", 24),
+        ],
+        refresh: Duration::from_secs(60),
+        actions: &[],
+        form: Some(&crate::system_write::ROUTERBOARD_MODE_BUTTON_FORM),
+    },
+    ResourceSpec {
+        id: "routerboard-reset-button",
+        group: "system-group",
+        cli_path: Some("/system/routerboard/reset-button"),
+        label: "Reset Button",
+        fetch: FetchKind::System {
+            endpoint: "/system/routerboard/reset-button",
+        },
+        columns: &[
+            col!("enabled", "Enabled", 8),
+            col!("hold-time", "Hold", 10),
+            col!("on-event", "On event", 24),
+        ],
+        refresh: Duration::from_secs(60),
+        actions: &[],
+        form: Some(&crate::system_write::ROUTERBOARD_RESET_BUTTON_FORM),
+    },
+    ResourceSpec {
         id: "ntp",
         group: "system-group",
         cli_path: None,
         label: "NTP Client",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/ntp/client",
+            endpoint: "/system/ntp/client",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -1296,7 +1374,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "NTP Server",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/ntp/server",
+            endpoint: "/system/ntp/server",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -1315,7 +1393,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "NTP Keys",
         fetch: FetchKind::List {
-            endpoint: "/rest/system/ntp/key",
+            endpoint: "/system/ntp/key",
         },
         columns: &[col!("key-id", "Key ID", 10)],
         refresh: Duration::from_secs(30),
@@ -1328,7 +1406,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Clock",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/clock",
+            endpoint: "/system/clock",
         },
         columns: &[
             col!("time", "Time", 12),
@@ -1346,7 +1424,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "License",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/license",
+            endpoint: "/system/license",
         },
         columns: &[
             col!("software-id", "Software ID", 14),
@@ -1367,9 +1445,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         group: "system-group",
         cli_path: Some("/disk"),
         label: "Disks",
-        fetch: FetchKind::List {
-            endpoint: "/rest/disk",
-        },
+        fetch: FetchKind::List { endpoint: "/disk" },
         columns: &[
             col!("slot", "Slot", 12),
             col!("type", "Type", 12),
@@ -1393,7 +1469,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Device Mode",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/device-mode",
+            endpoint: "/system/device-mode",
         },
         columns: &[
             col!("mode", "Mode", 12),
@@ -1415,7 +1491,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Neighbors",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/neighbor",
+            endpoint: "/ip/neighbor",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -1436,7 +1512,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP Client",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dhcp-client",
+            endpoint: "/ip/dhcp-client",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -1459,7 +1535,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DNS",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/dns",
+            endpoint: "/ip/dns",
         },
         columns: &[
             col!("servers", "Servers", 28),
@@ -1477,7 +1553,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Static DNS",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dns/static",
+            endpoint: "/ip/dns/static",
         },
         columns: &[
             col!("name", "Name", 24),
@@ -1497,7 +1573,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Routes",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/route",
+            endpoint: "/ip/route",
         },
         columns: &[
             col!("dst-address", "Dst", 20),
@@ -1521,7 +1597,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Pool",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/pool",
+            endpoint: "/ip/pool",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -1539,7 +1615,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Services",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/service",
+            endpoint: "/ip/service",
         },
         columns: &[
             col!("name", "Name", 14),
@@ -1558,7 +1634,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Settings",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/settings",
+            endpoint: "/ip/settings",
         },
         columns: &[
             col!("ip-forward", "Forward", 8),
@@ -1577,7 +1653,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "NAT",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/firewall/nat",
+            endpoint: "/ip/firewall/nat",
         },
         columns: &[
             col!("chain", "Chain", 10),
@@ -1606,7 +1682,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Mangle",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/firewall/mangle",
+            endpoint: "/ip/firewall/mangle",
         },
         columns: &[
             col!("chain", "Chain", 10),
@@ -1632,7 +1708,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Raw",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/firewall/raw",
+            endpoint: "/ip/firewall/raw",
         },
         columns: &[
             col!("chain", "Chain", 12),
@@ -1659,7 +1735,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Connections",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/firewall/connection",
+            endpoint: "/ip/firewall/connection",
         },
         columns: &[
             col!("src-address", "Source", 22),
@@ -1683,7 +1759,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Address List",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/firewall/address-list",
+            endpoint: "/ip/firewall/address-list",
         },
         columns: &[
             col!("list", "List", 16),
@@ -1703,7 +1779,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Layer7 Protocol",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/firewall/layer7-protocol",
+            endpoint: "/ip/firewall/layer7-protocol",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -1720,7 +1796,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Service Port",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/firewall/service-port",
+            endpoint: "/ip/firewall/service-port",
         },
         columns: &[
             col!("name", "Name", 14),
@@ -1737,7 +1813,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Peers",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/peer",
+            endpoint: "/ip/ipsec/peer",
         },
         columns: &[
             col!("name", "Name", 16),
@@ -1759,7 +1835,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Identities",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/identity",
+            endpoint: "/ip/ipsec/identity",
         },
         columns: &[
             col!("peer", "Peer", 16),
@@ -1780,7 +1856,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Policies",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/policy",
+            endpoint: "/ip/ipsec/policy",
         },
         columns: &[
             col!("src-address", "Source", 20),
@@ -1809,7 +1885,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Proposals",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/proposal",
+            endpoint: "/ip/ipsec/proposal",
         },
         columns: &[
             col!("name", "Name", 16),
@@ -1829,7 +1905,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Profiles",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/profile",
+            endpoint: "/ip/ipsec/profile",
         },
         columns: &[
             col!("name", "Name", 16),
@@ -1852,7 +1928,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Installed SAs",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/installed-sa",
+            endpoint: "/ip/ipsec/installed-sa",
         },
         columns: &[
             col!("src-address", "Source", 20),
@@ -1873,7 +1949,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "IPsec Settings",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/ipsec/settings",
+            endpoint: "/ip/ipsec/settings",
         },
         columns: &[
             col!("accounting", "Accounting", 11),
@@ -1892,7 +1968,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Mode Config",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/mode-config",
+            endpoint: "/ip/ipsec/mode-config",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -1910,7 +1986,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "IPsec RSA Keys",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/key/rsa",
+            endpoint: "/ip/ipsec/key/rsa",
         },
         columns: &[col!("name", "Name", 18), col!("key-size", "Size", 8)],
         refresh: Duration::from_secs(30),
@@ -1923,7 +1999,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "IPsec PSKs",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/ipsec/key/psk",
+            endpoint: "/ip/ipsec/key/psk",
         },
         columns: &[col!("peer", "Peer", 18), col!("id", "ID", 24)],
         refresh: Duration::from_secs(30),
@@ -1936,7 +2012,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "IPsec QKD",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/ipsec/key/qkd",
+            endpoint: "/ip/ipsec/key/qkd",
         },
         columns: &[
             col!("address", "Address", 22),
@@ -1955,7 +2031,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Cloud",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/cloud",
+            endpoint: "/ip/cloud",
         },
         columns: &[
             col!("ddns-enabled", "DDNS", 6),
@@ -1973,7 +2049,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Kid Control",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/kid-control",
+            endpoint: "/ip/kid-control",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -1991,7 +2067,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Kid Devices",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/kid-control/device",
+            endpoint: "/ip/kid-control/device",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2009,7 +2085,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "SOCKS",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/socks",
+            endpoint: "/ip/socks",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -2026,7 +2102,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "SMB",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/smb",
+            endpoint: "/ip/smb",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -2043,7 +2119,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "SMB Shares",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/smb/shares",
+            endpoint: "/ip/smb/shares",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2065,7 +2141,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "SMB Users",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/smb/users",
+            endpoint: "/ip/smb/users",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2084,7 +2160,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "UPnP",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/upnp",
+            endpoint: "/ip/upnp",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -2101,7 +2177,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "UPnP Interfaces",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/upnp/interfaces",
+            endpoint: "/ip/upnp/interfaces",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -2119,7 +2195,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DNS Cache",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dns/cache",
+            endpoint: "/ip/dns/cache",
         },
         columns: &[
             col!("name", "Name", 28),
@@ -2137,7 +2213,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP Alert",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/dhcp-server/alert",
+            endpoint: "/ip/dhcp-server/alert",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -2155,7 +2231,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Conntrack",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/firewall/connection/tracking",
+            endpoint: "/ip/firewall/connection/tracking",
         },
         columns: &[
             col!("enabled", "Enabled", 10),
@@ -2173,7 +2249,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Discovery Settings",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/neighbor/discovery-settings",
+            endpoint: "/ip/neighbor/discovery-settings",
         },
         columns: &[
             col!("discover-interface-list", "Discover", 18),
@@ -2190,7 +2266,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "SSH",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/ssh",
+            endpoint: "/ip/ssh",
         },
         columns: &[
             col!("strong-crypto", "Strong", 8),
@@ -2207,7 +2283,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Traffic Flow",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/traffic-flow",
+            endpoint: "/ip/traffic-flow",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -2225,7 +2301,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Traffic Flow Targets",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/traffic-flow/target",
+            endpoint: "/ip/traffic-flow/target",
         },
         columns: &[
             col!("src-address", "Src. Address", 16),
@@ -2244,7 +2320,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Traffic Flow IPFIX",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/traffic-flow/ipfix",
+            endpoint: "/ip/traffic-flow/ipfix",
         },
         columns: &[
             col!("bytes", "Bytes", 7),
@@ -2263,7 +2339,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "IGMP Proxy",
         fetch: FetchKind::System {
-            endpoint: "/rest/routing/igmp-proxy",
+            endpoint: "/routing/igmp-proxy",
         },
         columns: &[
             col!("query-interval", "Query", 10),
@@ -2281,7 +2357,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "IGMP Proxy Interfaces",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/igmp-proxy/interface",
+            endpoint: "/routing/igmp-proxy/interface",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -2300,7 +2376,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "IGMP Proxy MFC",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/igmp-proxy/mfc",
+            endpoint: "/routing/igmp-proxy/mfc",
         },
         columns: &[
             col!("group", "Group", 16),
@@ -2320,7 +2396,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Proxy",
         fetch: FetchKind::System {
-            endpoint: "/rest/ip/proxy",
+            endpoint: "/ip/proxy",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -2338,7 +2414,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Proxy Access",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/proxy/access",
+            endpoint: "/ip/proxy/access",
         },
         columns: &[
             col!("src-address", "Source", 18),
@@ -2356,7 +2432,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Proxy Cache",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/proxy/cache",
+            endpoint: "/ip/proxy/cache",
         },
         columns: &[
             col!("dst-host", "Host", 22),
@@ -2374,7 +2450,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Proxy Direct",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/proxy/direct",
+            endpoint: "/ip/proxy/direct",
         },
         columns: &[
             col!("dst-host", "Host", 22),
@@ -2392,7 +2468,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Hotspot",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/hotspot",
+            endpoint: "/ip/hotspot",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2410,7 +2486,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Hotspot Profiles",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/hotspot/profile",
+            endpoint: "/ip/hotspot/profile",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2428,7 +2504,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Hotspot Users",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/hotspot/user",
+            endpoint: "/ip/hotspot/user",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2446,7 +2522,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Hotspot Cookies",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/hotspot/cookie",
+            endpoint: "/ip/hotspot/cookie",
         },
         columns: &[
             col!("user", "User", 16),
@@ -2463,7 +2539,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Hotspot Hosts",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/hotspot/host",
+            endpoint: "/ip/hotspot/host",
         },
         columns: &[
             col!("mac-address", "MAC", 18),
@@ -2482,7 +2558,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "IP Bindings",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/hotspot/ip-binding",
+            endpoint: "/ip/hotspot/ip-binding",
         },
         columns: &[
             col!("mac-address", "MAC", 18),
@@ -2501,7 +2577,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Walled Garden",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/hotspot/walled-garden",
+            endpoint: "/ip/hotspot/walled-garden",
         },
         columns: &[
             col!("dst-host", "Host", 24),
@@ -2519,7 +2595,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Walled Garden IP",
         fetch: FetchKind::List {
-            endpoint: "/rest/ip/hotspot/walled-garden-ip",
+            endpoint: "/ip/hotspot/walled-garden-ip",
         },
         columns: &[
             col!("dst-address", "Address", 20),
@@ -2537,7 +2613,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: Some("/user/group"),
         label: "User Groups",
         fetch: FetchKind::List {
-            endpoint: "/rest/user/group",
+            endpoint: "/user/group",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2555,7 +2631,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Identity",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/identity",
+            endpoint: "/system/identity",
         },
         columns: &[col!("name", "Name", 28)],
         refresh: Duration::from_secs(30),
@@ -2568,7 +2644,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Resources",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/resource",
+            endpoint: "/system/resource",
         },
         columns: &[
             col!("uptime", "Uptime", 12),
@@ -2582,7 +2658,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
             col!("architecture-name", "Arch", 10),
         ],
         refresh: Duration::from_secs(5),
-        actions: crate::actions::RESOURCE_LIFECYCLE_ACTIONS,
+        actions: &[],
         form: None,
     },
     ResourceSpec {
@@ -2591,7 +2667,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Health",
         fetch: FetchKind::List {
-            endpoint: "/rest/system/health",
+            endpoint: "/system/health",
         },
         columns: &[
             col!("name", "Name", 20),
@@ -2608,7 +2684,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Packages",
         fetch: FetchKind::List {
-            endpoint: "/rest/system/package",
+            endpoint: "/system/package",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2626,7 +2702,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Package Update",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/package/update",
+            endpoint: "/system/package/update",
         },
         columns: &[
             col!("channel", "Channel", 12),
@@ -2647,9 +2723,33 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         columns: &[
             col!("keep-users", "Keep users", 12),
             col!("no-defaults", "No defaults", 12),
+            col!("skip-backup", "Skip backup", 12),
+            col!("caps-mode", "CAPs mode", 10),
         ],
         refresh: Duration::from_secs(3600),
-        actions: crate::actions::RESET_CONFIG_ACTIONS,
+        actions: &[],
+        form: Some(&crate::system_write::RESET_CONFIG_PROMPT),
+    },
+    ResourceSpec {
+        id: "reboot",
+        group: "system-group",
+        cli_path: Some("/system/reboot"),
+        label: "Reboot",
+        fetch: FetchKind::Local,
+        columns: &[],
+        refresh: Duration::from_secs(3600),
+        actions: &[],
+        form: None,
+    },
+    ResourceSpec {
+        id: "shutdown",
+        group: "system-group",
+        cli_path: Some("/system/shutdown"),
+        label: "Shutdown",
+        fetch: FetchKind::Local,
+        columns: &[],
+        refresh: Duration::from_secs(3600),
+        actions: &[],
         form: None,
     },
     ResourceSpec {
@@ -2658,7 +2758,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: Some("/user/ssh-keys"),
         label: "SSH Keys",
         fetch: FetchKind::List {
-            endpoint: "/rest/user/ssh-keys",
+            endpoint: "/user/ssh-keys",
         },
         columns: &[col!("user", "User", 16), col!("key-owner", "Owner", 20)],
         refresh: Duration::from_secs(30),
@@ -2671,7 +2771,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "History",
         fetch: FetchKind::List {
-            endpoint: "/rest/system/history",
+            endpoint: "/system/history",
         },
         columns: &[
             col!("floating-undo", "F", 3),
@@ -2690,7 +2790,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Scheduler",
         fetch: FetchKind::List {
-            endpoint: "/rest/system/scheduler",
+            endpoint: "/system/scheduler",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2713,7 +2813,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Scripts",
         fetch: FetchKind::List {
-            endpoint: "/rest/system/script",
+            endpoint: "/system/script",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2732,7 +2832,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Logging",
         fetch: FetchKind::List {
-            endpoint: "/rest/system/logging",
+            endpoint: "/system/logging",
         },
         columns: &[
             col!("topics", "Topics", 24),
@@ -2750,7 +2850,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Logging Actions",
         fetch: FetchKind::List {
-            endpoint: "/rest/system/logging/action",
+            endpoint: "/system/logging/action",
         },
         columns: &[
             col!("name", "Name", 14),
@@ -2764,13 +2864,79 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::system_write::LOGGING_ACTION_FORM),
     },
     ResourceSpec {
+        id: "system-console",
+        group: "system-group",
+        cli_path: None,
+        label: "Console",
+        fetch: FetchKind::List {
+            endpoint: "/system/console",
+        },
+        columns: &[
+            col!("port", "Port", 14),
+            col!("term", "Term", 10),
+            col!("channel", "Ch", 4),
+            col!("disabled", "Off", 5),
+            col!("used", "Used", 6),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::system_write::CONSOLE_FORM),
+    },
+    ResourceSpec {
+        id: "leds",
+        group: "system-group",
+        cli_path: None,
+        label: "LEDs",
+        fetch: FetchKind::List {
+            endpoint: "/system/led",
+        },
+        columns: &[
+            col!("type", "Type", 22),
+            col!("interface", "Interface", 16),
+            col!("leds", "LEDs", 16),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::system_write::LED_FORM),
+    },
+    ResourceSpec {
+        id: "led-settings",
+        group: "system-group",
+        cli_path: None,
+        label: "LED Settings",
+        fetch: FetchKind::System {
+            endpoint: "/system/led/settings",
+        },
+        columns: &[col!("all-leds-off", "All off", 14)],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::LED_SETTINGS_FORM),
+    },
+    ResourceSpec {
+        id: "ports",
+        group: "system-group",
+        cli_path: Some("/port"),
+        label: "Ports",
+        fetch: FetchKind::List { endpoint: "/port" },
+        columns: &[
+            col!("name", "Name", 14),
+            col!("baud-rate", "Baud", 10),
+            col!("data-bits", "Bits", 5),
+            col!("parity", "Parity", 8),
+            col!("stop-bits", "Stop", 5),
+            col!("flow-control", "Flow", 10),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::PORT_FORM),
+    },
+    ResourceSpec {
         id: "snmp",
         group: "system-group",
         cli_path: None,
         label: "SNMP",
-        fetch: FetchKind::System {
-            endpoint: "/rest/snmp",
-        },
+        fetch: FetchKind::System { endpoint: "/snmp" },
         columns: &[
             col!("enabled", "Enabled", 8),
             col!("contact", "Contact", 20),
@@ -2787,7 +2953,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "SNMP Communities",
         fetch: FetchKind::List {
-            endpoint: "/rest/snmp/community",
+            endpoint: "/snmp/community",
         },
         columns: &[
             col!("name", "Name", 16),
@@ -2806,7 +2972,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: Some("/certificate"),
         label: "Certificates",
         fetch: FetchKind::List {
-            endpoint: "/rest/certificate",
+            endpoint: "/certificate",
         },
         columns: &[
             col!("name", "Name", 20),
@@ -2826,7 +2992,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Watchdog",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/watchdog",
+            endpoint: "/system/watchdog",
         },
         columns: &[
             col!("watch-address", "Watch", 18),
@@ -2834,7 +3000,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
             col!("automatic-supout", "Supout", 8),
         ],
         refresh: Duration::from_secs(30),
-        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        actions: &[],
         form: Some(&crate::system_write::WATCHDOG_FORM),
     },
     ResourceSpec {
@@ -2843,7 +3009,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Note",
         fetch: FetchKind::System {
-            endpoint: "/rest/system/note",
+            endpoint: "/system/note",
         },
         columns: &[col!("show-at-login", "Login", 8), col!("note", "Note", 48)],
         refresh: Duration::from_secs(30),
@@ -2856,7 +3022,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Addresses",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/address",
+            endpoint: "/ipv6/address",
         },
         columns: &[
             col!("address", "Address", 28),
@@ -2877,7 +3043,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Neighbors",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/neighbor",
+            endpoint: "/ipv6/neighbor",
         },
         columns: &[
             col!("address", "Address", 28),
@@ -2896,7 +3062,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "ND",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/nd",
+            endpoint: "/ipv6/nd",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -2916,7 +3082,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "ND Prefix",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/nd/prefix",
+            endpoint: "/ipv6/nd/prefix",
         },
         columns: &[
             col!("prefix", "Prefix", 28),
@@ -2935,7 +3101,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Routes",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/route",
+            endpoint: "/ipv6/route",
         },
         columns: &[
             col!("dst-address", "Dst", 28),
@@ -2957,7 +3123,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Pool",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/pool",
+            endpoint: "/ipv6/pool",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -2975,7 +3141,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP Client",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/dhcp-client",
+            endpoint: "/ipv6/dhcp-client",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -2996,7 +3162,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP Server",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/dhcp-server",
+            endpoint: "/ipv6/dhcp-server",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3016,7 +3182,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Settings",
         fetch: FetchKind::System {
-            endpoint: "/rest/ipv6/settings",
+            endpoint: "/ipv6/settings",
         },
         columns: &[
             col!("forward", "Forward", 8),
@@ -3033,7 +3199,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Firewall",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/firewall/filter",
+            endpoint: "/ipv6/firewall/filter",
         },
         columns: &[
             col!("chain", "Chain", 10),
@@ -3058,7 +3224,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "NAT",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/firewall/nat",
+            endpoint: "/ipv6/firewall/nat",
         },
         columns: &[
             col!("chain", "Chain", 10),
@@ -3082,7 +3248,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Address List",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/firewall/address-list",
+            endpoint: "/ipv6/firewall/address-list",
         },
         columns: &[
             col!("list", "List", 16),
@@ -3102,7 +3268,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP Relay",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/dhcp-relay",
+            endpoint: "/ipv6/dhcp-relay",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3120,7 +3286,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "DHCP Bindings",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/dhcp-server/binding",
+            endpoint: "/ipv6/dhcp-server/binding",
         },
         columns: &[
             col!("address", "Address", 28),
@@ -3138,7 +3304,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Mangle",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/firewall/mangle",
+            endpoint: "/ipv6/firewall/mangle",
         },
         columns: &[
             col!("chain", "Chain", 10),
@@ -3158,7 +3324,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Raw",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/firewall/raw",
+            endpoint: "/ipv6/firewall/raw",
         },
         columns: &[
             col!("chain", "Chain", 10),
@@ -3178,7 +3344,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Connections",
         fetch: FetchKind::List {
-            endpoint: "/rest/ipv6/firewall/connection",
+            endpoint: "/ipv6/firewall/connection",
         },
         columns: &[
             col!("src-address", "Source", 28),
@@ -3202,7 +3368,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Tables",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/table",
+            endpoint: "/routing/table",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3220,7 +3386,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Rules",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/rule",
+            endpoint: "/routing/rule",
         },
         columns: &[
             col!("src-address", "Source", 20),
@@ -3241,7 +3407,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "OSPF",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/ospf/instance",
+            endpoint: "/routing/ospf/instance",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3261,7 +3427,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "OSPF Areas",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/ospf/area",
+            endpoint: "/routing/ospf/area",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3281,7 +3447,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "OSPF Interface Templates",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/ospf/interface-template",
+            endpoint: "/routing/ospf/interface-template",
         },
         columns: &[
             col!("instance", "Instance", 16),
@@ -3301,7 +3467,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "OSPF Interface",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/ospf/interface",
+            endpoint: "/routing/ospf/interface",
         },
         columns: &[
             col!("address", "Address", 22),
@@ -3322,7 +3488,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "BGP",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/bgp/connection",
+            endpoint: "/routing/bgp/connection",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3342,7 +3508,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "BGP Templates",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/bgp/template",
+            endpoint: "/routing/bgp/template",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3362,7 +3528,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "RIP",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/rip/instance",
+            endpoint: "/routing/rip/instance",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3380,7 +3546,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "RIP Interfaces",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/rip/interface-template",
+            endpoint: "/routing/rip/interface-template",
         },
         columns: &[
             col!("instance", "Instance", 16),
@@ -3397,7 +3563,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "BFD",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/bfd/configuration",
+            endpoint: "/routing/bfd/configuration",
         },
         columns: &[
             col!("interfaces", "Interfaces", 24),
@@ -3415,7 +3581,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Filters",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/filter/rule",
+            endpoint: "/routing/filter/rule",
         },
         columns: &[
             col!("chain", "Chain", 16),
@@ -3433,7 +3599,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Router ID",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/id",
+            endpoint: "/routing/id",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3451,7 +3617,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "OSPF Neighbors",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/ospf/neighbor",
+            endpoint: "/routing/ospf/neighbor",
         },
         columns: &[
             col!("instance", "Instance", 16),
@@ -3470,7 +3636,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "OSPF LSA",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/ospf/lsa",
+            endpoint: "/routing/ospf/lsa",
         },
         columns: &[
             col!("type", "Type", 12),
@@ -3489,7 +3655,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "BGP Advertisements",
         fetch: FetchKind::List {
-            endpoint: "/rest/routing/bgp/advertisements",
+            endpoint: "/routing/bgp/advertisements",
         },
         columns: &[
             col!("prefix", "Prefix", 24),
@@ -3507,7 +3673,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Simple",
         fetch: FetchKind::List {
-            endpoint: "/rest/queue/simple",
+            endpoint: "/queue/simple",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3526,7 +3692,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Tree",
         fetch: FetchKind::List {
-            endpoint: "/rest/queue/tree",
+            endpoint: "/queue/tree",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3547,7 +3713,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Queue Type",
         fetch: FetchKind::List {
-            endpoint: "/rest/queue/type",
+            endpoint: "/queue/type",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3564,7 +3730,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Interface",
         fetch: FetchKind::List {
-            endpoint: "/rest/queue/interface",
+            endpoint: "/queue/interface",
         },
         columns: &[
             col!("interface", "Interface", 18),
@@ -3579,9 +3745,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         group: "files-group",
         cli_path: Some("/file"),
         label: "Files",
-        fetch: FetchKind::List {
-            endpoint: "/rest/file",
-        },
+        fetch: FetchKind::List { endpoint: "/file" },
         columns: &[
             col!("name", "Name", 40),
             col!("type", "Type", 12),
@@ -3598,7 +3762,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Containers",
         fetch: FetchKind::List {
-            endpoint: "/rest/container",
+            endpoint: "/container",
         },
         columns: &[
             col!("name", "Name", 18),
@@ -3623,7 +3787,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Config",
         fetch: FetchKind::System {
-            endpoint: "/rest/container/config",
+            endpoint: "/container/config",
         },
         columns: &[
             col!("registry-url", "Registry", 28),
@@ -3641,7 +3805,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Envs",
         fetch: FetchKind::List {
-            endpoint: "/rest/container/envs",
+            endpoint: "/container/envs",
         },
         columns: &[
             col!("list", "List", 16),
@@ -3659,7 +3823,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Mounts",
         fetch: FetchKind::List {
-            endpoint: "/rest/container/mounts",
+            endpoint: "/container/mounts",
         },
         columns: &[
             col!("list", "List", 16),
@@ -3676,9 +3840,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         group: "container-group",
         cli_path: None,
         label: "Apps",
-        fetch: FetchKind::List {
-            endpoint: "/rest/app",
-        },
+        fetch: FetchKind::List { endpoint: "/app" },
         columns: &[
             col!("name", "Name", 18),
             col!("status", "Status", 16),
@@ -3697,7 +3859,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Netwatch",
         fetch: FetchKind::List {
-            endpoint: "/rest/tool/netwatch",
+            endpoint: "/tool/netwatch",
         },
         columns: &[
             col!("host", "Host", 22),
@@ -3717,7 +3879,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Email",
         fetch: FetchKind::System {
-            endpoint: "/rest/tool/e-mail",
+            endpoint: "/tool/e-mail",
         },
         columns: &[
             col!("server", "Server", 22),
@@ -3737,7 +3899,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "RoMON",
         fetch: FetchKind::System {
-            endpoint: "/rest/tool/romon",
+            endpoint: "/tool/romon",
         },
         columns: &[
             col!("enabled", "Enabled", 8),
@@ -3755,7 +3917,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "RoMON Ports",
         fetch: FetchKind::List {
-            endpoint: "/rest/tool/romon/port",
+            endpoint: "/tool/romon/port",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -3775,7 +3937,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Graphing",
         fetch: FetchKind::System {
-            endpoint: "/rest/tool/graphing",
+            endpoint: "/tool/graphing",
         },
         columns: &[
             col!("store-every", "Store Every", 12),
@@ -3791,7 +3953,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Graphing Interface",
         fetch: FetchKind::List {
-            endpoint: "/rest/tool/graphing/interface",
+            endpoint: "/tool/graphing/interface",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -3810,7 +3972,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Graphing Queue",
         fetch: FetchKind::List {
-            endpoint: "/rest/tool/graphing/queue",
+            endpoint: "/tool/graphing/queue",
         },
         columns: &[
             col!("simple-queue", "Simple Queue", 16),
@@ -3830,7 +3992,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Graphing Resource",
         fetch: FetchKind::List {
-            endpoint: "/rest/tool/graphing/resource",
+            endpoint: "/tool/graphing/resource",
         },
         columns: &[
             col!("allow-address", "Allow Address", 18),
@@ -3881,7 +4043,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Packet Sniffer",
         fetch: FetchKind::System {
-            endpoint: "/rest/tool/sniffer",
+            endpoint: "/tool/sniffer",
         },
         columns: &[
             col!("interface", "Interface", 16),
@@ -3999,7 +4161,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "RADIUS",
         fetch: FetchKind::List {
-            endpoint: "/rest/radius",
+            endpoint: "/radius",
         },
         columns: &[
             col!("address", "Address", 18),
@@ -4020,7 +4182,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         cli_path: None,
         label: "Incoming",
         fetch: FetchKind::System {
-            endpoint: "/rest/radius/incoming",
+            endpoint: "/radius/incoming",
         },
         columns: &[col!("accept", "Accept", 8), col!("port", "Port", 6)],
         refresh: Duration::from_secs(30),
@@ -4032,9 +4194,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         group: "system-group",
         cli_path: Some("/log"),
         label: "Logs",
-        fetch: FetchKind::List {
-            endpoint: "/rest/log",
-        },
+        fetch: FetchKind::List { endpoint: "/log" },
         columns: &[
             col!("time", "Time", 19),
             col!("topics", "Topics", 24),
@@ -4260,7 +4420,7 @@ mod tests {
     fn logging_actions_is_list_not_singleton() {
         let spec = resource_by_id("logging-actions").expect("logging-actions");
         assert!(!spec.is_singleton());
-        assert_eq!(spec.endpoint(), "/rest/system/logging/action");
+        assert_eq!(spec.endpoint(), "/system/logging/action");
         assert_eq!(spec.cli_path(), "/system/logging/action");
         assert_eq!(spec.group, "system-group");
         assert_eq!(spec.label, "Logging Actions");
@@ -4276,17 +4436,57 @@ mod tests {
         assert!(matches!(
             spec.fetch,
             FetchKind::List {
-                endpoint: "/rest/system/logging/action"
+                endpoint: "/system/logging/action"
             }
         ));
         assert_eq!(
             column_keys("logging-actions"),
             ["name", "target", "remote", "remote-port", "remote-protocol"]
         );
-        let logging = resource_by_id("logging").expect("logging");
-        assert_eq!(logging.endpoint(), "/rest/system/logging");
-        let logging_ids: Vec<_> = logging.actions.iter().map(|action| action.id).collect();
-        assert_ne!(logging_ids, action_ids);
+    }
+
+    #[test]
+    fn system_submenu_parity_catalog_ids() {
+        let console = resource_by_id("system-console").expect("system-console");
+        assert_eq!(console.group, "system-group");
+        assert_eq!(console.endpoint(), "/system/console");
+        assert_eq!(console.cli_path(), "/system/console");
+        assert!(!console.is_singleton());
+
+        let leds = resource_by_id("leds").expect("leds");
+        assert_eq!(leds.endpoint(), "/system/led");
+        let settings = resource_by_id("led-settings").expect("led-settings");
+        assert!(settings.is_singleton());
+        assert_eq!(settings.endpoint(), "/system/led/settings");
+
+        let ports = resource_by_id("ports").expect("ports");
+        assert_eq!(ports.endpoint(), "/port");
+        assert_eq!(ports.cli_path(), "/port");
+
+        let special = resource_by_id("special-login").expect("special-login");
+        assert_eq!(special.cli_path(), "/special-login");
+        assert_eq!(special.endpoint(), "/special-login");
+
+        let reboot = resource_by_id("reboot").expect("reboot");
+        assert!(matches!(reboot.fetch, FetchKind::Local));
+        assert_eq!(reboot.cli_path(), "/system/reboot");
+        assert!(reboot.actions.is_empty());
+        assert!(resource_by_id("shutdown").is_some_and(|spec| spec.actions.is_empty()));
+
+        let reset = resource_by_id("reset-configuration").expect("reset-configuration");
+        assert!(reset.is_inline_form());
+        assert!(reset.form.is_some());
+        assert!(reset.actions.is_empty());
+
+        assert!(resource_by_id("watchdog").is_some_and(ResourceSpec::is_inline_form));
+        assert!(resource_by_id("routerboard-settings").is_some_and(ResourceSpec::is_inline_form));
+        assert_eq!(
+            resource_by_id("routerboard-settings")
+                .expect("settings")
+                .cli_path(),
+            "/system/routerboard/settings"
+        );
+        assert!(ALL_RESOURCES.iter().all(|spec| spec.id != "regulatory"));
     }
 
     #[test]
@@ -4295,11 +4495,11 @@ mod tests {
         let users = resource_by_id("smb-users").expect("smb-users");
         let service = resource_by_id("smb").expect("smb");
         assert!(service.is_singleton());
-        assert_eq!(service.endpoint(), "/rest/ip/smb");
+        assert_eq!(service.endpoint(), "/ip/smb");
         assert!(!shares.is_singleton());
         assert!(!users.is_singleton());
-        assert_eq!(shares.endpoint(), "/rest/ip/smb/shares");
-        assert_eq!(users.endpoint(), "/rest/ip/smb/users");
+        assert_eq!(shares.endpoint(), "/ip/smb/shares");
+        assert_eq!(users.endpoint(), "/ip/smb/users");
         assert_eq!(shares.cli_path(), "/ip/smb/shares");
         assert_eq!(users.cli_path(), "/ip/smb/users");
         assert_eq!(shares.group, "ip-group");
@@ -4341,7 +4541,7 @@ mod tests {
     fn ntp_server_is_system_singleton() {
         let spec = resource_by_id("ntp-server").expect("ntp-server");
         assert!(spec.is_singleton());
-        assert_eq!(spec.endpoint(), "/rest/system/ntp/server");
+        assert_eq!(spec.endpoint(), "/system/ntp/server");
         assert_eq!(spec.cli_path(), "/system/ntp/server");
         assert!(spec.form.is_some());
         assert_eq!(spec.group, "system-group");
@@ -4349,15 +4549,15 @@ mod tests {
         assert!(matches!(
             spec.fetch,
             FetchKind::System {
-                endpoint: "/rest/system/ntp/server"
+                endpoint: "/system/ntp/server"
             }
         ));
         let ntp = resource_by_id("ntp").expect("ntp");
         assert_eq!(ntp.label, "NTP Client");
-        assert_eq!(ntp.endpoint(), "/rest/system/ntp/client");
+        assert_eq!(ntp.endpoint(), "/system/ntp/client");
         let keys = resource_by_id("ntp-keys").expect("ntp-keys");
         assert!(!keys.is_singleton());
-        assert_eq!(keys.endpoint(), "/rest/system/ntp/key");
+        assert_eq!(keys.endpoint(), "/system/ntp/key");
         assert_eq!(column_keys("ntp-keys"), ["key-id"]);
         assert!(keys.form.is_some());
     }
@@ -4368,15 +4568,12 @@ mod tests {
         let templates =
             resource_by_id("ospf-interface-templates").expect("ospf-interface-templates");
         assert!(!live.is_singleton());
-        assert_eq!(live.endpoint(), "/rest/routing/ospf/interface");
+        assert_eq!(live.endpoint(), "/routing/ospf/interface");
         assert_eq!(live.cli_path(), "/routing/ospf/interface");
         assert_eq!(live.group, "routing-group");
         assert_eq!(live.label, "OSPF Interface");
         assert_eq!(templates.label, "OSPF Interface Templates");
-        assert_eq!(
-            templates.endpoint(),
-            "/rest/routing/ospf/interface-template"
-        );
+        assert_eq!(templates.endpoint(), "/routing/ospf/interface-template");
         assert_ne!(live.endpoint(), templates.endpoint());
         assert_eq!(
             live.actions
@@ -4420,7 +4617,7 @@ mod tests {
     fn traffic_flow_and_igmp_proxy_are_ip_group_screens() {
         let flow = resource_by_id("traffic-flow").expect("traffic-flow");
         assert!(flow.is_singleton());
-        assert_eq!(flow.endpoint(), "/rest/ip/traffic-flow");
+        assert_eq!(flow.endpoint(), "/ip/traffic-flow");
         assert_eq!(flow.cli_path(), "/ip/traffic-flow");
         assert_eq!(flow.group, "ip-group");
         assert!(flow.form.is_some());
@@ -4431,7 +4628,7 @@ mod tests {
 
         let targets = resource_by_id("traffic-flow-targets").expect("traffic-flow-targets");
         assert!(!targets.is_singleton());
-        assert_eq!(targets.endpoint(), "/rest/ip/traffic-flow/target");
+        assert_eq!(targets.endpoint(), "/ip/traffic-flow/target");
         assert_eq!(
             targets
                 .actions
@@ -4450,21 +4647,21 @@ mod tests {
 
         let ipfix = resource_by_id("traffic-flow-ipfix").expect("traffic-flow-ipfix");
         assert!(ipfix.is_singleton());
-        assert_eq!(ipfix.endpoint(), "/rest/ip/traffic-flow/ipfix");
+        assert_eq!(ipfix.endpoint(), "/ip/traffic-flow/ipfix");
 
         let proxy = resource_by_id("igmp-proxy").expect("igmp-proxy");
         assert!(proxy.is_singleton());
-        assert_eq!(proxy.endpoint(), "/rest/routing/igmp-proxy");
+        assert_eq!(proxy.endpoint(), "/routing/igmp-proxy");
         assert_eq!(proxy.cli_path(), "/routing/igmp-proxy");
         assert_eq!(proxy.group, "ip-group");
 
         let ifaces = resource_by_id("igmp-proxy-interfaces").expect("igmp-proxy-interfaces");
         assert!(!ifaces.is_singleton());
-        assert_eq!(ifaces.endpoint(), "/rest/routing/igmp-proxy/interface");
+        assert_eq!(ifaces.endpoint(), "/routing/igmp-proxy/interface");
         assert!(ifaces.form.is_some());
 
         let mfc = resource_by_id("igmp-proxy-mfc").expect("igmp-proxy-mfc");
-        assert_eq!(mfc.endpoint(), "/rest/routing/igmp-proxy/mfc");
+        assert_eq!(mfc.endpoint(), "/routing/igmp-proxy/mfc");
         assert_eq!(
             mfc.actions
                 .iter()
@@ -4494,7 +4691,7 @@ mod tests {
     fn cli_path_override_does_not_follow_nav_group() {
         let cert = resource_by_id("certificates").expect("certificates");
         assert_eq!(cert.group, "system-group");
-        assert_eq!(cert.endpoint(), "/rest/certificate");
+        assert_eq!(cert.endpoint(), "/certificate");
         assert_eq!(cert.cli_path, Some("/certificate"));
         assert_eq!(cert.cli_path(), "/certificate");
         assert_eq!(
@@ -4664,11 +4861,11 @@ mod tests {
         assert_eq!(column_keys("macsec-profiles"), ["name", "server-priority"]);
         assert_eq!(
             resource_by_id("macsec").map(ResourceSpec::endpoint),
-            Some("/rest/interface/macsec")
+            Some("/interface/macsec")
         );
         assert_eq!(
             resource_by_id("macsec-profiles").map(ResourceSpec::endpoint),
-            Some("/rest/interface/macsec/profile")
+            Some("/interface/macsec/profile")
         );
         assert!(
             ALL_RESOURCES
@@ -4686,7 +4883,7 @@ mod tests {
         );
         assert_eq!(
             resource_by_id("lte-apn").map(ResourceSpec::endpoint),
-            Some("/rest/interface/lte/apn")
+            Some("/interface/lte/apn")
         );
         assert_eq!(
             resource_by_id("lte-apn").map(ResourceSpec::cli_path),
@@ -5091,15 +5288,15 @@ mod tests {
         assert!(!resource_by_id("ipsec-key-rsa").is_some_and(ResourceSpec::is_singleton));
         assert_eq!(
             resource_by_id("ipsec-key-rsa").map(ResourceSpec::endpoint),
-            Some("/rest/ip/ipsec/key/rsa")
+            Some("/ip/ipsec/key/rsa")
         );
         assert_eq!(
             resource_by_id("ipsec-key-psk").map(ResourceSpec::endpoint),
-            Some("/rest/ip/ipsec/key/psk")
+            Some("/ip/ipsec/key/psk")
         );
         assert_eq!(
             resource_by_id("ipsec-key-qkd").map(ResourceSpec::endpoint),
-            Some("/rest/ip/ipsec/key/qkd")
+            Some("/ip/ipsec/key/qkd")
         );
         assert_eq!(column_keys("ipsec-key-psk"), ["peer", "id"]);
         assert!(resource_by_id("routes").is_some_and(|spec| spec.form.is_some()));
@@ -5111,7 +5308,7 @@ mod tests {
                 .any(|key| { key.contains("key") || *key == "secret" || key.contains("auth-key") })
         );
         let connections = resource_by_id("firewall-connections").expect("firewall-connections");
-        assert_eq!(connections.endpoint(), "/rest/ip/firewall/connection");
+        assert_eq!(connections.endpoint(), "/ip/firewall/connection");
         assert!(connections.form.is_none());
         let connection_actions: Vec<_> =
             connections.actions.iter().map(|action| action.id).collect();
@@ -5212,7 +5409,7 @@ mod tests {
             ]
         );
         let email = resource_by_id("email").expect("email");
-        assert_eq!(email.endpoint(), "/rest/tool/e-mail");
+        assert_eq!(email.endpoint(), "/tool/e-mail");
         assert_eq!(email.cli_path(), "/tool/e-mail");
         assert_eq!(group_ids("radius-group"), ["radius", "radius-incoming"]);
         for group in [
@@ -5254,10 +5451,7 @@ mod tests {
     fn ipv6_firewall_connections_mirror_ipv4() {
         let ipv6_connections =
             resource_by_id("ipv6-firewall-connections").expect("ipv6-firewall-connections");
-        assert_eq!(
-            ipv6_connections.endpoint(),
-            "/rest/ipv6/firewall/connection"
-        );
+        assert_eq!(ipv6_connections.endpoint(), "/ipv6/firewall/connection");
         assert!(ipv6_connections.form.is_none());
         let ipv6_connection_actions: Vec<_> = ipv6_connections
             .actions
@@ -5293,27 +5487,27 @@ mod tests {
         assert!(!resource_by_id("romon-ports").is_some_and(ResourceSpec::is_singleton));
         assert_eq!(
             resource_by_id("romon").expect("romon").endpoint(),
-            "/rest/tool/romon"
+            "/tool/romon"
         );
         assert_eq!(
             resource_by_id("romon-ports").expect("ports").endpoint(),
-            "/rest/tool/romon/port"
+            "/tool/romon/port"
         );
         assert_eq!(
             resource_by_id("graphing").expect("graphing").endpoint(),
-            "/rest/tool/graphing"
+            "/tool/graphing"
         );
         assert_eq!(
             resource_by_id("graphing-interface").expect("gi").endpoint(),
-            "/rest/tool/graphing/interface"
+            "/tool/graphing/interface"
         );
         assert_eq!(
             resource_by_id("graphing-queue").expect("gq").endpoint(),
-            "/rest/tool/graphing/queue"
+            "/tool/graphing/queue"
         );
         assert_eq!(
             resource_by_id("graphing-resource").expect("gr").endpoint(),
-            "/rest/tool/graphing/resource"
+            "/tool/graphing/resource"
         );
         assert!(resource_by_id("romon").is_some_and(|spec| spec.form.is_some()));
         assert!(resource_by_id("romon-ports").is_some_and(|spec| spec.form.is_some()));
@@ -5337,7 +5531,7 @@ mod tests {
     fn neighbors_connect_is_overlay_without_a_form() {
         let neighbors = resource_by_id("neighbors").expect("neighbors");
         assert!(neighbors.form.is_none());
-        assert_eq!(neighbors.endpoint(), "/rest/ip/neighbor");
+        assert_eq!(neighbors.endpoint(), "/ip/neighbor");
         assert_eq!(
             neighbors
                 .actions
@@ -5411,9 +5605,10 @@ mod tests {
                 .is_some_and(|spec| spec.actions.iter().any(|action| action.id == "upgrade"))
         );
         assert!(
-            resource_by_id("resources").is_some_and(|spec| spec.form.is_none()
-                && spec.actions.iter().any(|action| action.id == "reboot"))
+            resource_by_id("resources")
+                .is_some_and(|spec| spec.form.is_none() && spec.actions.is_empty())
         );
+        assert!(resource_by_id("reboot").is_some_and(|spec| spec.cli_path() == "/system/reboot"));
         assert!(
             resource_by_id("files").is_some_and(|spec| spec.form.is_none()
                 && spec.actions.iter().any(|action| action.id == "backup-save")
@@ -5427,7 +5622,7 @@ mod tests {
 
         let spec = resource_by_id("history").expect("history");
         assert!(spec.form.is_none(), "history must not ship a Text sheet");
-        assert_eq!(spec.endpoint(), "/rest/system/history");
+        assert_eq!(spec.endpoint(), "/system/history");
         assert_eq!(spec.actions.len(), 1);
         let undo = spec.actions[0];
         assert_eq!(undo.id, "undo");

@@ -38,8 +38,8 @@ impl LayoutMetrics {
         let breakpoint = Breakpoint::from_width(width);
         let (nav_width, inspector_width) = match breakpoint {
             Breakpoint::Narrow => (0, 0),
-            Breakpoint::Medium => (22, 0),
-            Breakpoint::Wide => (24, 36),
+            Breakpoint::Medium => (28, 0),
+            Breakpoint::Wide => (30, 36),
         };
         Self {
             width,
@@ -239,5 +239,16 @@ mod tests {
         assert_eq!(Breakpoint::from_width(71), Breakpoint::Narrow);
         assert_eq!(Breakpoint::from_width(72), Breakpoint::Medium);
         assert_eq!(Breakpoint::from_width(112), Breakpoint::Wide);
+    }
+
+    #[test]
+    fn medium_nav_fits_reset_configuration_label() {
+        let metrics = LayoutMetrics::new(80, 24);
+        assert_eq!(metrics.breakpoint, Breakpoint::Medium);
+        let inner = usize::from(metrics.nav_width.saturating_sub(4));
+        assert!(
+            inner >= "  Reset Configuration".chars().count(),
+            "nav inner {inner} clips Reset Configuration"
+        );
     }
 }

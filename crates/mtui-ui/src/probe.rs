@@ -58,8 +58,8 @@ impl ProbeKind {
     #[must_use]
     pub fn endpoint(self) -> &'static str {
         match self {
-            Self::WifiScan => "/rest/interface/wifi",
-            _ => "/rest/tool",
+            Self::WifiScan => "/interface/wifi",
+            _ => "/tool",
         }
     }
 

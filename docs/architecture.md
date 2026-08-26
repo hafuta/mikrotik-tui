@@ -64,7 +64,7 @@ Device gates, in order:
    Inspect uses `ResourceSpec::cli_path()`, not the nav group. Set
    `cli_path: Some("/certificate")` when the command does not live under the
    group prefix (Certificates is under System, path is `/certificate`).
-   `None` means the REST endpoint with `/rest` stripped. Overlay-only screens
+   `None` means the catalog `endpoint` (`/interface/vlan`, `/log`). Overlay-only screens
    (`FetchKind::Local`) always set `cli_path` because they have no endpoint.
 3. **Print trap.** Opening a menu that replies `no such command prefix` hides
    that id immediately, so a Hex does not stay on a CRS-only node such as
@@ -75,3 +75,9 @@ architecture) badge wins. Empty tables do not hide a menu. WebFig's left rail
 is a curated skin, so a type can exist as `/interface/6to4` and still have no
 WebFig submenu. This app shows it whenever the catalog lists it and the path
 is present.
+
+**System → Regulatory** (country / wireless regulatory domain) is omitted on
+purpose. It is not a catalog screen under System submenu parity
+(https://github.com/hafuta/mikrotik-tui/milestone/12). Do not add
+`regulatory` / `/system/regulatory` later as an inspect-driven gap; wireless
+country rules are out of scope for this TUI.

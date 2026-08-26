@@ -742,7 +742,7 @@ mod tests {
             message: message.into(),
             fields: vec![
                 ("target".into(), "mtui_app::app".into()),
-                ("endpoint".into(), "/rest/interface".into()),
+                ("endpoint".into(), "/interface".into()),
             ],
         }
     }
@@ -859,13 +859,13 @@ mod tests {
         assert!(text.contains("2026-08-22 03:25:01.000"));
         assert!(text.contains("INFO"));
         assert!(text.contains("outbound request"));
-        assert!(text.contains("endpoint: /rest/interface"));
+        assert!(text.contains("endpoint: /interface"));
     }
 
     #[test]
     fn json_body_starts_collapsed_and_expands_into_keys() {
         let styles = styles();
-        let mut body = entry("response PUT /rest/interface/list", ConsoleLevel::Error);
+        let mut body = entry("response /interface/list/add", ConsoleLevel::Error);
         body.fields.push((
             "body".into(),
             r#"{"error":400,"message":"Bad Request","detail":"no such item"}"#.into(),
@@ -900,7 +900,7 @@ mod tests {
 
     #[test]
     fn copy_text_pretty_prints_json_bodies() {
-        let mut body = entry("response PUT /rest/interface/list", ConsoleLevel::Error);
+        let mut body = entry("response /interface/list/add", ConsoleLevel::Error);
         body.fields.push((
             "body".into(),
             r#"{"error":400,"message":"Bad Request"}"#.into(),

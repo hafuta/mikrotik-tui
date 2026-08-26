@@ -1,14 +1,14 @@
 //! Form schemas for the Tools nav group.
 //!
 //! Catalog wiring (do not register here):
-//! - `netwatch` → `/rest/tool/netwatch` (`NETWATCH_FORM`)
-//! - `email` → `/rest/tool/e-mail` (`EMAIL_FORM`)
-//! - `romon` → `/rest/tool/romon` (`ROMON_FORM`)
-//! - `romon-ports` → `/rest/tool/romon/port` (`ROMON_PORT_FORM`)
-//! - `graphing` → `/rest/tool/graphing` (`GRAPHING_FORM`)
-//! - `graphing-interface` → `/rest/tool/graphing/interface` (`GRAPHING_INTERFACE_FORM`)
-//! - `graphing-queue` → `/rest/tool/graphing/queue` (`GRAPHING_QUEUE_FORM`)
-//! - `graphing-resource` → `/rest/tool/graphing/resource` (`GRAPHING_RESOURCE_FORM`)
+//! - `netwatch` → `/tool/netwatch` (`NETWATCH_FORM`)
+//! - `email` → `/tool/e-mail` (`EMAIL_FORM`)
+//! - `romon` → `/tool/romon` (`ROMON_FORM`)
+//! - `romon-ports` → `/tool/romon/port` (`ROMON_PORT_FORM`)
+//! - `graphing` → `/tool/graphing` (`GRAPHING_FORM`)
+//! - `graphing-interface` → `/tool/graphing/interface` (`GRAPHING_INTERFACE_FORM`)
+//! - `graphing-queue` → `/tool/graphing/queue` (`GRAPHING_QUEUE_FORM`)
+//! - `graphing-resource` → `/tool/graphing/resource` (`GRAPHING_RESOURCE_FORM`)
 //! - `ping` / `traceroute` → overlay-only (`FetchKind::Local`, no form)
 //!
 //! Group id: `tools-group`.

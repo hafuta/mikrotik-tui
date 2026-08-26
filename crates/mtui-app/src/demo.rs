@@ -163,6 +163,138 @@ impl DemoStore {
             )],
         );
         self.rows.insert(
+            "routerboard".into(),
+            vec![resource(
+                "",
+                &[
+                    ("model", "CCR2004-16G-2S+"),
+                    ("serial-number", "HEF123456789"),
+                    ("current-firmware", "7.18.2"),
+                    ("upgrade-firmware", "7.18.2"),
+                    ("board-name", "CCR2004-16G-2S+"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "routerboard-settings".into(),
+            vec![resource(
+                "",
+                &[
+                    ("boot-os", "router-os"),
+                    ("boot-device", "nand-if-fail-then-ethernet"),
+                    ("boot-protocol", "dhcp"),
+                    ("protected-routerboot", "disabled"),
+                    ("silent-boot", "false"),
+                    ("auto-upgrade", "false"),
+                    ("force-backup-booter", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "routerboard-mode-button".into(),
+            vec![resource(
+                "",
+                &[
+                    ("enabled", "false"),
+                    ("hold-time", "0.5s"),
+                    ("on-event", ""),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "routerboard-reset-button".into(),
+            vec![resource(
+                "",
+                &[("enabled", "false"), ("hold-time", "5s"), ("on-event", "")],
+            )],
+        );
+        self.rows.insert(
+            "watchdog".into(),
+            vec![resource(
+                "",
+                &[
+                    ("watchdog-timer", "true"),
+                    ("watch-address", "192.0.2.1"),
+                    ("watch-interval", "1m"),
+                    ("no-ping-delay", "5m"),
+                    ("ping-start-after", "5m"),
+                    ("ping-timeout", "1s"),
+                    ("automatic-supout", "true"),
+                    ("auto-send-supout", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "ports".into(),
+            vec![resource(
+                "*port1",
+                &[
+                    ("name", "serial0"),
+                    ("baud-rate", "115200"),
+                    ("data-bits", "8"),
+                    ("parity", "none"),
+                    ("stop-bits", "1"),
+                    ("flow-control", "none"),
+                    ("used", "true"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "system-console".into(),
+            vec![resource(
+                "*con1",
+                &[
+                    ("port", "serial0"),
+                    ("term", "vt102"),
+                    ("channel", "0"),
+                    ("disabled", "false"),
+                    ("used", "true"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "leds".into(),
+            vec![resource(
+                "*led1",
+                &[
+                    ("type", "interface-activity"),
+                    ("interface", "ether1"),
+                    ("leds", "user-led"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "led-settings".into(),
+            vec![resource("", &[("all-leds-off", "never")])],
+        );
+        self.rows.insert(
+            "special-login".into(),
+            vec![resource(
+                "*sl1",
+                &[
+                    ("user", "serial"),
+                    ("port", "serial0"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "users".into(),
+            vec![resource(
+                "*u1",
+                &[
+                    ("name", "admin"),
+                    ("group", "full"),
+                    ("address", "0.0.0.0/0"),
+                    ("inactivity-policy", "none"),
+                    ("inactivity-timeout", "10m"),
+                    ("disabled", "false"),
+                    ("last-logged-in", "aug/01/2026 12:00:00"),
+                ],
+            )],
+        );
+        self.rows.insert(
             "packages".into(),
             vec![
                 resource(
@@ -1335,10 +1467,9 @@ fn resource_from_fields(id: &str, fields: &BTreeMap<String, String>) -> Resource
 }
 
 fn resource_id_for_endpoint(endpoint: &str) -> Option<&'static str> {
-    let path = endpoint.trim_start_matches("/rest");
     mtui_core::ALL_RESOURCES
         .iter()
-        .find(|spec| spec.endpoint().trim_start_matches("/rest") == path)
+        .find(|spec| spec.endpoint() == endpoint)
         .map(|spec| spec.id)
 }
 
@@ -1405,7 +1536,7 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Delete {
-                endpoint: "/rest/ipv6/firewall/connection".into(),
+                endpoint: "/ipv6/firewall/connection".into(),
                 id: "*36".into(),
             })
             .expect("delete");
@@ -1419,7 +1550,7 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/container".into(),
+                endpoint: "/container".into(),
                 command: "start".into(),
                 fields: BTreeMap::from([(".id".into(), "*c1".into())]),
             })
@@ -1520,7 +1651,7 @@ mod tests {
         );
         assert_eq!(
             store.apply(&MutationOp::Patch {
-                endpoint: "/rest/tool/romon".into(),
+                endpoint: "/tool/romon".into(),
                 id: None,
                 fields: BTreeMap::from([("enabled".into(), "true".into())]),
             }),
@@ -1534,7 +1665,7 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/system/history".into(),
+                endpoint: "/system/history".into(),
                 command: "undo".into(),
                 fields: BTreeMap::from([(".id".into(), "*h1".into())]),
             })
@@ -1552,7 +1683,7 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "take".into(),
                 fields: BTreeMap::new(),
             })
@@ -1582,14 +1713,14 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "take".into(),
                 fields: BTreeMap::new(),
             })
             .expect("take");
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "unroll".into(),
                 fields: BTreeMap::new(),
             })
@@ -1599,14 +1730,14 @@ mod tests {
         assert_eq!(row.field("current"), Some("false"));
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "take".into(),
                 fields: BTreeMap::new(),
             })
             .expect("take again");
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "release".into(),
                 fields: BTreeMap::new(),
             })
@@ -1623,7 +1754,7 @@ mod tests {
         fields.insert(".id".into(), "*30".into());
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/ip/firewall/filter".into(),
+                endpoint: "/ip/firewall/filter".into(),
                 command: "disable".into(),
                 fields,
             })

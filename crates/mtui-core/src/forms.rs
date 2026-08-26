@@ -603,6 +603,8 @@ pub fn field_visible(resource_id: &str, key: &str, values: &HashMap<String, Stri
     match resource_id {
         "logging-actions" => logging_action_field_visible(key, values),
         "ntp-server" => ntp_server_field_visible(key, values),
+        "leds" => led_field_visible(key, values),
+        "watchdog" => watchdog_field_visible(key, values),
         "traffic-flow" => traffic_flow_field_visible(key, values),
         "traffic-flow-targets" => traffic_flow_target_field_visible(key, values),
         "igmp-proxy-interfaces" => igmp_proxy_interface_field_visible(key, values),
@@ -667,6 +669,26 @@ fn ntp_server_field_visible(key: &str, values: &HashMap<String, String>) -> bool
     match key {
         "broadcast-addresses" => flag_on(values, "broadcast"),
         "local-clock-stratum" => flag_on(values, "use-local-clock"),
+        _ => true,
+    }
+}
+
+fn led_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    let led_type = values.get("type").map_or("", String::as_str);
+    match key {
+        "interface" => {
+            led_type.starts_with("interface-")
+                || led_type.starts_with("wireless-")
+                || led_type.starts_with("poe-")
+        }
+        "modem" => led_type.starts_with("modem-"),
+        _ => true,
+    }
+}
+
+fn watchdog_field_visible(key: &str, values: &HashMap<String, String>) -> bool {
+    match key {
+        "send-email-to" | "send-smtp-server" => flag_on(values, "auto-send-supout"),
         _ => true,
     }
 }
@@ -1293,6 +1315,26 @@ mod tests {
             "cef-event-delimiter",
             &values
         ));
+    }
+
+    #[test]
+    fn led_and_watchdog_hide_inapplicable_fields() {
+        let mut values = HashMap::new();
+        values.insert("type".into(), "off".into());
+        assert!(!field_visible("leds", "interface", &values));
+        assert!(!field_visible("leds", "modem", &values));
+        values.insert("type".into(), "interface-activity".into());
+        assert!(field_visible("leds", "interface", &values));
+        assert!(!field_visible("leds", "modem", &values));
+        values.insert("type".into(), "modem-status".into());
+        assert!(!field_visible("leds", "interface", &values));
+        assert!(field_visible("leds", "modem", &values));
+
+        let mut values = HashMap::new();
+        values.insert("auto-send-supout".into(), "false".into());
+        assert!(!field_visible("watchdog", "send-email-to", &values));
+        values.insert("auto-send-supout".into(), "true".into());
+        assert!(field_visible("watchdog", "send-email-to", &values));
     }
 
     #[test]

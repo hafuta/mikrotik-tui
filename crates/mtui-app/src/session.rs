@@ -7,7 +7,8 @@ use std::time::Instant;
 use mtui_core::{DASHBOARD_ID, SafeModeStatus, SessionAccess, navigation_tree};
 use mtui_routeros::{Client, Resource};
 use mtui_ui::{
-    CommandPalette, ConsoleEntry, ConsoleState, InspectorState, LoginForm, NavState, TableState,
+    CommandPalette, ConsoleEntry, ConsoleState, FormSession, InspectorState, LoginForm, NavState,
+    TableState,
 };
 
 use crate::app::{
@@ -56,6 +57,8 @@ pub struct Session {
     pub pane: Pane,
     pub overlay: Overlay,
     pub overlay_scroll: u16,
+    pub page_form: Option<FormSession>,
+    pub(crate) lifecycle_return_to: Option<String>,
     pub palette: CommandPalette,
     pub table: TableState,
     pub inspector: InspectorState,
@@ -86,6 +89,8 @@ pub struct Session {
     pub log_follow: bool,
     pub log_severity: LogSeverity,
     pub log_unread: usize,
+    /// While waiting for `/log/print`, follow replay is buffered and not painted.
+    pub(crate) log_hold_follow_paint: bool,
     pub console: ConsoleState,
     pub console_entries: Vec<ConsoleEntry>,
     pub(crate) console_log_seq: u64,
@@ -116,6 +121,8 @@ impl Session {
             pane: Pane::Nav,
             overlay: Overlay::None,
             overlay_scroll: 0,
+            page_form: None,
+            lifecycle_return_to: None,
             palette: CommandPalette::new(palette_commands()),
             table: TableState::new(&[]),
             inspector: InspectorState::default(),
@@ -146,6 +153,7 @@ impl Session {
             log_follow: true,
             log_severity: LogSeverity::All,
             log_unread: 0,
+            log_hold_follow_paint: false,
             console: ConsoleState::default(),
             console_entries: Vec::new(),
             console_log_seq: 0,

@@ -10,7 +10,7 @@ pub const WIFI: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "WiFi",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wifi",
+        endpoint: "/interface/wifi",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -38,7 +38,7 @@ pub const WIFI_SECURITY: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "WiFi Security",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wifi/security",
+        endpoint: "/interface/wifi/security",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -57,7 +57,7 @@ pub const WIFI_CHANNEL: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "WiFi Channel",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wifi/channel",
+        endpoint: "/interface/wifi/channel",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -77,7 +77,7 @@ pub const WIFI_DATAPATH: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "WiFi Datapath",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wifi/datapath",
+        endpoint: "/interface/wifi/datapath",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -96,7 +96,7 @@ pub const WIFI_CONFIGURATION: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "WiFi Configuration",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wifi/configuration",
+        endpoint: "/interface/wifi/configuration",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -116,7 +116,7 @@ pub const WIFI_PROVISIONING: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "WiFi Provisioning",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wifi/provisioning",
+        endpoint: "/interface/wifi/provisioning",
     },
     columns: &[
         col!("action", "Action", 14),
@@ -135,7 +135,7 @@ pub const WIFI_CAP: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "WiFi CAP",
     fetch: FetchKind::System {
-        endpoint: "/rest/interface/wifi/cap",
+        endpoint: "/interface/wifi/cap",
     },
     columns: &[
         col!("enabled", "Enabled", 8),
@@ -152,7 +152,7 @@ pub const WIFI_CAPSMAN: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "CAPsMAN",
     fetch: FetchKind::System {
-        endpoint: "/rest/interface/wifi/capsman",
+        endpoint: "/interface/wifi/capsman",
     },
     columns: &[
         col!("enabled", "Enabled", 8),

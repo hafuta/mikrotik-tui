@@ -118,24 +118,64 @@ async fn run_ui(
             }
             msg = rx.recv() => {
                 if let Some(msg) = msg {
-                    let cmds = app.update(AppEvent::Worker(msg));
-                    dispatch_commands(rt, &tx, &mut app, &mut ios, cmds);
+                    apply_worker_frame(rt, &tx, &mut app, &mut ios, &mut rx, msg);
                 }
             }
-            () = tokio::time::sleep(Duration::from_millis(16)) => {
-                while event::poll(Duration::from_millis(0))? {
-                    match event::read()? {
-                        Event::Key(key) if key.kind == KeyEventKind::Press => {
-                            let cmds = app.update(AppEvent::Input(key));
-                            dispatch_commands(rt, &tx, &mut app, &mut ios, cmds);
-                        }
-                        Event::Resize(width, height) => {
-                            let _ = app.update(AppEvent::Resize { width, height });
-                        }
-                        _ => {}
-                    }
-                }
+            () = tokio::time::sleep(Duration::from_millis(16)) => {}
+        }
+        drain_input(rt, &tx, &mut app, &mut ios)?;
+    }
+    Ok(())
+}
+
+/// Cap so a listen/follow dump cannot redraw once per row and starve keys.
+const WORKER_MSGS_PER_FRAME: usize = 32;
+
+fn apply_worker_frame(
+    rt: &tokio::runtime::Runtime,
+    tx: &mpsc::UnboundedSender<WorkerMsg>,
+    app: &mut App,
+    ios: &mut HashMap<SessionId, SessionIo>,
+    rx: &mut mpsc::UnboundedReceiver<WorkerMsg>,
+    first: WorkerMsg,
+) {
+    for msg in take_worker_batch(rx, first) {
+        let cmds = app.update(AppEvent::Worker(msg));
+        dispatch_commands(rt, tx, app, ios, cmds);
+    }
+}
+
+fn take_worker_batch(
+    rx: &mut mpsc::UnboundedReceiver<WorkerMsg>,
+    first: WorkerMsg,
+) -> Vec<WorkerMsg> {
+    let mut batch = Vec::with_capacity(WORKER_MSGS_PER_FRAME);
+    batch.push(first);
+    while batch.len() < WORKER_MSGS_PER_FRAME {
+        match rx.try_recv() {
+            Ok(msg) => batch.push(msg),
+            Err(_) => break,
+        }
+    }
+    batch
+}
+
+fn drain_input(
+    rt: &tokio::runtime::Runtime,
+    tx: &mpsc::UnboundedSender<WorkerMsg>,
+    app: &mut App,
+    ios: &mut HashMap<SessionId, SessionIo>,
+) -> anyhow::Result<()> {
+    while event::poll(Duration::from_millis(0))? {
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                let cmds = app.update(AppEvent::Input(key));
+                dispatch_commands(rt, tx, app, ios, cmds);
             }
+            Event::Resize(width, height) => {
+                let _ = app.update(AppEvent::Resize { width, height });
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -391,7 +431,7 @@ fn dispatch_commands(
                         session,
                         client,
                         generation,
-                        "/rest/tool".into(),
+                        "/tool".into(),
                         "ping".into(),
                         fields,
                         tx,
@@ -428,7 +468,7 @@ fn dispatch_commands(
                         session,
                         client,
                         generation,
-                        "/rest/tool".into(),
+                        "/tool".into(),
                         "traceroute".into(),
                         fields,
                         tx,
@@ -630,7 +670,7 @@ fn dispatch_commands(
                 };
                 let tx = tx.clone();
                 rt.spawn(async move {
-                    let result = client.system("/rest/safe-mode").await;
+                    let result = client.system("/safe-mode").await;
                     let (row, error) = match result {
                         Ok(row) => (Some(row), None),
                         Err(err) => {
@@ -676,7 +716,7 @@ async fn connect_worker(
         }
     }
     match Client::connect(options).await {
-        Ok(client) => match client.system("/rest/system/resource").await {
+        Ok(client) => match client.system("/system/resource").await {
             Ok(router) => {
                 let version = router.field("version").unwrap_or("");
                 if let Err(message) = routeros_meets_minimum(version) {
@@ -891,7 +931,7 @@ async fn fetch_access(
     generation: u64,
 ) -> WorkerMsg {
     let _ = request_id;
-    let (users, groups) = tokio::join!(client.list("/rest/user"), client.list("/rest/user/group"),);
+    let (users, groups) = tokio::join!(client.list("/user"), client.list("/user/group"),);
     match (users, groups) {
         (Ok(users), Ok(groups)) => WorkerMsg::AccessResult {
             session,
@@ -1066,10 +1106,8 @@ async fn fetch_header(
     view_rx: &mut watch::Receiver<u64>,
     gate: &StreamGate,
 ) {
-    let (sys, interfaces) = tokio::join!(
-        client.system("/rest/system/resource"),
-        client.list("/rest/interface"),
-    );
+    let (sys, interfaces) =
+        tokio::join!(client.system("/system/resource"), client.list("/interface"),);
 
     let (system, system_error) = match sys {
         Ok(record) => (Some(record), None),
@@ -1112,10 +1150,10 @@ async fn fetch_dashboard(
     gate: &StreamGate,
 ) {
     let (cpu, sys, interfaces, firewall) = tokio::join!(
-        client.list("/rest/system/resource/cpu"),
-        client.system("/rest/system/resource"),
-        client.list("/rest/interface"),
-        client.list("/rest/ip/firewall/filter"),
+        client.list("/system/resource/cpu"),
+        client.system("/system/resource"),
+        client.list("/interface"),
+        client.list("/ip/firewall/filter"),
     );
 
     let (cpu, cpu_error) = match cpu {
@@ -1275,7 +1313,7 @@ async fn stream_torch(
     if !port.trim().is_empty() {
         fields.insert("port".into(), port);
     }
-    let mut stream = match client.stream_command("/rest/tool", "torch", &fields).await {
+    let mut stream = match client.stream_command("/tool", "torch", &fields).await {
         Ok(stream) => stream,
         Err(err) => {
             let _ = tx.send(WorkerMsg::TorchResult {
@@ -1431,9 +1469,29 @@ async fn stream_probe(
 
 #[cfg(test)]
 mod tests {
-    use super::lookup_option_values;
+    use super::{WORKER_MSGS_PER_FRAME, lookup_option_values, take_worker_batch};
+    use crate::event::WorkerMsg;
+    use crate::session::SessionId;
     use mtui_routeros::Resource;
     use std::collections::HashMap;
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn worker_batch_stops_at_frame_cap() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        for i in 0..100_u32 {
+            tx.send(WorkerMsg::ProbeResult {
+                session: SessionId::raw(1),
+                fingerprint: Some(i.to_string()),
+                error: None,
+            })
+            .expect("send");
+        }
+        let first = rx.try_recv().expect("first");
+        let batch = take_worker_batch(&mut rx, first);
+        assert_eq!(batch.len(), WORKER_MSGS_PER_FRAME);
+        assert!(rx.try_recv().is_ok());
+    }
 
     #[test]
     fn lookup_skips_empty_values_and_dedupes() {

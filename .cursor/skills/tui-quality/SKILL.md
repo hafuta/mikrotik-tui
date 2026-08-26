@@ -1,6 +1,10 @@
 ---
 name: tui-quality
-description: Build and review ratatui TUI behavior for correctness, responsiveness, accessibility, and deterministic testing. Use when changing models, messages, commands, views, key bindings, or terminal layouts in this repository.
+description: >-
+  Build and review ratatui TUI behavior for correctness, responsiveness,
+  accessibility, and deterministic testing. Use when changing models, messages,
+  commands, views, key bindings, terminal layouts, the event loop, listen/follow
+  streams, Logs, or when the UI freezes, ignores keys, or redraws too often.
 ---
 # TUI quality
 
@@ -55,8 +59,43 @@ description: Build and review ratatui TUI behavior for correctness, responsivene
   pinned outside that viewport. Show overflow with a `n-m/total` range
   on the title and a right-edge track/thumb (`│` / `▐`), not a
   background fill. Focused rows must stay in view.
-- Add a regression test whenever addressing flicker, bleed, stale redraws, or
-  viewport jumps; visual stability is part of correctness.
+- Add a regression test whenever addressing flicker, bleed, stale redraws,
+  viewport jumps, or input starvation; visual stability and a live keyboard
+  are part of correctness.
+
+## Event loop and live streams
+
+A populated screen that ignores keys for seconds is still a freeze. The Logs
+page did this: `/log/print` filled the table, then `/log/print follow=`
+replayed history as one `ListenDelta` per row. Each message ran `update` and
+the loop redrew before the next. Keyboard polling lived on a 16ms `sleep`
+branch; with the worker channel always ready that sleep never completed, and
+restarting it every iteration meant keys were never read until the dump ended.
+
+Rules:
+
+- One frame: apply a **capped** batch of ready worker messages, poll
+  crossterm with timeout 0, then draw once. Do not draw (or restart an input
+  wait) after every `WorkerMsg`. `WORKER_MSGS_PER_FRAME` in
+  `crates/mtui-app/src/runtime.rs` is the cap; keep input drain **after**
+  `select`, not only on the idle timer branch.
+- Snapshot then tail. For `/log`, print once, then `=follow-only=` — not
+  `=follow=`, which replays from the oldest entry. Do not paint follow
+  traffic until the print result for that generation has landed.
+- Deduplicate stream rows (id and body). Evicting the buffer must not forget
+  seen keys, or replay looks new again. Skip table rebuilds when nothing was
+  added.
+- Do not jump the viewport on live updates except follow mode (Logs: pin to
+  the newest row). If the user moved off that row, keep their selection when
+  newer lines arrive.
+- First load may show `Loading…` only while the table is empty. After rows
+  exist, keep them visible; never stall the event loop to “finish rendering”
+  history. Expensive work belongs in the worker, batched into one model
+  update, not in per-row redraws.
+- High-rate `.listen` / torch / ping / follow must assume an unbounded
+  channel will outrun the UI. Batch at the loop. Prefer protocol options that
+  omit history. Add tests for batch size, duplicate follow rows, and
+  selection/offset stability — no sleeps, no live router.
 
 ## Property sheets
 

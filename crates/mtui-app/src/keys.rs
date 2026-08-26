@@ -298,6 +298,15 @@ impl App {
         if self.overlay != Overlay::None {
             return self.keys_overlay(key);
         }
+        if self.page_form.is_some()
+            && (self.pane == Pane::Content
+                || self
+                    .page_form
+                    .as_ref()
+                    .is_some_and(|session| session.lookup_open() || session.confirm_save))
+        {
+            return self.keys_form(key);
+        }
 
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
@@ -413,6 +422,7 @@ impl App {
                 self.status = if self.log_paused {
                     "Ⅱ PAUSED".into()
                 } else {
+                    self.rebuild_log_table();
                     "● LIVE".into()
                 };
             }
@@ -814,6 +824,13 @@ impl App {
     fn keys_confirm(&mut self, key: KeyEvent) -> Vec<AppCommand> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('n') => {
+                if matches!(
+                    &self.overlay,
+                    Overlay::Confirm(session)
+                        if matches!(session.action_id.as_str(), "reboot" | "shutdown")
+                ) {
+                    return self.dismiss_lifecycle_confirm();
+                }
                 self.overlay = Overlay::None;
                 Vec::new()
             }
@@ -891,14 +908,23 @@ impl App {
     }
 
     fn keys_form_confirm(&mut self, key: KeyEvent) -> Option<Vec<AppCommand>> {
-        let Overlay::Form(session) = &self.overlay else {
+        let Some(session) = self.form_session() else {
             return Some(Vec::new());
         };
         if session.confirm_discard {
             match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => self.overlay = Overlay::None,
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    if matches!(self.overlay, Overlay::Form(_)) {
+                        self.overlay = Overlay::None;
+                    } else {
+                        if let Some(session) = self.form_session_mut() {
+                            session.confirm_discard = false;
+                        }
+                        self.pane = Pane::Nav;
+                    }
+                }
                 KeyCode::Char('n') | KeyCode::Esc => {
-                    if let Overlay::Form(session) = &mut self.overlay {
+                    if let Some(session) = self.form_session_mut() {
                         session.confirm_discard = false;
                     }
                 }
@@ -913,7 +939,7 @@ impl App {
             return Some(match key.code {
                 KeyCode::Char('y') | KeyCode::Enter => self.save_form(),
                 KeyCode::Char('n') | KeyCode::Esc => {
-                    if let Overlay::Form(session) = &mut self.overlay {
+                    if let Some(session) = self.form_session_mut() {
                         session.close_save_preview();
                     }
                     self.status = "Save canceled".into();
@@ -929,38 +955,46 @@ impl App {
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s')) {
             return self.save_form();
         }
-        let schema = match &self.overlay {
-            Overlay::Form(session) => session
-                .overlay_schema(resource_by_id(&session.resource_id).and_then(|spec| spec.form)),
-            _ => return Vec::new(),
+        let Some(session) = self.form_session() else {
+            return Vec::new();
         };
+        let schema =
+            session.overlay_schema(resource_by_id(&session.resource_id).and_then(|spec| spec.form));
 
         if let Some(cmds) = self.keys_form_confirm(key) {
             return cmds;
         }
 
-        if matches!(&self.overlay, Overlay::Form(session) if session.lookup_open()) {
+        if self.form_session().is_some_and(FormSession::lookup_open) {
             return self.keys_lookup(key, schema);
         }
 
         match key.code {
+            KeyCode::Left | KeyCode::Right
+                if matches!(self.overlay, Overlay::None) && self.page_form.is_some() =>
+            {
+                let delta = if matches!(key.code, KeyCode::Right) {
+                    1
+                } else {
+                    -1
+                };
+                return self.arrow_horizontal(delta);
+            }
             KeyCode::Esc => {
-                if let Overlay::Form(session) = &mut self.overlay {
-                    if session.is_dirty() {
-                        session.confirm_discard = true;
-                    } else {
-                        self.overlay = Overlay::None;
+                if matches!(self.overlay, Overlay::Form(_)) {
+                    if let Some(session) = self.form_session_mut() {
+                        if session.is_dirty() {
+                            session.confirm_discard = true;
+                        } else {
+                            self.overlay = Overlay::None;
+                        }
                     }
+                } else {
+                    self.pane = Pane::Nav;
                 }
             }
-            KeyCode::Tab => self.with_form(|session| {
-                session.move_field(schema, 1);
-                session.clamp(schema);
-            }),
-            KeyCode::BackTab => self.with_form(|session| {
-                session.move_field(schema, -1);
-                session.clamp(schema);
-            }),
+            KeyCode::Tab => self.tab_form(schema, true),
+            KeyCode::BackTab => self.tab_form(schema, false),
             KeyCode::Up => self.with_form(|session| {
                 session.move_field(schema, -1);
                 session.clamp(schema);
@@ -999,6 +1033,23 @@ impl App {
         Vec::new()
     }
 
+    fn tab_form(&mut self, schema: &mtui_core::FormSchema, forward: bool) {
+        let delta = if forward { 1 } else { -1 };
+        let leave_for_panes = matches!(self.overlay, Overlay::None)
+            && self.page_form.is_some()
+            && self
+                .form_session()
+                .is_some_and(|session| !session.can_move_field(schema, delta));
+        if leave_for_panes {
+            self.cycle_pane(forward);
+            return;
+        }
+        self.with_form(|session| {
+            session.move_field(schema, delta);
+            session.clamp(schema);
+        });
+    }
+
     fn keys_lookup(&mut self, key: KeyEvent, schema: &mtui_core::FormSchema) -> Vec<AppCommand> {
         match key.code {
             KeyCode::Esc => self.with_form(FormSession::close_lookup),
@@ -1032,7 +1083,7 @@ impl App {
     }
 
     fn lookup_fetch_command(&mut self) -> Vec<AppCommand> {
-        let Overlay::Form(session) = &self.overlay else {
+        let Some(session) = self.form_session() else {
             return Vec::new();
         };
         let Some(picker) = &session.lookup else {
@@ -1045,7 +1096,7 @@ impl App {
         let value_key = picker.value_key.to_string();
         let generation = picker.generation;
         let request_id = self.next_request();
-        if let Overlay::Form(session) = &mut self.overlay
+        if let Some(session) = self.form_session_mut()
             && let Some(picker) = &mut session.lookup
         {
             picker.request_id = request_id;
@@ -1060,16 +1111,14 @@ impl App {
     }
 
     fn with_form(&mut self, f: impl FnOnce(&mut FormSession)) {
-        if let Overlay::Form(session) = &mut self.overlay {
+        if let Some(session) = self.form_session_mut() {
             f(session);
         }
     }
 
     fn form_editing_text(&self, schema: &mtui_core::FormSchema) -> bool {
-        let Overlay::Form(session) = &self.overlay else {
-            return false;
-        };
-        session.focused_takes_typed_input(schema)
+        self.form_session()
+            .is_some_and(|session| session.focused_takes_typed_input(schema))
     }
 
     fn keys_action_menu(&mut self, key: KeyEvent, type_picker: bool) -> Vec<AppCommand> {
@@ -1297,7 +1346,10 @@ impl App {
     }
 
     fn arrow_horizontal(&mut self, delta: isize) -> Vec<AppCommand> {
-        if self.on_table_content() && self.table.can_scroll_columns(delta) {
+        if self.page_form.is_none()
+            && self.on_table_content()
+            && self.table.can_scroll_columns(delta)
+        {
             self.table.scroll_columns(delta);
             return Vec::new();
         }
@@ -1343,6 +1395,7 @@ impl App {
             Vec::new()
         } else if self.on_table_content() {
             self.table.page_by(direction);
+            self.pause_log_follow_if_leaving_newest(direction);
             self.after_table_cursor()
         } else if self.pane == Pane::Nav {
             self.nav.page_by(direction);
@@ -1382,6 +1435,7 @@ impl App {
             Vec::new()
         } else if self.on_table_content() {
             self.table.select_last();
+            self.pause_log_follow_if_leaving_newest(1);
             self.after_table_cursor()
         } else if self.pane == Pane::Nav {
             self.nav.select_last();
@@ -1400,7 +1454,7 @@ impl App {
         self.disconnect_to_profiles();
     }
 
-    fn open_resource(&mut self, id: &str) -> Vec<AppCommand> {
+    pub(crate) fn open_resource(&mut self, id: &str) -> Vec<AppCommand> {
         self.select_resource(id);
         self.poll_current()
     }
@@ -1421,9 +1475,7 @@ impl App {
             }
             Pane::Content => {
                 self.table.move_selection(delta);
-                if self.current_resource == "logs" && delta < 0 {
-                    self.log_follow = false;
-                }
+                self.pause_log_follow_if_leaving_newest(delta);
                 self.after_table_cursor()
             }
             Pane::Inspector => {
@@ -1442,6 +1494,12 @@ impl App {
                 self.sync_console_viewport();
                 Vec::new()
             }
+        }
+    }
+
+    fn pause_log_follow_if_leaving_newest(&mut self, delta: isize) {
+        if self.current_resource == "logs" && delta > 0 {
+            self.log_follow = false;
         }
     }
 
@@ -2052,6 +2110,84 @@ mod table_scroll_tests {
     }
 
     #[test]
+    fn inline_form_left_arrow_focuses_nav_like_a_table() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        let _ = app.update(AppEvent::Resize {
+            width: 140,
+            height: 24,
+        });
+        app.select_resource("reset-configuration");
+        assert!(app.page_form.is_some());
+        assert_eq!(app.pane, Pane::Content);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Left)));
+        assert_eq!(app.pane, Pane::Nav);
+        assert!(app.page_form.is_some());
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Left)));
+        assert_eq!(app.pane, Pane::Nav);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Right)));
+        assert_eq!(app.pane, Pane::Content);
+        assert_eq!(app.current_resource, "reset-configuration");
+    }
+
+    #[test]
+    fn inline_form_tab_walks_fields_then_cycles_panes() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        let _ = app.update(AppEvent::Resize {
+            width: 140,
+            height: 24,
+        });
+        app.select_resource("reset-configuration");
+        assert_eq!(app.pane, Pane::Content);
+        let first = app.page_form.as_ref().expect("inline form").focus;
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::BackTab)));
+        assert_eq!(app.pane, Pane::Nav);
+        assert_eq!(
+            app.page_form.as_ref().expect("inline form").focus,
+            first,
+            "leaving the form must keep the field cursor"
+        );
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
+        assert_eq!(app.pane, Pane::Content);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
+        assert_eq!(app.pane, Pane::Content);
+        assert!(
+            app.page_form.as_ref().expect("inline form").focus > first,
+            "tab should advance a field before leaving the sheet"
+        );
+
+        let mut left_form = false;
+        for _ in 0..32 {
+            let _ = app.update(AppEvent::Input(press(KeyCode::Tab)));
+            if app.pane != Pane::Content {
+                left_form = true;
+                break;
+            }
+        }
+        assert!(left_form, "tab past the last field should leave the form");
+        assert_eq!(app.pane, Pane::Inspector);
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::BackTab)));
+        assert_eq!(app.pane, Pane::Content);
+        let _ = app.update(AppEvent::Input(press(KeyCode::BackTab)));
+        assert_eq!(app.pane, Pane::Content);
+        for _ in 0..32 {
+            if app.pane != Pane::Content {
+                break;
+            }
+            let _ = app.update(AppEvent::Input(press(KeyCode::BackTab)));
+        }
+        assert_eq!(app.pane, Pane::Nav);
+    }
+
+    #[test]
     fn table_resize_collapses_offsets_when_the_pane_grows() {
         let mut app = table_app(80, 10);
         let _ = app.update(AppEvent::Input(press(KeyCode::End)));
@@ -2503,12 +2639,12 @@ mod console_tests {
                 time: "2026-08-22 03:25:01.000".into(),
                 level: ConsoleLevel::Info,
                 message: "outbound request".into(),
-                fields: vec![("endpoint".into(), "/rest/interface".into())],
+                fields: vec![("endpoint".into(), "/interface".into())],
             },
             ConsoleEntry {
                 time: "2026-08-22 03:25:02.000".into(),
                 level: ConsoleLevel::Error,
-                message: "response PUT /rest/interface/list".into(),
+                message: "response /interface/list/add".into(),
                 fields: vec![
                     ("status".into(), "400".into()),
                     (
@@ -2653,7 +2789,7 @@ mod console_tests {
             cmds.iter().any(|cmd| matches!(
                 cmd,
                 crate::app::AppCommand::CopyToClipboard { text, .. }
-                    if text.contains("outbound request") && text.contains("endpoint: /rest/interface")
+                    if text.contains("outbound request") && text.contains("endpoint: /interface")
             )),
             "expected copy command, got {cmds:?}"
         );

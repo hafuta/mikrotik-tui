@@ -265,10 +265,9 @@ impl Client {
             .await
     }
 
-    /// `/log/print` with `follow`.
+    /// `/log/print` with `follow-only` so history is not replayed after `/log/print`.
     pub async fn follow_log(&self) -> Result<ApiStream> {
-        self.open_stream("follow", vec!["/log/print".into(), "=follow=".into()])
-            .await
+        self.open_stream("follow", log_follow_words()).await
     }
 
     /// `/interface/monitor-traffic` for one interface.
@@ -314,6 +313,10 @@ impl Client {
             session: self.inner.stream.clone(),
         })
     }
+}
+
+fn log_follow_words() -> Vec<String> {
+    vec!["/log/print".into(), "=follow-only=".into()]
 }
 
 /// Streaming `!re` replies until cancel or `!done`.
@@ -472,7 +475,11 @@ fn inspect_children_words(path: &[&str]) -> Vec<String> {
 
 fn command_path(endpoint: &str, command: &str) -> Result<String> {
     let path = api_path(endpoint, "command")?;
-    Ok(format!("{path}/{command}"))
+    if path == "/" {
+        Ok(format!("/{command}"))
+    } else {
+        Ok(format!("{path}/{command}"))
+    }
 }
 
 fn print_item_words(endpoint: &str, id: &str) -> Result<Vec<String>> {
@@ -481,11 +488,18 @@ fn print_item_words(endpoint: &str, id: &str) -> Result<Vec<String>> {
 
 fn api_path(endpoint: &str, operation: &'static str) -> Result<String> {
     let trimmed = endpoint.trim();
-    let path = trimmed.strip_prefix("/rest").unwrap_or(trimmed);
+    if trimmed.is_empty() {
+        return Err(Error::api(operation, "invalid API path"));
+    }
+    let path = if trimmed == "/" {
+        "/"
+    } else {
+        trimmed.trim_end_matches('/')
+    };
     if !path.starts_with('/') || path.contains("..") || path.contains(' ') {
         return Err(Error::api(operation, "invalid API path"));
     }
-    Ok(path.trim_end_matches('/').to_string())
+    Ok(path.to_string())
 }
 
 fn push_fields(words: &mut Vec<String>, fields: &BTreeMap<String, String>) {
@@ -523,9 +537,9 @@ mod tests {
     use crate::sentence::{Sentence, merge_listen_record};
 
     #[test]
-    fn strips_rest_prefix() {
-        assert_eq!(api_path("/rest/interface", "test").unwrap(), "/interface");
+    fn api_path_rejects_relative_and_bare_names() {
         assert_eq!(api_path("/interface", "test").unwrap(), "/interface");
+        assert_eq!(command_path("/", "export").unwrap(), "/export");
         assert!(api_path("interface", "test").is_err());
         assert!(api_path("/interface/../system", "test").is_err());
     }
@@ -547,13 +561,18 @@ mod tests {
     }
 
     #[test]
+    fn log_follow_uses_follow_only() {
+        assert_eq!(log_follow_words(), ["/log/print", "=follow-only="]);
+    }
+
+    #[test]
     fn print_by_id_uses_query_word_not_attribute() {
         assert_eq!(
-            print_item_words("/rest/interface/ethernet", "*5").unwrap(),
+            print_item_words("/interface/ethernet", "*5").unwrap(),
             vec!["/interface/ethernet/print", "?.id=*5"]
         );
         assert_eq!(
-            print_item_words("/rest/interface/vlan", "*3").unwrap(),
+            print_item_words("/interface/vlan", "*3").unwrap(),
             vec!["/interface/vlan/print", "?.id=*3"]
         );
     }
@@ -561,35 +580,35 @@ mod tests {
     #[test]
     fn print_path() {
         assert_eq!(
-            command_path("/rest/interface", "print").unwrap(),
+            command_path("/interface", "print").unwrap(),
             "/interface/print"
         );
-        assert_eq!(command_path("/rest/tool", "fetch").unwrap(), "/tool/fetch");
+        assert_eq!(command_path("/tool", "fetch").unwrap(), "/tool/fetch");
         assert_eq!(
-            command_path("/rest/ipv6/firewall/connection", "remove").unwrap(),
+            command_path("/ipv6/firewall/connection", "remove").unwrap(),
             "/ipv6/firewall/connection/remove"
         );
         assert_eq!(
-            command_path("/rest/ipv6/firewall/connection", "print").unwrap(),
+            command_path("/ipv6/firewall/connection", "print").unwrap(),
             "/ipv6/firewall/connection/print"
         );
         assert_eq!(
-            command_path("/rest/tool/romon", "print").unwrap(),
+            command_path("/tool/romon", "print").unwrap(),
             "/tool/romon/print"
         );
         assert_eq!(
-            command_path("/rest/tool/romon/port", "add").unwrap(),
+            command_path("/tool/romon/port", "add").unwrap(),
             "/tool/romon/port/add"
         );
         assert_eq!(
-            command_path("/rest/tool/graphing/interface", "print").unwrap(),
+            command_path("/tool/graphing/interface", "print").unwrap(),
             "/tool/graphing/interface/print"
         );
         assert_eq!(
-            command_path("/rest/system/history", "undo").unwrap(),
+            command_path("/system/history", "undo").unwrap(),
             "/system/history/undo"
         );
-        assert!(command_path("/rest/system/history/../file", "undo").is_err());
+        assert!(command_path("/system/history/../file", "undo").is_err());
         assert!(is_command_name("undo"));
         assert!(!is_command_name("Undo"));
         assert!(!is_command_name("history/undo"));

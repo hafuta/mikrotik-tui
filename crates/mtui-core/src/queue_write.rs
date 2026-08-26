@@ -1,10 +1,10 @@
 //! Form schemas for the Queue nav group.
 //!
 //! Catalog wiring (do not register here):
-//! - `queue-simple` → `/rest/queue/simple` (`QUEUE_SIMPLE_FORM`)
-//! - `queue-tree` → `/rest/queue/tree` (`QUEUE_TREE_FORM`)
-//! - `queue-type` → `/rest/queue/type` (`QUEUE_TYPE_FORM`)
-//! - `queue-interface` → `/rest/queue/interface` (`QUEUE_INTERFACE_FORM`)
+//! - `queue-simple` → `/queue/simple` (`QUEUE_SIMPLE_FORM`)
+//! - `queue-tree` → `/queue/tree` (`QUEUE_TREE_FORM`)
+//! - `queue-type` → `/queue/type` (`QUEUE_TYPE_FORM`)
+//! - `queue-interface` → `/queue/interface` (`QUEUE_INTERFACE_FORM`)
 //!
 //! Group id: `queue-group`.
 

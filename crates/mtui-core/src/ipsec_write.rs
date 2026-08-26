@@ -1,16 +1,16 @@
 //! Form schemas for `/ip/ipsec` menus.
 //!
 //! Catalog wiring (do not register here):
-//! - `ipsec-peers` → `/rest/ip/ipsec/peer`
-//! - `ipsec-identities` → `/rest/ip/ipsec/identity`
-//! - `ipsec-policies` → `/rest/ip/ipsec/policy`
-//! - `ipsec-proposals` → `/rest/ip/ipsec/proposal`
-//! - `ipsec-profiles` → `/rest/ip/ipsec/profile`
-//! - `ipsec-installed-sa` → `/rest/ip/ipsec/installed-sa` (no form)
-//! - `ipsec-settings` → `/rest/ip/ipsec/settings`
-//! - `ipsec-key-rsa` → `/rest/ip/ipsec/key/rsa`
-//! - `ipsec-key-psk` → `/rest/ip/ipsec/key/psk`
-//! - `ipsec-key-qkd` → `/rest/ip/ipsec/key/qkd`
+//! - `ipsec-peers` → `/ip/ipsec/peer`
+//! - `ipsec-identities` → `/ip/ipsec/identity`
+//! - `ipsec-policies` → `/ip/ipsec/policy`
+//! - `ipsec-proposals` → `/ip/ipsec/proposal`
+//! - `ipsec-profiles` → `/ip/ipsec/profile`
+//! - `ipsec-installed-sa` → `/ip/ipsec/installed-sa` (no form)
+//! - `ipsec-settings` → `/ip/ipsec/settings`
+//! - `ipsec-key-rsa` → `/ip/ipsec/key/rsa`
+//! - `ipsec-key-psk` → `/ip/ipsec/key/psk`
+//! - `ipsec-key-qkd` → `/ip/ipsec/key/qkd`
 //!
 //! Group id: `ip-group`.
 

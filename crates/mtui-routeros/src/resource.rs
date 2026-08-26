@@ -279,7 +279,7 @@ mod tests {
     }
 
     #[test]
-    fn smb_rest_payloads_decode_optional_fields_and_reject_malformed() {
+    fn smb_payloads_decode_optional_fields_and_reject_malformed() {
         let cases = [
             (
                 r#"{".id":"*1","name":"backup","directory":"backup","require-encryption":"false"}"#,

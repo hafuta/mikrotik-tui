@@ -10,7 +10,7 @@ pub const VLAN: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "VLAN",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/vlan",
+        endpoint: "/interface/vlan",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -36,7 +36,7 @@ pub const VXLAN: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "VXLAN",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/vxlan",
+        endpoint: "/interface/vxlan",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -63,7 +63,7 @@ pub const VRRP: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "VRRP",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/vrrp",
+        endpoint: "/interface/vrrp",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -90,7 +90,7 @@ pub const BONDING: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "Bonding",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/bonding",
+        endpoint: "/interface/bonding",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -118,7 +118,7 @@ pub const MACVLAN: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "MACVLAN",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/macvlan",
+        endpoint: "/interface/macvlan",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -142,7 +142,7 @@ pub const VETH: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "VETH",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/veth",
+        endpoint: "/interface/veth",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -164,7 +164,7 @@ pub const MACSEC: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "MACsec",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/macsec",
+        endpoint: "/interface/macsec",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -189,7 +189,7 @@ pub const MACSEC_PROFILES: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "MACsec Profile",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/macsec/profile",
+        endpoint: "/interface/macsec/profile",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -206,7 +206,7 @@ pub const VRF: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "VRF",
     fetch: FetchKind::List {
-        endpoint: "/rest/ip/vrf",
+        endpoint: "/ip/vrf",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -224,7 +224,7 @@ pub const DETECT_INTERNET: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "Detect Internet",
     fetch: FetchKind::System {
-        endpoint: "/rest/interface/detect-internet",
+        endpoint: "/interface/detect-internet",
     },
     columns: &[
         col!("detect-interface-list", "Detect", 16),

@@ -36,7 +36,7 @@ impl ConnectionTarget {
     }
 }
 
-/// Parse `host`, `host:port`, `[ipv6]:port`, or a legacy `https://` REST URL.
+/// Parse `host`, `host:port`, `[ipv6]:port`, or a legacy `https://` profile URL.
 /// Host-only values use the `api-ssl` default port.
 pub fn parse_connection_target(raw: &str, operation: &'static str) -> Result<ConnectionTarget> {
     parse_connection_target_for(raw, operation, true)
@@ -61,7 +61,7 @@ pub fn parse_connection_target_for(
 }
 
 /// Normalize a typed or stored target to `host:8729` (legacy HTTPS URLs drop
-/// the REST port and scheme).
+/// the web port and scheme).
 #[must_use]
 pub fn migrate_connection_target(raw: &str) -> String {
     migrate_connection_target_for(raw, true)

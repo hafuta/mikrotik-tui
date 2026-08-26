@@ -12,7 +12,7 @@ pub const EOIP: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "EoIP Tunnel",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/eoip",
+        endpoint: "/interface/eoip",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -34,7 +34,7 @@ pub const IPIP: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "IP Tunnel",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/ipip",
+        endpoint: "/interface/ipip",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -56,7 +56,7 @@ pub const GRE: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "GRE Tunnel",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/gre",
+        endpoint: "/interface/gre",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -78,7 +78,7 @@ pub const SIX_TO_FOUR: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "6to4 Tunnel",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/6to4",
+        endpoint: "/interface/6to4",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -100,7 +100,7 @@ pub const GRE6: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "GRE6 Tunnel",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/gre6",
+        endpoint: "/interface/gre6",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -138,17 +138,17 @@ mod tests {
                 .map(|spec| endpoint(spec))
                 .collect::<Vec<_>>(),
             [
-                "/rest/interface/eoip",
-                "/rest/interface/ipip",
-                "/rest/interface/gre",
-                "/rest/interface/6to4",
-                "/rest/interface/gre6",
+                "/interface/eoip",
+                "/interface/ipip",
+                "/interface/gre",
+                "/interface/6to4",
+                "/interface/gre6",
             ]
         );
         assert!(
             resources
                 .iter()
-                .all(|spec| spec.id != "sit" && endpoint(spec) != "/rest/interface/sit")
+                .all(|spec| spec.id != "sit" && endpoint(spec) != "/interface/sit")
         );
     }
 
