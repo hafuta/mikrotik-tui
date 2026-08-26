@@ -1,4 +1,4 @@
-//! Feature-owned operator guides for WireGuard screens.
+//! Feature-owned operator guides for `WireGuard` screens.
 
 use crate::about::ScreenGuide;
 

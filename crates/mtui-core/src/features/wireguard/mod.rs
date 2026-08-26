@@ -1,4 +1,4 @@
-//! WireGuard feature boundary: catalog, forms, guides, and tests.
+//! `WireGuard` feature boundary: catalog, forms, guides, and tests.
 
 pub(crate) mod forms;
 pub(crate) mod guides;

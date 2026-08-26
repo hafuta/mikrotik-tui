@@ -1,4 +1,4 @@
-//! Package and interaction gates owned by the WireGuard feature.
+//! Package and interaction gates owned by the `WireGuard` feature.
 
 use std::collections::HashMap;
 

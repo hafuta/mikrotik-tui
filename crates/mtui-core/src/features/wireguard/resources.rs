@@ -1,4 +1,4 @@
-//! Feature-owned catalog entries for the WireGuard navigation group.
+//! Feature-owned catalog entries for the `WireGuard` navigation group.
 
 use std::time::Duration;
 

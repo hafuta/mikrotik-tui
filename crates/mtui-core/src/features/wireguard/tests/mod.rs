@@ -1,3 +1,3 @@
-//! Feature-local WireGuard form tests.
+//! Feature-local `WireGuard` form tests.
 
 mod forms;

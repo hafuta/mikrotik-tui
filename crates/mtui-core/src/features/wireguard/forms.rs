@@ -1,4 +1,4 @@
-//! Feature-owned 7.21.5 form schemas for WireGuard and Peers.
+//! Feature-owned 7.21.5 form schemas for `WireGuard` and Peers.
 
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection, ScalarKind};
 
