@@ -45,6 +45,7 @@ pub enum ActionCommand {
     Login,
     Bypass,
     Upgrade,
+    UsbPowerReset,
     Install,
     ResetConfiguration,
     Export,
@@ -90,6 +91,7 @@ impl ActionCommand {
             Self::Login => "login",
             Self::Bypass => "bypass",
             Self::Upgrade => "upgrade",
+            Self::UsbPowerReset => "usb-power-reset",
             Self::Install => "install",
             Self::ResetConfiguration => "reset-configuration",
             Self::Export => "export",
@@ -784,7 +786,20 @@ pub const ACTION_UPGRADE: ActionSpec = ActionSpec {
     when: ActionWhen::Always,
 };
 
-pub const ROUTERBOARD_ACTIONS: &[ActionSpec] = &[ACTION_UPGRADE];
+pub const ACTION_USB_POWER_RESET: ActionSpec = ActionSpec {
+    id: "usb-power-reset",
+    label: "USB power reset",
+    key: Some('p'),
+    enter: false,
+    needs_selection: false,
+    danger: true,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::UsbPowerReset,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ROUTERBOARD_ACTIONS: &[ActionSpec] = &[ACTION_UPGRADE, ACTION_USB_POWER_RESET];
 
 pub const ACTION_FORMAT: ActionSpec = ActionSpec {
     id: "format",
@@ -867,21 +882,6 @@ pub const ACTION_CHECK_UPDATES: ActionSpec = ActionSpec {
 
 pub const PACKAGE_UPDATE_ACTIONS: &[ActionSpec] =
     &[ACTION_EDIT, ACTION_CHECK_UPDATES, ACTION_INSTALL];
-
-pub const ACTION_RESET_CONFIG: ActionSpec = ActionSpec {
-    id: "reset-configuration",
-    label: "Reset configuration",
-    key: Some('r'),
-    enter: false,
-    needs_selection: false,
-    danger: true,
-    kind: ActionKind::Prompt {
-        command: ActionCommand::ResetConfiguration,
-    },
-    when: ActionWhen::Always,
-};
-
-pub const RESET_CONFIG_ACTIONS: &[ActionSpec] = &[ACTION_RESET_CONFIG];
 
 pub const ACTION_EXPORT_CONFIG: ActionSpec = ActionSpec {
     id: "export-config",

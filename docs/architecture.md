@@ -75,3 +75,9 @@ architecture) badge wins. Empty tables do not hide a menu. WebFig's left rail
 is a curated skin, so a type can exist as `/interface/6to4` and still have no
 WebFig submenu. This app shows it whenever the catalog lists it and the path
 is present.
+
+**System → Regulatory** (country / wireless regulatory domain) is omitted on
+purpose. It is not a catalog screen under System submenu parity
+(https://github.com/hafuta/mikrotik-tui/milestone/12). Do not add
+`regulatory` / `/system/regulatory` later as an inspect-driven gap; wireless
+country rules are out of scope for this TUI.

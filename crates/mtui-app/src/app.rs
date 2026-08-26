@@ -1454,6 +1454,8 @@ impl App {
             } => {
                 if let Overlay::Form(session) = &mut self.overlay {
                     session.apply_lookup_result(request_id, generation, options, error);
+                } else if let Some(session) = self.page_form.as_mut() {
+                    session.apply_lookup_result(request_id, generation, options, error);
                 }
                 Vec::new()
             }
@@ -1807,7 +1809,9 @@ impl App {
         self.poll_generation = self.poll_generation.wrapping_add(1);
         self.torch_generation = self.torch_generation.wrapping_add(1);
         self.probe_generation = self.probe_generation.wrapping_add(1);
+        let previous = self.current_resource.clone();
         self.overlay = Overlay::None;
+        self.page_form = None;
         self.current_resource = id.to_string();
         self.refreshing = false;
         let _ = self.nav.select_id(id);
@@ -1827,6 +1831,16 @@ impl App {
         }
         self.sync_table_viewport();
         self.inspector = InspectorState::default();
+        if matches!(id, "reboot" | "shutdown") {
+            if previous != id {
+                self.lifecycle_return_to = Some(previous);
+            }
+            self.loading = false;
+            self.open_lifecycle_confirm(id);
+            return;
+        }
+        self.lifecycle_return_to = None;
+        self.bind_page_form();
     }
 
     fn activate_dashboard(&mut self) {
@@ -2107,6 +2121,7 @@ impl App {
         self.table.set_rows(rows);
         self.sync_table_viewport();
         self.refresh_inspector(self.table.selected == previous);
+        self.try_bind_inline_edit();
     }
 
     pub(crate) fn refresh_inspector(&mut self, preserve_offset: bool) {

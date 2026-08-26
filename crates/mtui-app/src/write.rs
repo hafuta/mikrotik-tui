@@ -5,12 +5,13 @@ use std::fmt;
 use std::path::Path;
 
 use mtui_core::{
-    AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec, CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT,
-    CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT, FORMAT_DISK_PROMPT, FetchKind,
-    FormSchema, IMPORT_CONFIG_PROMPT, INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS,
-    LICENSE_IMPORT_PROMPT, RESET_CONFIG_PROMPT, ResourceSpec, SMS_PROMPT, WOL_PROMPT, action_label,
-    edit_resource_for_interface_type, form_mutation_body, neighbor_connect_target, resource_by_id,
-    supports_bulk_select, truthy, validate_form_values,
+    ACTION_REBOOT, ACTION_SHUTDOWN, AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec,
+    CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT, CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT,
+    FORMAT_DISK_PROMPT, FetchKind, FormSchema, IMPORT_CONFIG_PROMPT, INSTALL_PACKAGE_PROMPT,
+    INTERFACE_CREATE_TARGETS, LICENSE_IMPORT_PROMPT, RESET_CONFIG_PROMPT, ResourceSpec, SMS_PROMPT,
+    USB_POWER_RESET_PROMPT, WOL_PROMPT, action_label, edit_resource_for_interface_type,
+    form_mutation_body, neighbor_connect_target, resource_by_id, supports_bulk_select, truthy,
+    validate_form_values,
 };
 use mtui_routeros::{MASKED_VALUE, is_secret_key};
 use mtui_ui::{
@@ -154,6 +155,126 @@ pub struct ConfirmSession {
 }
 
 impl App {
+    pub(crate) fn form_session(&self) -> Option<&FormSession> {
+        let session = self.session(self.active)?;
+        match &session.overlay {
+            Overlay::Form(form) => Some(form),
+            _ => session.page_form.as_ref(),
+        }
+    }
+
+    pub(crate) fn form_session_mut(&mut self) -> Option<&mut FormSession> {
+        let id = self.active;
+        let session = self.session_mut(id)?;
+        if let Overlay::Form(form) = &mut session.overlay {
+            Some(form)
+        } else {
+            session.page_form.as_mut()
+        }
+    }
+
+    pub(crate) fn bind_page_form(&mut self) {
+        let Some(spec) = resource_by_id(&self.current_resource) else {
+            return;
+        };
+        if !spec.is_inline_form() {
+            return;
+        }
+        self.pane = Pane::Content;
+        if spec.id == "reset-configuration" {
+            let mut values = HashMap::new();
+            for key in [
+                "keep-users",
+                "no-defaults",
+                "skip-backup",
+                "caps-mode",
+                "run-after-reset",
+            ] {
+                values.insert(
+                    key.into(),
+                    if key == "run-after-reset" {
+                        String::new()
+                    } else {
+                        "false".into()
+                    },
+                );
+            }
+            self.page_form = Some(FormSession::prompt_with(
+                spec.id,
+                String::new(),
+                ActionCommand::ResetConfiguration.rest_name(),
+                &RESET_CONFIG_PROMPT,
+                values,
+            ));
+            self.loading = false;
+            return;
+        }
+        self.try_bind_inline_edit();
+    }
+
+    pub(crate) fn try_bind_inline_edit(&mut self) {
+        let Some(spec) = resource_by_id(&self.current_resource) else {
+            return;
+        };
+        if !spec.is_inline_form() || spec.id == "reset-configuration" {
+            return;
+        }
+        let Some(schema) = spec.form else {
+            return;
+        };
+        if self.page_form.as_ref().is_some_and(|session| {
+            session.is_dirty()
+                || session.saving
+                || session.lookup_open()
+                || session.confirm_save
+                || session.confirm_discard
+        }) {
+            return;
+        }
+        let Some(row) = self.table.rows.first().cloned() else {
+            return;
+        };
+        let id = row.get(".id").cloned().unwrap_or_default();
+        self.loading = false;
+        if let Some(session) = self.page_form.as_mut() {
+            session.record_id = id;
+            session.apply_live_row(&row, schema);
+            return;
+        }
+        self.page_form = Some(FormSession::edit(spec.id, id, &row, schema));
+        self.pane = Pane::Content;
+    }
+
+    pub(crate) fn open_lifecycle_confirm(&mut self, id: &str) {
+        let (action, command) = if id == "shutdown" {
+            (&ACTION_SHUTDOWN, ActionCommand::Shutdown)
+        } else {
+            (&ACTION_REBOOT, ActionCommand::Reboot)
+        };
+        let mut body = confirm_body(action.id, action.label, "");
+        append_safe_mode_irreversible_warning(&mut body, action.id, self.safe_mode.we_hold());
+        self.overlay = Overlay::Confirm(ConfirmSession {
+            title: action.label.to_string(),
+            body,
+            action_id: action.id.to_string(),
+            command,
+            record_id: String::new(),
+            record_ids: Vec::new(),
+            record_name: String::new(),
+            endpoint: command_base_path(action.id, "/rest/system"),
+            fields: BTreeMap::new(),
+        });
+        tracing::trace!(overlay = "confirm", action = action.id, "opened pane");
+    }
+
+    pub(crate) fn dismiss_lifecycle_confirm(&mut self) -> Vec<AppCommand> {
+        self.overlay = Overlay::None;
+        if let Some(previous) = self.lifecycle_return_to.take() {
+            return self.open_resource(&previous);
+        }
+        Vec::new()
+    }
+
     pub(crate) fn current_actions(&self) -> Vec<&ActionSpec> {
         let Some(spec) = resource_by_id(&self.current_resource) else {
             return Vec::new();
@@ -490,6 +611,7 @@ impl App {
             | ActionCommand::Export
             | ActionCommand::Install
             | ActionCommand::ResetConfiguration
+            | ActionCommand::UsbPowerReset
             | ActionCommand::WakeOnLan
             | ActionCommand::SendSms
             | ActionCommand::AtChat
@@ -565,6 +687,7 @@ impl App {
             ActionCommand::Export => (&EXPORT_CONFIG_PROMPT, false),
             ActionCommand::Install => (&INSTALL_PACKAGE_PROMPT, false),
             ActionCommand::ResetConfiguration => (&RESET_CONFIG_PROMPT, false),
+            ActionCommand::UsbPowerReset => (&USB_POWER_RESET_PROMPT, false),
             ActionCommand::WakeOnLan => (&WOL_PROMPT, false),
             ActionCommand::SendSms => (&SMS_PROMPT, false),
             ActionCommand::AtChat => (&AT_CHAT_PROMPT, true),
@@ -595,6 +718,9 @@ impl App {
         }
         if command == ActionCommand::Format {
             values.insert("file-system".into(), "ext4".into());
+        }
+        if command == ActionCommand::UsbPowerReset {
+            values.insert("duration".into(), "5s".into());
         }
         let resource_id = if command == ActionCommand::Copy {
             typed_interface_spec(self.table.selected_row())
@@ -974,67 +1100,118 @@ impl App {
             self.status = self.link_status_message();
             return Vec::new();
         }
-        let (saving, is_prompt) = match &self.overlay {
-            Overlay::Form(session) => (session.saving, session.prompt_command.is_some()),
-            _ => return Vec::new(),
+        let overlay_form = matches!(self.overlay, Overlay::Form(_));
+        let (saving, is_prompt) = match self.form_session() {
+            Some(session) => (session.saving, session.prompt_command.is_some()),
+            None => return Vec::new(),
         };
         if saving {
             return Vec::new();
         }
         if is_prompt {
-            let Overlay::Form(session) = &self.overlay else {
-                return Vec::new();
-            };
-            let Some(command) = session.prompt_command else {
+            if !overlay_form {
+                return self.confirm_inline_prompt();
+            }
+            let Some(command) = self
+                .form_session()
+                .and_then(|session| session.prompt_command)
+            else {
                 return Vec::new();
             };
             return self.save_prompt(command);
         }
-        let previewing = matches!(&self.overlay, Overlay::Form(session) if session.confirm_save);
+        let previewing = self
+            .form_session()
+            .is_some_and(|session| session.confirm_save);
         if !previewing {
             return self.show_save_preview();
         }
         self.commit_form_save()
     }
 
-    fn show_save_preview(&mut self) -> Vec<AppCommand> {
-        let Overlay::Form(session) = &self.overlay else {
+    fn confirm_inline_prompt(&mut self) -> Vec<AppCommand> {
+        let Some(session) = self.page_form.as_ref() else {
             return Vec::new();
         };
-        let Some(spec) = resource_by_id(&session.resource_id) else {
+        let Some(command) = session.prompt_command else {
+            return Vec::new();
+        };
+        if command != ActionCommand::ResetConfiguration.rest_name() {
+            return Vec::new();
+        }
+        let mut fields = BTreeMap::new();
+        for key in RESET_CONFIG_PROMPT.writable_keys() {
+            let Some(value) = session.values.get(key).map(String::as_str) else {
+                continue;
+            };
+            if key == "run-after-reset" {
+                if !value.trim().is_empty() {
+                    fields.insert(key.to_string(), value.trim().to_string());
+                }
+                continue;
+            }
+            if truthy(Some(value)) {
+                fields.insert(key.to_string(), "true".into());
+            }
+        }
+        let mut body = confirm_body("reset-configuration", "Reset configuration", "");
+        append_safe_mode_irreversible_warning(
+            &mut body,
+            "reset-configuration",
+            self.safe_mode.we_hold(),
+        );
+        self.overlay = Overlay::Confirm(ConfirmSession {
+            title: "Reset configuration".into(),
+            body,
+            action_id: "reset-configuration".into(),
+            command: ActionCommand::ResetConfiguration,
+            record_id: String::new(),
+            record_ids: Vec::new(),
+            record_name: String::new(),
+            endpoint: command_base_path("reset-configuration", "/rest/system"),
+            fields,
+        });
+        Vec::new()
+    }
+
+    fn show_save_preview(&mut self) -> Vec<AppCommand> {
+        let Some(session) = self.form_session() else {
+            return Vec::new();
+        };
+        let resource_id = session.resource_id.clone();
+        let original = session.original.clone();
+        let values = session.values.clone();
+        let mode = session.mode;
+        let Some(spec) = resource_by_id(&resource_id) else {
             return Vec::new();
         };
         let Some(schema) = spec.form else {
             return Vec::new();
         };
-        if let Some(error) = validate_form_values(&session.resource_id, schema, &session.values) {
-            if let Overlay::Form(session) = &mut self.overlay {
+        if let Some(error) = validate_form_values(&resource_id, schema, &values) {
+            if let Some(session) = self.form_session_mut() {
                 session.error = Some(error);
             }
             return Vec::new();
         }
-        let mut body = form_mutation_body(
-            &session.resource_id,
-            schema,
-            &session.original,
-            &session.values,
-            MASKED_VALUE,
-        );
-        if session.mode == mtui_ui::FormMode::Create {
+        let mut body = form_mutation_body(&resource_id, schema, &original, &values, MASKED_VALUE);
+        if mode == mtui_ui::FormMode::Create {
             body.retain(|_, value| !value.is_empty());
             if body.is_empty() {
-                if let Overlay::Form(session) = &mut self.overlay {
+                if let Some(session) = self.form_session_mut() {
                     session.error = Some("Fill required fields".into());
                 }
                 return Vec::new();
             }
         } else if body.is_empty() {
-            self.overlay = Overlay::None;
+            if matches!(self.overlay, Overlay::Form(_)) {
+                self.overlay = Overlay::None;
+            }
             self.status = "No changes".into();
             return Vec::new();
         }
         let count = body.len();
-        if let Overlay::Form(session) = &mut self.overlay {
+        if let Some(session) = self.form_session_mut() {
             session.open_save_preview();
         }
         if spec.id == "device-mode" {
@@ -1048,37 +1225,36 @@ impl App {
     }
 
     fn commit_form_save(&mut self) -> Vec<AppCommand> {
-        let Overlay::Form(session) = &self.overlay else {
+        let Some(session) = self.form_session() else {
             return Vec::new();
         };
-        let Some(spec) = resource_by_id(&session.resource_id) else {
+        let resource_id = session.resource_id.clone();
+        let record_id = session.record_id.clone();
+        let original = session.original.clone();
+        let values = session.values.clone();
+        let mode = session.mode;
+        let Some(spec) = resource_by_id(&resource_id) else {
             return Vec::new();
         };
         let Some(schema) = spec.form else {
             return Vec::new();
         };
-        if let Some(error) = validate_form_values(&session.resource_id, schema, &session.values) {
-            if let Overlay::Form(session) = &mut self.overlay {
+        if let Some(error) = validate_form_values(&resource_id, schema, &values) {
+            if let Some(session) = self.form_session_mut() {
                 session.error = Some(error);
             }
             return Vec::new();
         }
-        let mut body = form_mutation_body(
-            &session.resource_id,
-            schema,
-            &session.original,
-            &session.values,
-            MASKED_VALUE,
-        );
-        if session.mode == mtui_ui::FormMode::Create {
+        let mut body = form_mutation_body(&resource_id, schema, &original, &values, MASKED_VALUE);
+        if mode == mtui_ui::FormMode::Create {
             body.retain(|_, value| !value.is_empty());
             if body.is_empty() {
-                if let Overlay::Form(session) = &mut self.overlay {
+                if let Some(session) = self.form_session_mut() {
                     session.error = Some("Fill required fields".into());
                 }
                 return Vec::new();
             }
-            if let Overlay::Form(session) = &mut self.overlay {
+            if let Some(session) = self.form_session_mut() {
                 session.begin_save();
             }
             self.status = "Creating…".into();
@@ -1088,16 +1264,18 @@ impl App {
             })];
         }
         if body.is_empty() {
-            self.overlay = Overlay::None;
+            if matches!(self.overlay, Overlay::Form(_)) {
+                self.overlay = Overlay::None;
+            }
             self.status = "No changes".into();
             return Vec::new();
         }
         let id = if spec.is_singleton() {
             None
         } else {
-            Some(session.record_id.clone())
+            Some(record_id)
         };
-        if let Overlay::Form(session) = &mut self.overlay {
+        if let Some(session) = self.form_session_mut() {
             session.begin_save();
         }
         if spec.id == "device-mode" {
@@ -1450,8 +1628,8 @@ impl App {
             return Vec::new();
         }
         if matches!(
-            &self.overlay,
-            Overlay::Form(session) if !session.accepts_mutation_result(request_id)
+            self.form_session(),
+            Some(session) if !session.accepts_mutation_result(request_id)
         ) {
             return Vec::new();
         }
@@ -1459,18 +1637,24 @@ impl App {
             return cmds;
         }
         if let Some(err) = error {
-            let display_error = if let Overlay::Form(session) = &self.overlay {
+            let display_error = if let Some(session) = self.form_session() {
                 sanitize_form_save_error(&Self::classify_write_error(&err), session)
             } else {
                 Self::classify_write_error(&err)
             };
-            if let Overlay::Form(session) = &mut self.overlay {
+            if let Some(session) = self.form_session_mut() {
                 session.apply_mutation_error(display_error.clone());
             }
             self.status = format!("Write failed: {display_error}");
             return Vec::new();
         }
-        self.overlay = Overlay::None;
+        if matches!(self.overlay, Overlay::Form(_)) {
+            self.overlay = Overlay::None;
+        } else if let Some(session) = self.page_form.as_mut() {
+            session.original.clone_from(&session.values);
+            session.saving = false;
+            session.close_save_preview();
+        }
         self.status = "Saved".into();
         self.refreshing = true;
         self.poll_current()
@@ -1865,7 +2049,7 @@ fn command_base_path(action_id: &str, resource_endpoint: &str) -> String {
     match action_id {
         "reboot" | "shutdown" | "reset-configuration" => "/rest/system".into(),
         "backup-save" | "backup-load" => "/rest/system/backup".into(),
-        "upgrade" => "/rest/system/routerboard".into(),
+        "upgrade" | "usb-power-reset" => "/rest/system/routerboard".into(),
         "export-config" | "export" | "import-config" => "/rest".into(),
         "check-for-updates" => "/rest/system/package/update".into(),
         "wol" | "wake-on-lan" => "/rest/tool".into(),
@@ -1896,6 +2080,7 @@ fn append_safe_mode_irreversible_warning(body: &mut String, action_id: &str, we_
         "reboot"
             | "shutdown"
             | "upgrade"
+            | "usb-power-reset"
             | "reset-configuration"
             | "backup-load"
             | "format"
@@ -1914,6 +2099,9 @@ fn confirm_body(action_id: &str, label: &str, record_name: &str) -> String {
         }
         "make-static" => format!("Make lease {record_name} static?"),
         "upgrade" => "Upgrade RouterBOARD firmware? The router will reboot.".into(),
+        "usb-power-reset" => {
+            "USB power reset? Downstream USB devices will lose power for the duration.".into()
+        }
         "reset-configuration" => {
             "Reset configuration? This wipes the running config (keep-users if you set it).".into()
         }
@@ -3187,10 +3375,7 @@ mod tests {
     fn reboot_from_empty_resources_uses_system_endpoint() {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;
-        app.select_resource("resources");
-        app.pane = Pane::Content;
-        assert!(app.table.selected_row().is_none());
-        let _ = app.update(AppEvent::Input(press(KeyCode::Char('b'))));
+        app.select_resource("reboot");
         let Overlay::Confirm(session) = &app.overlay else {
             panic!("expected reboot confirm, got {:?}", app.overlay);
         };
@@ -3218,15 +3403,13 @@ mod tests {
     fn reboot_confirm_warns_when_safe_mode_is_on() {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;
-        app.select_resource("resources");
-        app.pane = Pane::Content;
         app.safe_mode = mtui_core::SafeModeStatus {
             enabled: true,
             current: true,
             owner: "api".into(),
             user: "admin".into(),
         };
-        let _ = app.update(AppEvent::Input(press(KeyCode::Char('b'))));
+        app.select_resource("reboot");
         let Overlay::Confirm(session) = &app.overlay else {
             panic!("expected reboot confirm, got {:?}", app.overlay);
         };
@@ -3235,6 +3418,146 @@ mod tests {
             "{}",
             session.body
         );
+    }
+
+    #[test]
+    fn resources_has_no_reboot_or_shutdown_actions() {
+        let spec = resource_by_id("resources").expect("resources");
+        let ids: Vec<_> = spec.actions.iter().map(|action| action.id).collect();
+        assert!(!ids.contains(&"reboot"));
+        assert!(!ids.contains(&"shutdown"));
+        assert!(resource_by_id("reboot").is_some());
+        assert!(resource_by_id("shutdown").is_some());
+    }
+
+    #[test]
+    fn watchdog_opens_inline_form_without_overlay() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("watchdog");
+        assert!(matches!(app.overlay, Overlay::None));
+        let mut fields = HashMap::new();
+        fields.insert("watch-address".into(), "192.0.2.1".into());
+        fields.insert("watchdog-timer".into(), "true".into());
+        fields.insert("automatic-supout".into(), "true".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "watchdog".into(),
+            rows: vec![Resource {
+                id: String::new(),
+                fields,
+            }],
+            error: None,
+        }));
+        assert!(matches!(app.overlay, Overlay::None));
+        let session = app.page_form.as_ref().expect("inline watchdog form");
+        assert_eq!(session.resource_id, "watchdog");
+        assert_eq!(
+            session.values.get("watch-address").map(String::as_str),
+            Some("192.0.2.1")
+        );
+        assert!(resource_by_id("watchdog").is_some_and(|spec| spec.actions.is_empty()));
+    }
+
+    fn push_inline_rows(app: &mut App, resource_id: &str, fields: HashMap<String, String>) {
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: resource_id.into(),
+            rows: vec![Resource {
+                id: String::new(),
+                fields,
+            }],
+            error: None,
+        }));
+    }
+
+    #[test]
+    fn inline_form_poll_keeps_cursor_lookup_and_nav_focus() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("routerboard-settings");
+        let mut fields = HashMap::new();
+        fields.insert("boot-os".into(), "router-os".into());
+        fields.insert("boot-device".into(), "nand-if-fail-then-ethernet".into());
+        fields.insert("silent-boot".into(), "false".into());
+        push_inline_rows(&mut app, "routerboard-settings", fields.clone());
+
+        assert_eq!(app.pane, Pane::Content);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        let focus = app.page_form.as_ref().expect("inline form").focus;
+        assert!(focus > 0, "cursor should have left the first field");
+
+        push_inline_rows(&mut app, "routerboard-settings", fields.clone());
+        let session = app.page_form.as_ref().expect("inline form");
+        assert_eq!(session.focus, focus);
+        assert_eq!(app.pane, Pane::Content);
+
+        let schema = resource_by_id("routerboard-settings")
+            .and_then(|spec| spec.form)
+            .expect("schema");
+        if let Some(session) = app.page_form.as_mut() {
+            session.focus = 0;
+            session.activate(schema);
+        }
+        assert!(
+            app.page_form.as_ref().is_some_and(FormSession::lookup_open),
+            "boot-os should open a select picker"
+        );
+
+        push_inline_rows(&mut app, "routerboard-settings", fields.clone());
+        assert!(
+            app.page_form.as_ref().is_some_and(FormSession::lookup_open),
+            "a poll must not close the picker"
+        );
+
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Left)));
+        assert_eq!(app.pane, Pane::Nav);
+        push_inline_rows(&mut app, "routerboard-settings", fields);
+        assert_eq!(app.pane, Pane::Nav);
+    }
+
+    #[test]
+    fn reset_configuration_page_shows_flags_then_confirms() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("reset-configuration");
+        assert!(matches!(app.overlay, Overlay::None));
+        let session = app.page_form.as_ref().expect("inline reset form");
+        assert!(session.values.contains_key("skip-backup"));
+        assert!(session.values.contains_key("caps-mode"));
+        assert!(session.values.contains_key("run-after-reset"));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(KeyEvent::new(
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL,
+        )));
+        let Overlay::Confirm(session) = &app.overlay else {
+            panic!("expected reset confirm, got {:?}", app.overlay);
+        };
+        assert_eq!(session.command, ActionCommand::ResetConfiguration);
+        assert_eq!(session.endpoint, "/rest/system");
+    }
+
+    #[test]
+    fn reboot_esc_returns_without_post() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("resources");
+        app.select_resource("reboot");
+        assert!(matches!(app.overlay, Overlay::Confirm(_)));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        assert!(
+            cmds.iter()
+                .all(|cmd| !matches!(cmd, AppCommand::Mutate { .. }))
+        );
+        assert_eq!(app.current_resource, "resources");
+        assert!(matches!(app.overlay, Overlay::None));
     }
 
     #[test]
@@ -3483,9 +3806,7 @@ mod tests {
     fn shutdown_from_empty_resources_uses_system_endpoint() {
         let mut app = App::new(false).expect("app");
         app.screen = Screen::Main;
-        app.select_resource("resources");
-        app.pane = Pane::Content;
-        let _ = app.update(AppEvent::Input(press(KeyCode::Char('o'))));
+        app.select_resource("shutdown");
         let Overlay::Confirm(session) = &app.overlay else {
             panic!("expected shutdown confirm, got {:?}", app.overlay);
         };

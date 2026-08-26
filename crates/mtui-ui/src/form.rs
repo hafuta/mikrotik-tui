@@ -173,6 +173,36 @@ pub struct LookupPicker {
     pub generation: u64,
 }
 
+fn seeded_edit_values(
+    resource_id: &str,
+    row: &HashMap<String, String>,
+    schema: &FormSchema,
+) -> (HashMap<String, String>, HashMap<String, String>) {
+    let mut values = row.clone();
+    let mut original = row.clone();
+    for field in schema
+        .sections
+        .iter()
+        .chain(schema.create_sections.iter())
+        .flat_map(|section| section.fields)
+    {
+        if !field_visible(resource_id, field.key, &values) {
+            continue;
+        }
+        let empty = values.get(field.key).is_none_or(String::is_empty);
+        if !empty {
+            continue;
+        }
+        let default = default_writable_value(field.kind);
+        if default.is_empty() {
+            continue;
+        }
+        values.insert(field.key.to_string(), default.clone());
+        original.insert(field.key.to_string(), default);
+    }
+    (values, original)
+}
+
 impl FormSession {
     #[must_use]
     pub fn edit(
@@ -182,31 +212,10 @@ impl FormSession {
         schema: &FormSchema,
     ) -> Self {
         let resource_id = resource_id.into();
-        let mut values = row.clone();
-        let mut original = row.clone();
-        for field in schema
-            .sections
-            .iter()
-            .chain(schema.create_sections.iter())
-            .flat_map(|section| section.fields)
-        {
-            if !field_visible(&resource_id, field.key, &values) {
-                continue;
-            }
-            let empty = values.get(field.key).is_none_or(String::is_empty);
-            if !empty {
-                continue;
-            }
-            let default = default_writable_value(field.kind);
-            if default.is_empty() {
-                continue;
-            }
-            values.insert(field.key.to_string(), default.clone());
-            original.insert(field.key.to_string(), default);
-        }
+        let (values, original) = seeded_edit_values(&resource_id, row, schema);
         let repeat = repeat_from_schema(schema, &values);
         let optional_active = optional_from_schema(schema, &values);
-        Self {
+        let mut session = Self {
             resource_id,
             record_id: record_id.into(),
             mode: FormMode::Edit,
@@ -228,7 +237,20 @@ impl FormSession {
             lookup: None,
             repeat,
             optional_active,
-        }
+        };
+        session.clamp(schema);
+        session
+    }
+
+    /// Refresh field values from a live fetch without resetting cursor or pickers.
+    pub fn apply_live_row(&mut self, row: &HashMap<String, String>, schema: &FormSchema) {
+        let (values, original) = seeded_edit_values(&self.resource_id, row, schema);
+        self.values = values;
+        self.original = original;
+        self.repeat = repeat_from_schema(schema, &self.values);
+        self.optional_active = optional_from_schema(schema, &self.values);
+        self.extras = extra_status_fields(schema, row);
+        self.clamp(schema);
     }
 
     /// Merge a fuller source record (for example Ethernet print) into an open editor.
@@ -541,6 +563,15 @@ impl FormSession {
             return;
         }
         self.focus = navigation::moved_index(self.focus, delta, len);
+    }
+
+    #[must_use]
+    pub fn can_move_field(&self, schema: &FormSchema, delta: isize) -> bool {
+        let len = self.visible_rows(schema).len();
+        if len == 0 {
+            return false;
+        }
+        navigation::moved_index(self.focus, delta, len) != self.focus
     }
 
     #[must_use]
@@ -1216,17 +1247,86 @@ pub fn render_form_sheet(
     let field_view = ScrollView::around_focus(focus_line, list_h, field_n);
     let rect = compact_modal_rect(area, width, height);
     frame.render_widget(Clear, rect);
+    paint_form_panel(
+        frame,
+        rect,
+        session,
+        schema,
+        sections,
+        styles,
+        FormChrome::Modal {
+            range_label: &field_view.range_label(),
+        },
+    );
+    render_form_nested(frame, area, session, schema, styles);
+}
 
+/// Paint the same field rows into a content pane (no dimmed modal chrome).
+pub fn render_form_page(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    session: &FormSession,
+    schema: &FormSchema,
+    styles: &Styles,
+) {
+    let sections = session.schema_sections(schema);
+    paint_form_panel(
+        frame,
+        area,
+        session,
+        schema,
+        sections,
+        styles,
+        FormChrome::Page,
+    );
+}
+
+/// Lookup picker and save preview sit on the full canvas for both modal and page forms.
+pub fn render_form_nested(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    session: &FormSession,
+    schema: &FormSchema,
+    styles: &Styles,
+) {
+    if let Some(picker) = &session.lookup {
+        render_lookup_picker(frame, area, picker, styles);
+    }
+    if session.confirm_save {
+        render_save_preview(frame, area, session, schema, styles);
+    }
+}
+
+#[derive(Clone, Copy)]
+enum FormChrome<'a> {
+    Modal { range_label: &'a str },
+    Page,
+}
+
+fn paint_form_panel(
+    frame: &mut Frame<'_>,
+    rect: Rect,
+    session: &FormSession,
+    schema: &FormSchema,
+    sections: &[FormSection],
+    styles: &Styles,
+    chrome: FormChrome<'_>,
+) {
     let title = sheet_title(session, schema);
+    let (range_label, modal) = match chrome {
+        FormChrome::Modal { range_label } => (range_label, true),
+        FormChrome::Page => ("", false),
+    };
     let border = if session.confirm_discard {
         styles.alert
-    } else {
+    } else if modal {
         styles.border
+    } else {
+        styles.focus
     };
     let mut title_spans = vec![Span::styled(format!(" {title} "), styles.title)];
-    let range = field_view.range_label();
-    if !range.is_empty() {
-        title_spans.push(Span::styled(format!("{range} "), styles.muted));
+    if !range_label.is_empty() {
+        title_spans.push(Span::styled(format!("{range_label} "), styles.muted));
     }
     let block = Block::default()
         .title(Line::from(title_spans))
@@ -1268,13 +1368,6 @@ pub fn render_form_sheet(
         ))),
         chunks[1],
     );
-
-    if let Some(picker) = &session.lookup {
-        render_lookup_picker(frame, area, picker, styles);
-    }
-    if session.confirm_save {
-        render_save_preview(frame, area, session, schema, styles);
-    }
 }
 
 fn sheet_field_lines(
@@ -2138,6 +2231,8 @@ mod tests {
         assert_eq!(session.focus, 2);
         session.move_field(&schema, 1);
         assert_eq!(session.focus, 2);
+        assert!(!session.can_move_field(&schema, 1));
+        assert!(session.can_move_field(&schema, -1));
 
         session.move_section(&schema, -1);
         assert_eq!(session.section, 0);

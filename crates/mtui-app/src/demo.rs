@@ -163,6 +163,138 @@ impl DemoStore {
             )],
         );
         self.rows.insert(
+            "routerboard".into(),
+            vec![resource(
+                "",
+                &[
+                    ("model", "CCR2004-16G-2S+"),
+                    ("serial-number", "HEF123456789"),
+                    ("current-firmware", "7.18.2"),
+                    ("upgrade-firmware", "7.18.2"),
+                    ("board-name", "CCR2004-16G-2S+"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "routerboard-settings".into(),
+            vec![resource(
+                "",
+                &[
+                    ("boot-os", "router-os"),
+                    ("boot-device", "nand-if-fail-then-ethernet"),
+                    ("boot-protocol", "dhcp"),
+                    ("protected-routerboot", "disabled"),
+                    ("silent-boot", "false"),
+                    ("auto-upgrade", "false"),
+                    ("force-backup-booter", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "routerboard-mode-button".into(),
+            vec![resource(
+                "",
+                &[
+                    ("enabled", "false"),
+                    ("hold-time", "0.5s"),
+                    ("on-event", ""),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "routerboard-reset-button".into(),
+            vec![resource(
+                "",
+                &[("enabled", "false"), ("hold-time", "5s"), ("on-event", "")],
+            )],
+        );
+        self.rows.insert(
+            "watchdog".into(),
+            vec![resource(
+                "",
+                &[
+                    ("watchdog-timer", "true"),
+                    ("watch-address", "192.0.2.1"),
+                    ("watch-interval", "1m"),
+                    ("no-ping-delay", "5m"),
+                    ("ping-start-after", "5m"),
+                    ("ping-timeout", "1s"),
+                    ("automatic-supout", "true"),
+                    ("auto-send-supout", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "ports".into(),
+            vec![resource(
+                "*port1",
+                &[
+                    ("name", "serial0"),
+                    ("baud-rate", "115200"),
+                    ("data-bits", "8"),
+                    ("parity", "none"),
+                    ("stop-bits", "1"),
+                    ("flow-control", "none"),
+                    ("used", "true"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "system-console".into(),
+            vec![resource(
+                "*con1",
+                &[
+                    ("port", "serial0"),
+                    ("term", "vt102"),
+                    ("channel", "0"),
+                    ("disabled", "false"),
+                    ("used", "true"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "leds".into(),
+            vec![resource(
+                "*led1",
+                &[
+                    ("type", "interface-activity"),
+                    ("interface", "ether1"),
+                    ("leds", "user-led"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "led-settings".into(),
+            vec![resource("", &[("all-leds-off", "never")])],
+        );
+        self.rows.insert(
+            "special-login".into(),
+            vec![resource(
+                "*sl1",
+                &[
+                    ("user", "serial"),
+                    ("port", "serial0"),
+                    ("disabled", "false"),
+                ],
+            )],
+        );
+        self.rows.insert(
+            "users".into(),
+            vec![resource(
+                "*u1",
+                &[
+                    ("name", "admin"),
+                    ("group", "full"),
+                    ("address", "0.0.0.0/0"),
+                    ("inactivity-policy", "none"),
+                    ("inactivity-timeout", "10m"),
+                    ("disabled", "false"),
+                    ("last-logged-in", "aug/01/2026 12:00:00"),
+                ],
+            )],
+        );
+        self.rows.insert(
             "packages".into(),
             vec![
                 resource(

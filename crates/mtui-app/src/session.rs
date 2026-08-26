@@ -7,7 +7,8 @@ use std::time::Instant;
 use mtui_core::{DASHBOARD_ID, SafeModeStatus, SessionAccess, navigation_tree};
 use mtui_routeros::{Client, Resource};
 use mtui_ui::{
-    CommandPalette, ConsoleEntry, ConsoleState, InspectorState, LoginForm, NavState, TableState,
+    CommandPalette, ConsoleEntry, ConsoleState, FormSession, InspectorState, LoginForm, NavState,
+    TableState,
 };
 
 use crate::app::{
@@ -56,6 +57,8 @@ pub struct Session {
     pub pane: Pane,
     pub overlay: Overlay,
     pub overlay_scroll: u16,
+    pub page_form: Option<FormSession>,
+    pub(crate) lifecycle_return_to: Option<String>,
     pub palette: CommandPalette,
     pub table: TableState,
     pub inspector: InspectorState,
@@ -116,6 +119,8 @@ impl Session {
             pane: Pane::Nav,
             overlay: Overlay::None,
             overlay_scroll: 0,
+            page_form: None,
+            lifecycle_return_to: None,
             palette: CommandPalette::new(palette_commands()),
             table: TableState::new(&[]),
             inspector: InspectorState::default(),

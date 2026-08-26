@@ -71,6 +71,20 @@ impl ResourceSpec {
         matches!(self.fetch, FetchKind::System { .. })
     }
 
+    /// Watchdog, Reset Configuration, and `RouterBOARD` extra pages render the
+    /// property sheet in the content pane instead of a table plus modal.
+    #[must_use]
+    pub fn is_inline_form(&self) -> bool {
+        matches!(
+            self.id,
+            "watchdog"
+                | "reset-configuration"
+                | "routerboard-settings"
+                | "routerboard-mode-button"
+                | "routerboard-reset-button"
+        )
+    }
+
     #[must_use]
     #[allow(clippy::implicit_hasher)]
     pub fn resolved_actions(
@@ -1255,6 +1269,23 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::system_write::USER_FORM),
     },
     ResourceSpec {
+        id: "special-login",
+        group: "system-group",
+        cli_path: Some("/special-login"),
+        label: "Special Login",
+        fetch: FetchKind::List {
+            endpoint: "/rest/special-login",
+        },
+        columns: &[
+            col!("user", "User", 16),
+            col!("port", "Port", 14),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::system_write::SPECIAL_LOGIN_FORM),
+    },
+    ResourceSpec {
         id: "routerboard",
         group: "system-group",
         cli_path: None,
@@ -1271,6 +1302,57 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         refresh: Duration::from_secs(60),
         actions: crate::actions::ROUTERBOARD_ACTIONS,
         form: None,
+    },
+    ResourceSpec {
+        id: "routerboard-settings",
+        group: "system-group",
+        cli_path: Some("/system/routerboard/settings"),
+        label: "RouterBOARD Settings",
+        fetch: FetchKind::System {
+            endpoint: "/rest/system/routerboard/settings",
+        },
+        columns: &[
+            col!("boot-device", "Boot device", 28),
+            col!("boot-os", "Boot OS", 12),
+            col!("auto-upgrade", "Auto", 6),
+        ],
+        refresh: Duration::from_secs(60),
+        actions: &[],
+        form: Some(&crate::system_write::ROUTERBOARD_SETTINGS_FORM),
+    },
+    ResourceSpec {
+        id: "routerboard-mode-button",
+        group: "system-group",
+        cli_path: Some("/system/routerboard/mode-button"),
+        label: "Mode Button",
+        fetch: FetchKind::System {
+            endpoint: "/rest/system/routerboard/mode-button",
+        },
+        columns: &[
+            col!("enabled", "Enabled", 8),
+            col!("hold-time", "Hold", 10),
+            col!("on-event", "On event", 24),
+        ],
+        refresh: Duration::from_secs(60),
+        actions: &[],
+        form: Some(&crate::system_write::ROUTERBOARD_MODE_BUTTON_FORM),
+    },
+    ResourceSpec {
+        id: "routerboard-reset-button",
+        group: "system-group",
+        cli_path: Some("/system/routerboard/reset-button"),
+        label: "Reset Button",
+        fetch: FetchKind::System {
+            endpoint: "/rest/system/routerboard/reset-button",
+        },
+        columns: &[
+            col!("enabled", "Enabled", 8),
+            col!("hold-time", "Hold", 10),
+            col!("on-event", "On event", 24),
+        ],
+        refresh: Duration::from_secs(60),
+        actions: &[],
+        form: Some(&crate::system_write::ROUTERBOARD_RESET_BUTTON_FORM),
     },
     ResourceSpec {
         id: "ntp",
@@ -2582,7 +2664,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
             col!("architecture-name", "Arch", 10),
         ],
         refresh: Duration::from_secs(5),
-        actions: crate::actions::RESOURCE_LIFECYCLE_ACTIONS,
+        actions: &[],
         form: None,
     },
     ResourceSpec {
@@ -2647,9 +2729,33 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         columns: &[
             col!("keep-users", "Keep users", 12),
             col!("no-defaults", "No defaults", 12),
+            col!("skip-backup", "Skip backup", 12),
+            col!("caps-mode", "CAPs mode", 10),
         ],
         refresh: Duration::from_secs(3600),
-        actions: crate::actions::RESET_CONFIG_ACTIONS,
+        actions: &[],
+        form: Some(&crate::system_write::RESET_CONFIG_PROMPT),
+    },
+    ResourceSpec {
+        id: "reboot",
+        group: "system-group",
+        cli_path: Some("/system/reboot"),
+        label: "Reboot",
+        fetch: FetchKind::Local,
+        columns: &[],
+        refresh: Duration::from_secs(3600),
+        actions: &[],
+        form: None,
+    },
+    ResourceSpec {
+        id: "shutdown",
+        group: "system-group",
+        cli_path: Some("/system/shutdown"),
+        label: "Shutdown",
+        fetch: FetchKind::Local,
+        columns: &[],
+        refresh: Duration::from_secs(3600),
+        actions: &[],
         form: None,
     },
     ResourceSpec {
@@ -2764,6 +2870,76 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
         form: Some(&crate::system_write::LOGGING_ACTION_FORM),
     },
     ResourceSpec {
+        id: "system-console",
+        group: "system-group",
+        cli_path: None,
+        label: "Console",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/console",
+        },
+        columns: &[
+            col!("port", "Port", 14),
+            col!("term", "Term", 10),
+            col!("channel", "Ch", 4),
+            col!("disabled", "Off", 5),
+            col!("used", "Used", 6),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::system_write::CONSOLE_FORM),
+    },
+    ResourceSpec {
+        id: "leds",
+        group: "system-group",
+        cli_path: None,
+        label: "LEDs",
+        fetch: FetchKind::List {
+            endpoint: "/rest/system/led",
+        },
+        columns: &[
+            col!("type", "Type", 22),
+            col!("interface", "Interface", 16),
+            col!("leds", "LEDs", 16),
+            col!("disabled", "Off", 5),
+        ],
+        refresh: Duration::from_secs(15),
+        actions: crate::actions::MEMBER_ACTIONS,
+        form: Some(&crate::system_write::LED_FORM),
+    },
+    ResourceSpec {
+        id: "led-settings",
+        group: "system-group",
+        cli_path: None,
+        label: "LED Settings",
+        fetch: FetchKind::System {
+            endpoint: "/rest/system/led/settings",
+        },
+        columns: &[col!("all-leds-off", "All off", 14)],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::LED_SETTINGS_FORM),
+    },
+    ResourceSpec {
+        id: "ports",
+        group: "system-group",
+        cli_path: Some("/port"),
+        label: "Ports",
+        fetch: FetchKind::List {
+            endpoint: "/rest/port",
+        },
+        columns: &[
+            col!("name", "Name", 14),
+            col!("baud-rate", "Baud", 10),
+            col!("data-bits", "Bits", 5),
+            col!("parity", "Parity", 8),
+            col!("stop-bits", "Stop", 5),
+            col!("flow-control", "Flow", 10),
+        ],
+        refresh: Duration::from_secs(30),
+        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        form: Some(&crate::system_write::PORT_FORM),
+    },
+    ResourceSpec {
         id: "snmp",
         group: "system-group",
         cli_path: None,
@@ -2834,7 +3010,7 @@ static LEGACY_RESOURCES: &[ResourceSpec] = &[
             col!("automatic-supout", "Supout", 8),
         ],
         refresh: Duration::from_secs(30),
-        actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+        actions: &[],
         form: Some(&crate::system_write::WATCHDOG_FORM),
     },
     ResourceSpec {
@@ -4283,10 +4459,50 @@ mod tests {
             column_keys("logging-actions"),
             ["name", "target", "remote", "remote-port", "remote-protocol"]
         );
-        let logging = resource_by_id("logging").expect("logging");
-        assert_eq!(logging.endpoint(), "/rest/system/logging");
-        let logging_ids: Vec<_> = logging.actions.iter().map(|action| action.id).collect();
-        assert_ne!(logging_ids, action_ids);
+    }
+
+    #[test]
+    fn system_submenu_parity_catalog_ids() {
+        let console = resource_by_id("system-console").expect("system-console");
+        assert_eq!(console.group, "system-group");
+        assert_eq!(console.endpoint(), "/rest/system/console");
+        assert_eq!(console.cli_path(), "/system/console");
+        assert!(!console.is_singleton());
+
+        let leds = resource_by_id("leds").expect("leds");
+        assert_eq!(leds.endpoint(), "/rest/system/led");
+        let settings = resource_by_id("led-settings").expect("led-settings");
+        assert!(settings.is_singleton());
+        assert_eq!(settings.endpoint(), "/rest/system/led/settings");
+
+        let ports = resource_by_id("ports").expect("ports");
+        assert_eq!(ports.endpoint(), "/rest/port");
+        assert_eq!(ports.cli_path(), "/port");
+
+        let special = resource_by_id("special-login").expect("special-login");
+        assert_eq!(special.cli_path(), "/special-login");
+        assert_eq!(special.endpoint(), "/rest/special-login");
+
+        let reboot = resource_by_id("reboot").expect("reboot");
+        assert!(matches!(reboot.fetch, FetchKind::Local));
+        assert_eq!(reboot.cli_path(), "/system/reboot");
+        assert!(reboot.actions.is_empty());
+        assert!(resource_by_id("shutdown").is_some_and(|spec| spec.actions.is_empty()));
+
+        let reset = resource_by_id("reset-configuration").expect("reset-configuration");
+        assert!(reset.is_inline_form());
+        assert!(reset.form.is_some());
+        assert!(reset.actions.is_empty());
+
+        assert!(resource_by_id("watchdog").is_some_and(ResourceSpec::is_inline_form));
+        assert!(resource_by_id("routerboard-settings").is_some_and(ResourceSpec::is_inline_form));
+        assert_eq!(
+            resource_by_id("routerboard-settings")
+                .expect("settings")
+                .cli_path(),
+            "/system/routerboard/settings"
+        );
+        assert!(ALL_RESOURCES.iter().all(|spec| spec.id != "regulatory"));
     }
 
     #[test]
@@ -5411,9 +5627,10 @@ mod tests {
                 .is_some_and(|spec| spec.actions.iter().any(|action| action.id == "upgrade"))
         );
         assert!(
-            resource_by_id("resources").is_some_and(|spec| spec.form.is_none()
-                && spec.actions.iter().any(|action| action.id == "reboot"))
+            resource_by_id("resources")
+                .is_some_and(|spec| spec.form.is_none() && spec.actions.is_empty())
         );
+        assert!(resource_by_id("reboot").is_some_and(|spec| spec.cli_path() == "/system/reboot"));
         assert!(
             resource_by_id("files").is_some_and(|spec| spec.form.is_none()
                 && spec.actions.iter().any(|action| action.id == "backup-save")

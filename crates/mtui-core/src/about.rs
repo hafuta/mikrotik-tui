@@ -948,7 +948,14 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "users",
         "RouterOS login accounts (full, write, read, group-based).",
         "Create operators. Prefer groups over sharing admin. Passwords are secrets.",
-        "name, group, address (allowed source), last-logged-in, disabled."
+        "name, group, address, inactivity-policy, inactivity-timeout, last-logged-in, disabled."
+    ),
+    guide!(
+        "special-login",
+        "Serial-port proxy logins: an SSH/Telnet user is bound to a `/port` instead of the RouterOS CLI.",
+        "Use it so a dedicated account drops straight onto a serial device. Disable the matching `/system/console` binding first or the port stays owned by the local console.",
+        "user, port, disabled.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/328139/Serial+Console"
     ),
     guide!(
         "user-groups",
@@ -961,7 +968,29 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "routerboard",
         "Hardware identity: model, serial, firmware, and factory settings (RouterBOOT).",
         "Read-only inventory. Firmware upgrades are a different, careful operation.",
-        "model, serial-number, firmware-type, current/upgrade-firmware, board-name."
+        "model, serial-number, firmware-type, current/upgrade-firmware, board-name. Upgrade and USB power reset are actions.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/328068/RouterBOARD"
+    ),
+    guide!(
+        "routerboard-settings",
+        "RouterBOOT settings: boot device, OS, frequencies, and protected RouterBOOT.",
+        "Change boot order or silent-boot on hardware that exposes `/system/routerboard/settings`. Missing on CHR.",
+        "boot-os, boot-device, boot-protocol, cpu-frequency, protected-routerboot, silent-boot, auto-upgrade.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/328068/RouterBOARD"
+    ),
+    guide!(
+        "routerboard-mode-button",
+        "Mode-button script: hold time and the script to run.",
+        "Wire a physical mode button to a `/system script` on boards that have `/system/routerboard/mode-button`.",
+        "enabled, hold-time, on-event.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/328068/RouterBOARD"
+    ),
+    guide!(
+        "routerboard-reset-button",
+        "Reset-button script: hold time and the script to run.",
+        "Same idea as the mode button, on boards that expose `/system/routerboard/reset-button`.",
+        "enabled, hold-time, on-event.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/328068/RouterBOARD"
     ),
     guide!(
         "ntp",
@@ -1108,8 +1137,36 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "watchdog",
         "Hardware/software watchdog: reboot if the system stops pinging a target or hangs.",
-        "Safety net on remote sites. A bad watch-address can reboot-loop the box.",
-        "watch-address, ping-timeout, ping-start-after, no-ping-delay, automatic-supout."
+        "Safety net on remote sites. A bad watch-address can reboot-loop the box. Fields edit in place; Ctrl+s patches.",
+        "watch-address, watchdog-timer, watch-interval, no-ping-delay, ping-timeout, automatic-supout."
+    ),
+    guide!(
+        "system-console",
+        "Serial console bindings (`/system/console`): attach a local terminal to a `/port`.",
+        "Not the in-app log pane. Disabling the last serial console can lock you out of that port.",
+        "port, term, channel, disabled. Runtime used/free/wedged stay on Status.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/328139/Serial+Console"
+    ),
+    guide!(
+        "leds",
+        "Per-LED bindings (`/system/led`): type, interface or modem, and which LEDs light.",
+        "Map board LEDs to link or modem activity. LED Settings is the sibling singleton for all-off.",
+        "type, interface, modem, leds, disabled.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/8978532/LEDs"
+    ),
+    guide!(
+        "led-settings",
+        "Board-wide LED settings (`/system/led/settings`).",
+        "Turn every LED off immediately, after an hour, or never. Separate from per-LED bindings.",
+        "all-leds-off.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/8978532/LEDs"
+    ),
+    guide!(
+        "ports",
+        "Serial port hardware (`/port`): baud, parity, and flow control.",
+        "Console and Special Login look up these names. This is not the interactive serial terminal.",
+        "name, baud-rate, data-bits, parity, stop-bits, flow-control.",
+        "https://help.mikrotik.com/docs/spaces/ROS/pages/328139/Serial+Console"
     ),
     guide!(
         "note",
@@ -1378,9 +1435,21 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "reset-configuration",
-        "Factory-style `/system reset-configuration` with a confirm prompt.",
-        "Keep-users and no-defaults are the usual flags. Destructive; never Safe Mode.",
-        "keep-users, no-defaults, skip-backup."
+        "Factory-style `/system reset-configuration` with flags on the page, then a confirm.",
+        "Set keep-users, no-defaults, skip-backup, caps-mode, and run-after-reset here. Ctrl+s asks before POST. Destructive; never Safe Mode.",
+        "keep-users, no-defaults, skip-backup, caps-mode, run-after-reset."
+    ),
+    guide!(
+        "reboot",
+        "Reboot this router (`/system reboot`).",
+        "Opens a confirm as soon as you select the System item. Esc cancels without POST.",
+        "No fields. Same warning as Resources used to show when Safe Mode is on."
+    ),
+    guide!(
+        "shutdown",
+        "Power off this router (`/system shutdown`).",
+        "Opens a confirm as soon as you select the System item. Esc cancels without POST.",
+        "No fields. Same warning as Resources used to show when Safe Mode is on."
     ),
     guide!(
         "ssh-keys",

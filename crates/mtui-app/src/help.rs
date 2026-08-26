@@ -63,8 +63,22 @@ fn push_main_help(out: &mut String, app: &App) {
         out,
         "Panes",
         &[
-            ("tab / shift+tab", "cycle panes"),
-            ("← →", "panes after column scroll"),
+            (
+                "tab / shift+tab",
+                if app.page_form.is_some() {
+                    "fields, then panes"
+                } else {
+                    "cycle panes"
+                },
+            ),
+            (
+                "← →",
+                if app.page_form.is_some() {
+                    "move between panes"
+                } else {
+                    "panes after column scroll"
+                },
+            ),
             ("`", "toggle log console"),
             (
                 "r",
@@ -77,50 +91,7 @@ fn push_main_help(out: &mut String, app: &App) {
             ("F4", "take or release Safe Mode"),
         ],
     );
-    if app.current_resource == DASHBOARD_ID {
-        push_section(
-            out,
-            "Dashboard",
-            &[("j k / ↑ ↓", "move"), ("pgup / pgdn", "page")],
-        );
-    } else if app.current_resource == "logs" {
-        push_section(
-            out,
-            "Logs",
-            &[
-                ("j k / ↑ ↓", "move"),
-                ("pgup / pgdn", "page"),
-                ("g / G", "first / last"),
-                ("/", "filter"),
-                ("space", "pause"),
-                ("f", "follow"),
-                ("e", "severity"),
-                ("c", "clear local"),
-            ],
-        );
-    } else {
-        let mut rows = vec![
-            ("j k / ↑ ↓", "move"),
-            ("pgup / pgdn", "page"),
-            ("h / l", "scroll columns"),
-            ("/", "filter"),
-            ("s", "cycle sort"),
-            ("enter", "open or edit"),
-            ("y", "copy row or inspector"),
-            ("Y", "copy filtered table"),
-        ];
-        if app.action_key_consumed('g') {
-            rows.insert(2, ("G / Home", "last / first"));
-        } else {
-            rows.insert(2, ("g / G", "first / last"));
-        }
-        if mtui_core::supports_bulk_select(&app.current_resource) {
-            rows.push(("space", "check row"));
-            rows.push(("*", "check all filtered"));
-        }
-        push_section(out, "Table", &rows);
-        push_page_actions(out, app);
-    }
+    push_content_help(out, app);
     if app.pane == Pane::Nav {
         push_section(
             out,
@@ -146,6 +117,65 @@ fn push_main_help(out: &mut String, app: &App) {
                 ("`", "hide"),
             ],
         );
+    }
+}
+
+fn push_content_help(out: &mut String, app: &App) {
+    if app.current_resource == DASHBOARD_ID {
+        push_section(
+            out,
+            "Dashboard",
+            &[("j k / ↑ ↓", "move"), ("pgup / pgdn", "page")],
+        );
+    } else if app.current_resource == "logs" {
+        push_section(
+            out,
+            "Logs",
+            &[
+                ("j k / ↑ ↓", "move"),
+                ("pgup / pgdn", "page"),
+                ("g / G", "first / last"),
+                ("/", "filter"),
+                ("space", "pause"),
+                ("f", "follow"),
+                ("e", "severity"),
+                ("c", "clear local"),
+            ],
+        );
+    } else if app.page_form.is_some() {
+        push_section(
+            out,
+            "Form",
+            &[
+                ("↑ ↓", "move between fields"),
+                ("space / enter", "toggle or open a picker"),
+                ("ctrl+s", "save"),
+                ("esc", "focus the menu"),
+            ],
+        );
+        push_page_actions(out, app);
+    } else {
+        let mut rows = vec![
+            ("j k / ↑ ↓", "move"),
+            ("pgup / pgdn", "page"),
+            ("h / l", "scroll columns"),
+            ("/", "filter"),
+            ("s", "cycle sort"),
+            ("enter", "open or edit"),
+            ("y", "copy row or inspector"),
+            ("Y", "copy filtered table"),
+        ];
+        if app.action_key_consumed('g') {
+            rows.insert(2, ("G / Home", "last / first"));
+        } else {
+            rows.insert(2, ("g / G", "first / last"));
+        }
+        if mtui_core::supports_bulk_select(&app.current_resource) {
+            rows.push(("space", "check row"));
+            rows.push(("*", "check all filtered"));
+        }
+        push_section(out, "Table", &rows);
+        push_page_actions(out, app);
     }
 }
 
@@ -306,5 +336,16 @@ mod tests {
         let logs = keyboard_help(&main_app("logs"));
         assert!(!logs.contains("check row"), "{logs}");
         assert!(!logs.contains("check all filtered"), "{logs}");
+    }
+
+    #[test]
+    fn inline_form_help_describes_tab_then_panes() {
+        let mut app = main_app("reset-configuration");
+        app.select_resource("reset-configuration");
+        let text = keyboard_help(&app);
+        assert!(text.contains("fields, then panes"), "{text}");
+        assert!(text.contains("move between panes"), "{text}");
+        assert!(!text.contains("scroll columns"), "{text}");
+        assert!(!text.contains("cycle sort"), "{text}");
     }
 }

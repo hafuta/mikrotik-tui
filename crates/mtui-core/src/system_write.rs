@@ -15,6 +15,12 @@
 //! - `/rest/snmp/community`
 //! - `/rest/certificate`
 //! - `/rest/system/watchdog`
+//! - `/rest/system/console`
+//! - `/rest/system/led`
+//! - `/rest/system/led/settings`
+//! - `/rest/port`
+//! - `/rest/special-login`
+//! - `/rest/system/routerboard/settings`
 //! - `/rest/system/note`
 //! - `/rest/system/license`
 //! - `/rest/disk`
@@ -78,6 +84,11 @@ const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_PORT: FieldKind = FieldKind::Lookup {
+    resource_id: "ports",
+    value_key: "name",
+    multiple: false,
+};
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
@@ -86,7 +97,16 @@ const POLICY: FieldSpec = f!("policy", "Policy", FieldKind::Text);
 const PASSWORD: FieldSpec = f!("password", "Password", FieldKind::Secret);
 const SOURCE: FieldSpec = f!("source", "Source", FieldKind::Text);
 const GROUP: FieldSpec = f!("group", "Group", LOOKUP_USER_GROUP);
+const OWNER: FieldSpec = f!("owner", "Owner", FieldKind::Readonly);
 const ON_EVENT: FieldSpec = f!("on-event", "On event", LOOKUP_SCRIPT);
+const INACTIVITY_POLICY: FieldSpec = f!(
+    "inactivity-policy",
+    "Inactivity Policy",
+    FieldKind::Enum {
+        values: INACTIVITY_POLICIES,
+    }
+);
+const INACTIVITY_POLICIES: &[&str] = &["none", "logout", "lockscreen"];
 const CA: FieldSpec = f!("ca", "CA", LOOKUP_CERTIFICATE);
 const FILE_NAME: FieldSpec = f!("file-name", "File name", LOOKUP_FILE);
 
@@ -192,6 +212,17 @@ const LOGGING_ACTION_GENERAL: &[FieldSpec] = &[
     f!("script", "Script", LOOKUP_SCRIPT),
 ];
 
+const USER_GENERAL: &[FieldSpec] = &[
+    NAME,
+    GROUP,
+    PASSWORD,
+    f!("address", "Address", FieldKind::Repeat),
+    INACTIVITY_POLICY,
+    f!("inactivity-timeout", "Inactivity Timeout", FieldKind::Time),
+    COMMENT,
+    DISABLED,
+];
+
 pub static USER_FORM: FormSchema = FormSchema {
     title_key: "name",
     subtitle_keys: &["group"],
@@ -200,7 +231,7 @@ pub static USER_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[NAME, GROUP, PASSWORD, COMMENT, DISABLED],
+            fields: USER_GENERAL,
         },
         FormSection {
             id: "status",
@@ -213,7 +244,7 @@ pub static USER_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, GROUP, PASSWORD],
+        fields: USER_GENERAL,
     }],
 };
 
@@ -350,6 +381,17 @@ pub static IDENTITY_FORM: FormSchema = FormSchema {
     create_sections: &[],
 };
 
+const SCHEDULER_GENERAL: &[FieldSpec] = &[
+    NAME,
+    f!("start-date", "Start Date", FieldKind::Text),
+    f!("start-time", "Start Time", FieldKind::Text),
+    f!("interval", "Interval", FieldKind::Time),
+    ON_EVENT,
+    POLICY,
+    COMMENT,
+    DISABLED,
+];
+
 pub static SCHEDULER_FORM: FormSchema = FormSchema {
     title_key: "name",
     subtitle_keys: &["interval"],
@@ -358,23 +400,16 @@ pub static SCHEDULER_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[
-                NAME,
-                f!("start-date", "Start date", FieldKind::Text),
-                f!("start-time", "Start time", FieldKind::Text),
-                f!("interval", "Interval", FieldKind::Text),
-                ON_EVENT,
-                COMMENT,
-                DISABLED,
-            ],
+            fields: SCHEDULER_GENERAL,
         },
         FormSection {
             id: "status",
             label: "Status",
             read_only: true,
             fields: &[
-                f!("next-run", "Next run", FieldKind::Readonly),
-                f!("run-count", "Run count", FieldKind::Readonly),
+                OWNER,
+                f!("next-run", "Next Run", FieldKind::Readonly),
+                f!("run-count", "Run Count", FieldKind::Readonly),
             ],
         },
     ],
@@ -382,34 +417,44 @@ pub static SCHEDULER_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, ON_EVENT],
+        fields: SCHEDULER_GENERAL,
     }],
 };
+
+const SCRIPT_GENERAL: &[FieldSpec] = &[
+    NAME,
+    SOURCE,
+    POLICY,
+    f!(
+        "dont-require-permissions",
+        "Don't Require Permissions",
+        FieldKind::Toggle
+    ),
+    COMMENT,
+];
 
 pub static SCRIPT_FORM: FormSchema = FormSchema {
     title_key: "name",
     subtitle_keys: &["policy"],
-    sections: &[FormSection {
-        id: "general",
-        label: "General",
-        read_only: false,
-        fields: &[
-            NAME,
-            SOURCE,
-            POLICY,
-            f!(
-                "dont-require-permissions",
-                "Skip permissions",
-                FieldKind::Toggle
-            ),
-            COMMENT,
-        ],
-    }],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: SCRIPT_GENERAL,
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[OWNER],
+        },
+    ],
     create_sections: &[FormSection {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, SOURCE],
+        fields: SCRIPT_GENERAL,
     }],
 };
 
@@ -652,14 +697,16 @@ pub static WATCHDOG_FORM: FormSchema = FormSchema {
         label: "General",
         read_only: false,
         fields: &[
-            f!("watch-address", "Watch address", FieldKind::Text),
-            f!("watch-interval", "Watch interval", FieldKind::Text),
-            f!("ping-start-after", "Ping start", FieldKind::Text),
-            f!("ping-timeout", "Ping timeout", FieldKind::Text),
-            f!("automatic-supout", "Auto supout", FieldKind::Toggle),
-            f!("auto-send-supout", "Send supout", FieldKind::Toggle),
-            f!("send-email-to", "Email to", FieldKind::Text),
-            f!("send-smtp-server", "SMTP server", FieldKind::Text),
+            f!("watchdog-timer", "Watchdog Timer", FieldKind::Toggle),
+            f!("watch-address", "Watch Address", FieldKind::Text),
+            f!("watch-interval", "Watch Interval", FieldKind::Time),
+            f!("no-ping-delay", "No Ping Delay", FieldKind::Time),
+            f!("ping-start-after", "Ping Start After", FieldKind::Time),
+            f!("ping-timeout", "Ping Timeout", FieldKind::Time),
+            f!("automatic-supout", "Automatic Supout", FieldKind::Toggle),
+            f!("auto-send-supout", "Auto Send Supout", FieldKind::Toggle),
+            f!("send-email-to", "Send Email To", FieldKind::Text),
+            f!("send-smtp-server", "Send SMTP Server", FieldKind::Text),
         ],
     }],
     create_sections: &[],
@@ -1067,6 +1114,14 @@ pub static SSH_KEY_FORM: FormSchema = FormSchema {
     }],
 };
 
+const RESET_CONFIG_GENERAL: &[FieldSpec] = &[
+    f!("keep-users", "Keep Users", FieldKind::Toggle),
+    f!("no-defaults", "No Defaults", FieldKind::Toggle),
+    f!("skip-backup", "Skip Backup", FieldKind::Toggle),
+    f!("caps-mode", "CAPs Mode", FieldKind::Toggle),
+    f!("run-after-reset", "Run After Reset", LOOKUP_FILE),
+];
+
 pub static RESET_CONFIG_PROMPT: FormSchema = FormSchema {
     title_key: "keep-users",
     subtitle_keys: &[],
@@ -1074,20 +1129,13 @@ pub static RESET_CONFIG_PROMPT: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[
-            f!("keep-users", "Keep users", FieldKind::Toggle),
-            f!("no-defaults", "No defaults", FieldKind::Toggle),
-            f!("skip-backup", "Skip backup", FieldKind::Toggle),
-        ],
+        fields: RESET_CONFIG_GENERAL,
     }],
     create_sections: &[FormSection {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[
-            f!("keep-users", "Keep users", FieldKind::Toggle),
-            f!("no-defaults", "No defaults", FieldKind::Toggle),
-        ],
+        fields: RESET_CONFIG_GENERAL,
     }],
 };
 
@@ -1167,6 +1215,313 @@ pub static AT_CHAT_PROMPT: FormSchema = FormSchema {
     }],
 };
 
+const CONSOLE_GENERAL: &[FieldSpec] = &[
+    f!("port", "Port", LOOKUP_PORT),
+    f!("term", "Term", FieldKind::Text),
+    f!("channel", "Channel", FieldKind::Number),
+    DISABLED,
+];
+
+pub static CONSOLE_FORM: FormSchema = FormSchema {
+    title_key: "port",
+    subtitle_keys: &["term"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: CONSOLE_GENERAL,
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("vcno", "VCNO", FieldKind::Readonly),
+                f!("used", "Used", FieldKind::Readonly),
+                f!("free", "Free", FieldKind::Readonly),
+                f!("wedged", "Wedged", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: CONSOLE_GENERAL,
+    }],
+};
+
+const LED_TYPES: &[&str] = &[
+    "off",
+    "on",
+    "modem-status",
+    "interface-status",
+    "interface-activity",
+    "wireless-status",
+    "wireless-signal-strength",
+    "poe-out",
+    "flash-access",
+    "rb-capsman",
+    "rb-wps",
+    "fan-fault",
+    "gps-fix",
+    "ap-cap",
+];
+
+const LED_GENERAL: &[FieldSpec] = &[
+    FieldSpec {
+        key: "type",
+        label: "Type",
+        kind: FieldKind::Enum { values: LED_TYPES },
+    },
+    f!("interface", "Interface", LOOKUP_IFACE),
+    f!("modem", "Modem", LOOKUP_IFACE),
+    f!("leds", "LEDs", FieldKind::Repeat),
+    DISABLED,
+];
+
+pub static LED_FORM: FormSchema = FormSchema {
+    title_key: "type",
+    subtitle_keys: &["interface"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: LED_GENERAL,
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: LED_GENERAL,
+    }],
+};
+
+const LED_ALL_OFF: &[&str] = &["never", "immediately", "after-1h"];
+
+pub static LED_SETTINGS_FORM: FormSchema = FormSchema {
+    title_key: "all-leds-off",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[FieldSpec {
+            key: "all-leds-off",
+            label: "All LEDs Off",
+            kind: FieldKind::Enum {
+                values: LED_ALL_OFF,
+            },
+        }],
+    }],
+    create_sections: &[],
+};
+
+const PORT_BAUD: &[&str] = &[
+    "auto", "110", "300", "600", "1200", "2400", "4800", "9600", "19200", "38400", "57600",
+    "115200", "230400", "460800", "921600",
+];
+const PORT_DATA_BITS: &[&str] = &["7", "8"];
+const PORT_PARITY: &[&str] = &["none", "even", "odd"];
+const PORT_STOP_BITS: &[&str] = &["1", "2"];
+const PORT_FLOW: &[&str] = &["none", "hardware", "xon-xoff"];
+
+pub static PORT_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["baud-rate"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                f!("name", "Name", FieldKind::Readonly),
+                FieldSpec {
+                    key: "baud-rate",
+                    label: "Baud Rate",
+                    kind: FieldKind::Enum { values: PORT_BAUD },
+                },
+                FieldSpec {
+                    key: "data-bits",
+                    label: "Data Bits",
+                    kind: FieldKind::Enum {
+                        values: PORT_DATA_BITS,
+                    },
+                },
+                FieldSpec {
+                    key: "parity",
+                    label: "Parity",
+                    kind: FieldKind::Enum {
+                        values: PORT_PARITY,
+                    },
+                },
+                FieldSpec {
+                    key: "stop-bits",
+                    label: "Stop Bits",
+                    kind: FieldKind::Enum {
+                        values: PORT_STOP_BITS,
+                    },
+                },
+                FieldSpec {
+                    key: "flow-control",
+                    label: "Flow Control",
+                    kind: FieldKind::Enum { values: PORT_FLOW },
+                },
+            ],
+        },
+        FormSection {
+            id: "status",
+            label: "Status",
+            read_only: true,
+            fields: &[
+                f!("used", "Used", FieldKind::Readonly),
+                f!("free", "Free", FieldKind::Readonly),
+            ],
+        },
+    ],
+    create_sections: &[],
+};
+
+const SPECIAL_LOGIN_GENERAL: &[FieldSpec] = &[
+    f!("user", "User", LOOKUP_USER),
+    f!("port", "Port", LOOKUP_PORT),
+    DISABLED,
+];
+
+pub static SPECIAL_LOGIN_FORM: FormSchema = FormSchema {
+    title_key: "user",
+    subtitle_keys: &["port"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: SPECIAL_LOGIN_GENERAL,
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: SPECIAL_LOGIN_GENERAL,
+    }],
+};
+
+const BOOT_OS: &[&str] = &["router-os", "container"];
+const BOOT_DEVICE: &[&str] = &[
+    "nand-if-fail-then-ethernet",
+    "nand-only",
+    "ethernet",
+    "ethernet-once",
+    "try-ethernet-once-then-nand",
+];
+const BOOT_PROTOCOL: &[&str] = &["dhcp", "bootp", "dhcp-or-bootp"];
+const PROTECTED_ROUTERBOOT: &[&str] = &["disabled", "enabled"];
+
+pub static ROUTERBOARD_SETTINGS_FORM: FormSchema = FormSchema {
+    title_key: "boot-device",
+    subtitle_keys: &["boot-os"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[
+            FieldSpec {
+                key: "boot-os",
+                label: "Boot OS",
+                kind: FieldKind::Enum { values: BOOT_OS },
+            },
+            FieldSpec {
+                key: "boot-device",
+                label: "Boot Device",
+                kind: FieldKind::Enum {
+                    values: BOOT_DEVICE,
+                },
+            },
+            FieldSpec {
+                key: "boot-protocol",
+                label: "Boot Protocol",
+                kind: FieldKind::Enum {
+                    values: BOOT_PROTOCOL,
+                },
+            },
+            f!("cpu-frequency", "CPU Frequency", FieldKind::Text),
+            f!("memory-frequency", "Memory Frequency", FieldKind::Text),
+            FieldSpec {
+                key: "protected-routerboot",
+                label: "Protected RouterBOOT",
+                kind: FieldKind::Enum {
+                    values: PROTECTED_ROUTERBOOT,
+                },
+            },
+            f!(
+                "reformat-hold-button",
+                "Reformat Hold Button",
+                FieldKind::Time
+            ),
+            f!(
+                "reformat-hold-button-max",
+                "Reformat Hold Button Max",
+                FieldKind::Time
+            ),
+            f!("silent-boot", "Silent Boot", FieldKind::Toggle),
+            f!("auto-upgrade", "Auto Upgrade", FieldKind::Toggle),
+            f!(
+                "force-backup-booter",
+                "Force Backup Booter",
+                FieldKind::Toggle
+            ),
+        ],
+    }],
+    create_sections: &[],
+};
+
+const BUTTON_GENERAL: &[FieldSpec] = &[
+    f!("enabled", "Enabled", FieldKind::Toggle),
+    f!("hold-time", "Hold Time", FieldKind::Time),
+    ON_EVENT,
+];
+
+pub static ROUTERBOARD_MODE_BUTTON_FORM: FormSchema = FormSchema {
+    title_key: "on-event",
+    subtitle_keys: &["hold-time"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: BUTTON_GENERAL,
+    }],
+    create_sections: &[],
+};
+
+pub static ROUTERBOARD_RESET_BUTTON_FORM: FormSchema = FormSchema {
+    title_key: "on-event",
+    subtitle_keys: &["hold-time"],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: BUTTON_GENERAL,
+    }],
+    create_sections: &[],
+};
+
+pub static USB_POWER_RESET_PROMPT: FormSchema = FormSchema {
+    title_key: "duration",
+    subtitle_keys: &[],
+    sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("duration", "Duration", FieldKind::Time)],
+    }],
+    create_sections: &[FormSection {
+        id: "general",
+        label: "General",
+        read_only: false,
+        fields: &[f!("duration", "Duration", FieldKind::Time)],
+    }],
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1219,14 +1574,34 @@ mod tests {
     fn user_password_is_secret_and_omitted_when_masked() {
         assert_eq!(
             USER_FORM.writable_keys(),
-            ["name", "group", "password", "comment", "disabled"]
+            [
+                "name",
+                "group",
+                "password",
+                "address",
+                "inactivity-policy",
+                "inactivity-timeout",
+                "comment",
+                "disabled"
+            ]
         );
         assert_eq!(
             USER_FORM.field("password").map(|field| field.kind),
             Some(FieldKind::Secret)
         );
+        assert_eq!(
+            USER_FORM.field("address").map(|field| field.kind),
+            Some(FieldKind::Repeat)
+        );
+        assert_eq!(
+            USER_FORM
+                .field("inactivity-timeout")
+                .map(|field| field.kind),
+            Some(FieldKind::Time)
+        );
+        assert_enum(&USER_FORM, "inactivity-policy", INACTIVITY_POLICIES);
         assert!(!USER_FORM.writable_keys().contains(&"last-logged-in"));
-        assert_eq!(create_keys(&USER_FORM), ["name", "group", "password"]);
+        assert_eq!(create_keys(&USER_FORM), USER_FORM.writable_keys());
         assert_lookup(&USER_FORM, "group", "user-groups", "name");
         assert!(no_advanced(&USER_FORM));
 
@@ -1347,15 +1722,33 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_create_is_name_and_on_event() {
-        assert_eq!(create_keys(&SCHEDULER_FORM), ["name", "on-event"]);
+    fn scheduler_create_matches_writable_general() {
+        assert_eq!(
+            create_keys(&SCHEDULER_FORM),
+            [
+                "name",
+                "start-date",
+                "start-time",
+                "interval",
+                "on-event",
+                "policy",
+                "comment",
+                "disabled"
+            ]
+        );
         assert_lookup(&SCHEDULER_FORM, "on-event", "scripts", "name");
         assert_eq!(
             SCHEDULER_FORM.field("interval").map(|field| field.kind),
-            Some(FieldKind::Text)
+            Some(FieldKind::Time)
         );
         assert!(!SCHEDULER_FORM.writable_keys().contains(&"next-run"));
         assert!(!SCHEDULER_FORM.writable_keys().contains(&"run-count"));
+        assert!(!SCHEDULER_FORM.writable_keys().contains(&"owner"));
+        assert_eq!(
+            SCHEDULER_FORM.field("owner").map(|field| field.kind),
+            Some(FieldKind::Readonly)
+        );
+        assert!(no_advanced(&SCHEDULER_FORM));
     }
 
     #[test]
@@ -1369,7 +1762,28 @@ mod tests {
             SCRIPT_FORM.field("source").map(|field| field.kind),
             Some(FieldKind::Secret)
         );
-        assert_eq!(create_keys(&SCRIPT_FORM), ["name", "source"]);
+        assert_eq!(
+            create_keys(&SCRIPT_FORM),
+            [
+                "name",
+                "source",
+                "policy",
+                "dont-require-permissions",
+                "comment"
+            ]
+        );
+        assert_eq!(create_keys(&SCRIPT_FORM), SCRIPT_FORM.writable_keys());
+        assert_eq!(
+            SCRIPT_FORM
+                .field("dont-require-permissions")
+                .map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_eq!(
+            SCRIPT_FORM.field("owner").map(|field| field.kind),
+            Some(FieldKind::Readonly)
+        );
+        assert!(no_advanced(&SCRIPT_FORM));
     }
 
     #[test]
@@ -1552,9 +1966,27 @@ mod tests {
         assert!(WATCHDOG_FORM.writable_keys().contains(&"watch-address"));
         assert!(WATCHDOG_FORM.writable_keys().contains(&"automatic-supout"));
         assert_eq!(
+            WATCHDOG_FORM
+                .field("watchdog-timer")
+                .map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_eq!(
+            WATCHDOG_FORM
+                .field("watch-interval")
+                .map(|field| field.kind),
+            Some(FieldKind::Time)
+        );
+        assert_eq!(
+            WATCHDOG_FORM.field("no-ping-delay").map(|field| field.kind),
+            Some(FieldKind::Time)
+        );
+        assert_eq!(
             WATCHDOG_FORM.field("send-email-to").map(|field| field.kind),
             Some(FieldKind::Text)
         );
+        assert!(WATCHDOG_FORM.create_sections.is_empty());
+        assert!(no_advanced(&WATCHDOG_FORM));
         assert_eq!(NOTE_FORM.writable_keys(), ["show-at-login", "note"]);
     }
 
@@ -1690,5 +2122,134 @@ mod tests {
         );
         assert!(!DEVICE_MODE_FORM.writable_keys().contains(&"attempt-count"));
         assert!(no_advanced(&DEVICE_MODE_FORM));
+    }
+
+    #[test]
+    fn console_port_is_lookup_and_channel_is_number() {
+        assert_lookup(&CONSOLE_FORM, "port", "ports", "name");
+        assert_eq!(
+            CONSOLE_FORM.field("channel").map(|field| field.kind),
+            Some(FieldKind::Number)
+        );
+        assert_eq!(
+            CONSOLE_FORM.field("disabled").map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert!(!CONSOLE_FORM.writable_keys().contains(&"used"));
+        assert_eq!(create_keys(&CONSOLE_FORM), CONSOLE_FORM.writable_keys());
+        assert!(no_advanced(&CONSOLE_FORM));
+    }
+
+    #[test]
+    fn led_type_is_enum_and_lookups_are_not_text() {
+        assert_enum(&LED_FORM, "type", LED_TYPES);
+        assert_lookup(&LED_FORM, "interface", "interfaces", "name");
+        assert_lookup(&LED_FORM, "modem", "interfaces", "name");
+        assert_eq!(
+            LED_FORM.field("leds").map(|field| field.kind),
+            Some(FieldKind::Repeat)
+        );
+        assert_enum(&LED_SETTINGS_FORM, "all-leds-off", LED_ALL_OFF);
+        assert!(LED_SETTINGS_FORM.create_sections.is_empty());
+        assert!(no_advanced(&LED_FORM));
+        assert!(no_advanced(&LED_SETTINGS_FORM));
+    }
+
+    #[test]
+    fn port_serial_fields_are_enums() {
+        assert_eq!(
+            PORT_FORM.field("name").map(|field| field.kind),
+            Some(FieldKind::Readonly)
+        );
+        assert_enum(&PORT_FORM, "baud-rate", PORT_BAUD);
+        assert_enum(&PORT_FORM, "data-bits", PORT_DATA_BITS);
+        assert_enum(&PORT_FORM, "parity", PORT_PARITY);
+        assert_enum(&PORT_FORM, "stop-bits", PORT_STOP_BITS);
+        assert_enum(&PORT_FORM, "flow-control", PORT_FLOW);
+        assert!(PORT_FORM.create_sections.is_empty());
+        assert!(no_advanced(&PORT_FORM));
+    }
+
+    #[test]
+    fn special_login_user_and_port_are_lookups() {
+        assert_lookup(&SPECIAL_LOGIN_FORM, "user", "users", "name");
+        assert_lookup(&SPECIAL_LOGIN_FORM, "port", "ports", "name");
+        assert_eq!(
+            create_keys(&SPECIAL_LOGIN_FORM),
+            ["user", "port", "disabled"]
+        );
+        assert!(no_advanced(&SPECIAL_LOGIN_FORM));
+    }
+
+    #[test]
+    fn reset_configuration_prompt_covers_webfig_flags() {
+        assert_eq!(
+            RESET_CONFIG_PROMPT.writable_keys(),
+            [
+                "keep-users",
+                "no-defaults",
+                "skip-backup",
+                "caps-mode",
+                "run-after-reset"
+            ]
+        );
+        assert_eq!(
+            RESET_CONFIG_PROMPT
+                .field("keep-users")
+                .map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_eq!(
+            RESET_CONFIG_PROMPT
+                .field("caps-mode")
+                .map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_lookup(&RESET_CONFIG_PROMPT, "run-after-reset", "files", "name");
+        assert_eq!(
+            create_keys(&RESET_CONFIG_PROMPT),
+            RESET_CONFIG_PROMPT.writable_keys()
+        );
+        assert!(no_advanced(&RESET_CONFIG_PROMPT));
+    }
+
+    #[test]
+    fn routerboard_settings_and_buttons_use_field_kinds() {
+        assert_enum(&ROUTERBOARD_SETTINGS_FORM, "boot-os", BOOT_OS);
+        assert_enum(&ROUTERBOARD_SETTINGS_FORM, "boot-device", BOOT_DEVICE);
+        assert_enum(
+            &ROUTERBOARD_SETTINGS_FORM,
+            "protected-routerboot",
+            PROTECTED_ROUTERBOOT,
+        );
+        assert_eq!(
+            ROUTERBOARD_SETTINGS_FORM
+                .field("silent-boot")
+                .map(|field| field.kind),
+            Some(FieldKind::Toggle)
+        );
+        assert_eq!(
+            ROUTERBOARD_MODE_BUTTON_FORM
+                .field("hold-time")
+                .map(|field| field.kind),
+            Some(FieldKind::Time)
+        );
+        assert_lookup(&ROUTERBOARD_MODE_BUTTON_FORM, "on-event", "scripts", "name");
+        assert_lookup(
+            &ROUTERBOARD_RESET_BUTTON_FORM,
+            "on-event",
+            "scripts",
+            "name",
+        );
+        assert_eq!(
+            USB_POWER_RESET_PROMPT
+                .field("duration")
+                .map(|field| field.kind),
+            Some(FieldKind::Time)
+        );
+        assert!(ROUTERBOARD_SETTINGS_FORM.create_sections.is_empty());
+        assert!(no_advanced(&ROUTERBOARD_SETTINGS_FORM));
+        assert!(no_advanced(&ROUTERBOARD_MODE_BUTTON_FORM));
+        assert!(no_advanced(&ROUTERBOARD_RESET_BUTTON_FORM));
     }
 }

@@ -41,7 +41,8 @@ pub use file_picker::{FilePickerEntry, FilePickerState, render_file_picker};
 pub use firewall::{FirewallHitChart, FirewallRuleMetric, MAX_FIREWALL_RULES};
 pub use form::{
     BACKUP_SAVE_FORM, COPY_FORM, DOWNLOAD_FORM, FETCH_FORM, FormMode, FormSession,
-    LOOKUP_TEST_FORM, LookupPicker, UPLOAD_FORM, render_form_sheet,
+    LOOKUP_TEST_FORM, LookupPicker, UPLOAD_FORM, render_form_nested, render_form_page,
+    render_form_sheet,
 };
 pub use inspector::InspectorState;
 pub use layout::{

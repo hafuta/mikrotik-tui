@@ -5,8 +5,9 @@ use mtui_ui::{
     CpuCoreView, DashboardView, LayoutMetrics, LoginView, Modal, ModalButton, ModalButtonKind,
     ModalPanel, ReauthView, TabLabel, center_in_band, chrome_band_height, constrain_lines,
     dashboard_content, fill_rect, footer_bar, format_fingerprint, modal_max_scroll,
-    render_action_menu, render_file_picker, render_form_sheet, render_login, render_modal,
-    render_probe, render_reauth, render_tab_bar, render_torch, session_header, tab_strip_height,
+    render_action_menu, render_file_picker, render_form_nested, render_form_page,
+    render_form_sheet, render_login, render_modal, render_probe, render_reauth, render_tab_bar,
+    render_torch, session_header, tab_strip_height,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -87,7 +88,15 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
                     ref user,
                 } => draw_safe_mode_conflict(frame, full, owner, user, &styles),
                 Overlay::SafeModeLeave { .. } => draw_safe_mode_leave(frame, full, &styles),
-                Overlay::None => {}
+                Overlay::None => {
+                    if let Some(session) = &app.page_form {
+                        let schema = session.overlay_schema(
+                            mtui_core::resource_by_id(&session.resource_id)
+                                .and_then(|spec| spec.form),
+                        );
+                        render_form_nested(frame, full, session, schema, &styles);
+                    }
+                }
             }
         }
     }
@@ -386,6 +395,8 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
         let content = panes[idx];
         if app.current_resource == DASHBOARD_ID {
             draw_dashboard(frame, content, app);
+        } else if let Some(session) = &app.page_form {
+            draw_page_form(frame, content, app, session);
         } else {
             draw_table(frame, content, app);
         }
@@ -464,6 +475,13 @@ fn draw_nav(frame: &mut Frame<'_>, area: Rect, app: &App) {
         usize::from(inner.height.max(1)),
     );
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+fn draw_page_form(frame: &mut Frame<'_>, area: Rect, app: &App, session: &mtui_ui::FormSession) {
+    let styles = app.styles();
+    let schema = session
+        .overlay_schema(mtui_core::resource_by_id(&session.resource_id).and_then(|spec| spec.form));
+    render_form_page(frame, area, session, schema, &styles);
 }
 
 fn draw_table(frame: &mut Frame<'_>, area: Rect, app: &App) {
