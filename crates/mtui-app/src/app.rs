@@ -3183,7 +3183,7 @@ mod secret_mask_tests {
             app.inspector
                 .fields
                 .iter()
-                .any(|(label, value)| { label == "Private key" && value == MASKED_VALUE }),
+                .any(|(label, value)| { label == "Private Key" && value == MASKED_VALUE }),
             "{:?}",
             app.inspector.fields
         );

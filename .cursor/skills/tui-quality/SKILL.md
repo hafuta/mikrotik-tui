@@ -59,6 +59,10 @@ description: >-
   pinned outside that viewport. Show overflow with a `n-m/total` range
   on the title and a right-edge track/thumb (`│` / `▐`), not a
   background fill. Focused rows must stay in view.
+- New (create) shows every writable field from the schema. Do not hide
+  Advanced, match, client, or other writable sections on New. Status is
+  Edit-only: never render a Status heading, Status fields, or runtime
+  extras on a create sheet.
 - Add a regression test whenever addressing flicker, bleed, stale redraws,
   viewport jumps, or input starvation; visual stability and a live keyboard
   are part of correctness.

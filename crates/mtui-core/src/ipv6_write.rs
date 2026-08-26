@@ -608,11 +608,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     fn assert_lookup(
@@ -645,7 +641,10 @@ mod tests {
                 "disabled",
             ]
         );
-        assert_eq!(create_keys(&IPV6_ADDRESS_FORM), ["address", "interface"]);
+        assert_eq!(
+            create_keys(&IPV6_ADDRESS_FORM),
+            IPV6_ADDRESS_FORM.writable_keys()
+        );
         assert_lookup(&IPV6_ADDRESS_FORM, "interface", "interfaces", "name");
         assert_lookup(&IPV6_NEIGHBOR_FORM, "interface", "interfaces", "name");
         assert_lookup(&IPV6_ND_FORM, "interface", "interfaces", "name");
@@ -667,21 +666,24 @@ mod tests {
         );
         assert_eq!(
             create_keys(&IPV6_NEIGHBOR_FORM),
-            ["address", "interface", "mac-address"]
+            IPV6_NEIGHBOR_FORM.writable_keys()
         );
         assert!(!IPV6_NEIGHBOR_FORM.writable_keys().contains(&"origin"));
     }
 
     #[test]
     fn ipv6_nd_create_is_interface_only() {
-        assert_eq!(create_keys(&IPV6_ND_FORM), ["interface"]);
+        assert_eq!(create_keys(&IPV6_ND_FORM), IPV6_ND_FORM.writable_keys());
         assert!(IPV6_ND_FORM.writable_keys().contains(&"advertise-dns"));
         assert!(IPV6_ND_FORM.writable_keys().contains(&"ra-interval"));
     }
 
     #[test]
     fn ipv6_route_status_is_readonly() {
-        assert_eq!(create_keys(&IPV6_ROUTE_FORM), ["dst-address", "gateway"]);
+        assert_eq!(
+            create_keys(&IPV6_ROUTE_FORM),
+            IPV6_ROUTE_FORM.writable_keys()
+        );
         assert!(!IPV6_ROUTE_FORM.writable_keys().contains(&"active"));
         assert!(IPV6_ROUTE_FORM.writable_keys().contains(&"routing-table"));
         assert_lookup(&IPV6_ROUTE_FORM, "routing-table", "routing-tables", "name");
@@ -689,7 +691,7 @@ mod tests {
 
     #[test]
     fn ipv6_pool_and_settings() {
-        assert_eq!(create_keys(&IPV6_POOL_FORM), ["name", "prefix"]);
+        assert_eq!(create_keys(&IPV6_POOL_FORM), IPV6_POOL_FORM.writable_keys());
         assert!(IPV6_POOL_FORM.writable_keys().contains(&"prefix-length"));
         assert!(IPV6_SETTINGS_FORM.create_sections.is_empty());
         assert_eq!(
@@ -700,7 +702,10 @@ mod tests {
 
     #[test]
     fn ipv6_firewall_filter_like_ipv4() {
-        assert_eq!(create_keys(&IPV6_FIREWALL_FILTER_FORM), ["chain", "action"]);
+        assert_eq!(
+            create_keys(&IPV6_FIREWALL_FILTER_FORM),
+            IPV6_FIREWALL_FILTER_FORM.writable_keys()
+        );
         assert!(
             !IPV6_FIREWALL_FILTER_FORM
                 .writable_keys()
@@ -768,11 +773,26 @@ mod tests {
 
     #[test]
     fn ipv6_operator_create_keys_and_lookups() {
-        assert_eq!(create_keys(&IPV6_DHCP_CLIENT_FORM), ["interface"]);
-        assert_eq!(create_keys(&IPV6_DHCP_SERVER_FORM), ["name", "interface"]);
-        assert_eq!(create_keys(&IPV6_ND_PREFIX_FORM), ["prefix", "interface"]);
-        assert_eq!(create_keys(&IPV6_FIREWALL_NAT_FORM), ["chain", "action"]);
-        assert_eq!(create_keys(&IPV6_ADDRESS_LIST_FORM), ["list", "address"]);
+        assert_eq!(
+            create_keys(&IPV6_DHCP_CLIENT_FORM),
+            IPV6_DHCP_CLIENT_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&IPV6_DHCP_SERVER_FORM),
+            IPV6_DHCP_SERVER_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&IPV6_ND_PREFIX_FORM),
+            IPV6_ND_PREFIX_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&IPV6_FIREWALL_NAT_FORM),
+            IPV6_FIREWALL_NAT_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&IPV6_ADDRESS_LIST_FORM),
+            IPV6_ADDRESS_LIST_FORM.writable_keys()
+        );
 
         assert_lookup(&IPV6_DHCP_CLIENT_FORM, "interface", "interfaces", "name");
         assert_lookup(&IPV6_DHCP_SERVER_FORM, "interface", "interfaces", "name");

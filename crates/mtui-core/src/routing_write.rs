@@ -400,11 +400,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     fn assert_lookup(
@@ -426,16 +422,25 @@ mod tests {
 
     #[test]
     fn routing_table_and_rule_create() {
-        assert_eq!(create_keys(&ROUTING_TABLE_FORM), ["name"]);
+        assert_eq!(
+            create_keys(&ROUTING_TABLE_FORM),
+            ROUTING_TABLE_FORM.writable_keys()
+        );
         assert!(ROUTING_TABLE_FORM.writable_keys().contains(&"fib"));
-        assert_eq!(create_keys(&ROUTING_RULE_FORM), ["action", "table"]);
+        assert_eq!(
+            create_keys(&ROUTING_RULE_FORM),
+            ROUTING_RULE_FORM.writable_keys()
+        );
         assert_lookup(&ROUTING_RULE_FORM, "table", "routing-tables", "name", false);
         assert!(ROUTING_RULE_FORM.writable_keys().contains(&"routing-mark"));
     }
 
     #[test]
     fn ospf_instance_short_create() {
-        assert_eq!(create_keys(&OSPF_INSTANCE_FORM), ["name"]);
+        assert_eq!(
+            create_keys(&OSPF_INSTANCE_FORM),
+            OSPF_INSTANCE_FORM.writable_keys()
+        );
         assert_eq!(
             OSPF_INSTANCE_FORM.writable_keys(),
             [
@@ -465,7 +470,7 @@ mod tests {
         );
         assert_eq!(
             create_keys(&BGP_CONNECTION_FORM),
-            ["name", "remote.address", "remote.as"]
+            BGP_CONNECTION_FORM.writable_keys()
         );
         assert!(
             BGP_CONNECTION_FORM
@@ -477,7 +482,7 @@ mod tests {
 
     #[test]
     fn ospf_area_and_interface_template_forms() {
-        assert_eq!(create_keys(&OSPF_AREA_FORM), ["name", "instance"]);
+        assert_eq!(create_keys(&OSPF_AREA_FORM), OSPF_AREA_FORM.writable_keys());
         assert_lookup(&OSPF_AREA_FORM, "instance", "ospf-instances", "name", false);
         assert_eq!(
             OSPF_AREA_FORM.field("type").map(|field| field.kind),
@@ -492,7 +497,7 @@ mod tests {
 
         assert_eq!(
             create_keys(&OSPF_INTERFACE_TEMPLATE_FORM),
-            ["instance", "area"]
+            OSPF_INTERFACE_TEMPLATE_FORM.writable_keys()
         );
         assert_lookup(
             &OSPF_INTERFACE_TEMPLATE_FORM,
@@ -683,7 +688,10 @@ mod tests {
 
     #[test]
     fn bgp_template_is_smaller_than_connection() {
-        assert_eq!(create_keys(&BGP_TEMPLATE_FORM), ["name"]);
+        assert_eq!(
+            create_keys(&BGP_TEMPLATE_FORM),
+            BGP_TEMPLATE_FORM.writable_keys()
+        );
         assert!(
             BGP_TEMPLATE_FORM
                 .writable_keys()

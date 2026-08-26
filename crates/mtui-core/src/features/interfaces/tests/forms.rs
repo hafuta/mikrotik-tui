@@ -3,11 +3,7 @@ use crate::forms::{FieldKind, FormSchema, default_writable_value, patch_body};
 use std::collections::HashMap;
 
 fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-    schema
-        .create_sections
-        .iter()
-        .flat_map(|section| section.fields.iter().map(|field| field.key))
-        .collect()
+    schema.create_keys()
 }
 
 fn lookup(resource_id: &'static str, multiple: bool) -> FieldKind {
@@ -35,20 +31,14 @@ fn assert_lookup(schema: &FormSchema, key: &str, resource_id: &'static str, mult
 
 #[test]
 fn list_and_member_create_fields() {
-    assert_eq!(
-        create_keys(&LIST_FORM),
-        ["comment", "name", "include", "exclude"]
-    );
+    assert_eq!(create_keys(&LIST_FORM), LIST_FORM.writable_keys());
     assert!(
         LIST_FORM
             .writable_keys()
             .iter()
             .all(|key| *key != "disabled")
     );
-    assert_eq!(
-        create_keys(&MEMBER_FORM),
-        ["disabled", "comment", "list", "interface"]
-    );
+    assert_eq!(create_keys(&MEMBER_FORM), MEMBER_FORM.writable_keys());
     assert_eq!(
         MEMBER_FORM.field("disabled").map(|field| field.label),
         Some("Enabled")

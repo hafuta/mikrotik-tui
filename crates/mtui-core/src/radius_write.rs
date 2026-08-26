@@ -73,16 +73,12 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     #[test]
     fn radius_create_requires_identity_and_secret() {
-        assert_eq!(create_keys(&RADIUS_FORM), ["address", "secret", "service"]);
+        assert_eq!(create_keys(&RADIUS_FORM), RADIUS_FORM.writable_keys());
         assert_eq!(
             RADIUS_FORM.field("secret").map(|f| f.kind),
             Some(FieldKind::Secret)

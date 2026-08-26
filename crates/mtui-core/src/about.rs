@@ -36,6 +36,9 @@ pub struct AboutCopy {
 pub fn screen_guide(id: &str) -> Option<&'static ScreenGuide> {
     crate::features::interfaces::guides::GUIDES
         .iter()
+        .chain(crate::features::wireguard::guides::GUIDES)
+        .chain(crate::features::ppp::guides::GUIDES)
+        .chain(crate::features::bridge::guides::GUIDES)
         .chain(GUIDES)
         .find(|(key, _)| *key == id)
         .map(|(_, guide)| guide)
@@ -122,26 +125,6 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "https://manual.mikrotik.com/docs/introduction/"
     ),
     guide!(
-        "wireguard",
-        "WireGuard VPN interfaces: a simple, fast UDP tunnel using modern public-key \
-         crypto. Each interface has a key pair and listen-port; peers are a separate table.",
-        "Use it for site-to-site or road-warrior VPNs when both ends speak WireGuard. It is \
-         not IPsec or OpenVPN. Private keys never leave this device.",
-        "listen-port, private-key/public-key, mtu (often 1420), vrf (applies to the UDP \
-         socket, not the wg interface itself).",
-        "https://manual.mikrotik.com/docs/virtual-private-networks/wireguard/"
-    ),
-    guide!(
-        "wireguard-peers",
-        "Peers allowed to use a WireGuard interface. Identity is the remote public key; \
-         allowed-address is the traffic that may traverse the tunnel for that peer.",
-        "Add one peer per remote device or site. Endpoint is needed when this side must \
-         initiate; omit it on a responder that only answers.",
-        "interface, public-key, allowed-address, endpoint-address/port, preshared-key, \
-         persistent-keepalive, responder. Client-* fields feed QR/export for mobile apps.",
-        "https://manual.mikrotik.com/docs/virtual-private-networks/wireguard/"
-    ),
-    guide!(
         "containers",
         "Linux containers on RouterOS v7. Images come from a registry (remote-image) or a \
          tar already on Files. Adding a row starts download or extract; it does not start \
@@ -190,239 +173,6 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
         "name, network (internal/lan/default), YAML, environment/mounts/redirects, status, \
          UI URL, IP.",
         "https://manual.mikrotik.com/docs/containers/apps/"
-    ),
-    guide!(
-        "ppp-secrets",
-        "PPP user database: usernames used by PPPoE, PPTP, L2TP, SSTP, and similar servers. \
-         Passwords are secrets and stay masked in this client.",
-        "Add a secret per customer or incoming VPN user. Profiles supply the bulk of IP, \
-         rate-limit, and DNS settings.",
-        "name, password, service, profile, local/remote-address, routes, disabled."
-    ),
-    guide!(
-        "ppp-profiles",
-        "Shared PPP session settings: addresses, DNS, rate-limits, bridges, and encryption \
-         defaults applied to secrets and clients.",
-        "Create profiles for staff vs customers vs VPN instead of repeating options on every \
-         secret.",
-        "local/remote-address, dns-server, rate-limit, session-timeout, incoming/outgoing \
-         filters, use-encryption, bridge."
-    ),
-    guide!(
-        "ppp-active",
-        "Currently connected PPP sessions (PPPoE, L2TP, …). This is runtime state, not a \
-         configuration list.",
-        "Inspect who is online, addresses, and uptime. Disconnect is a session action; it \
-         does not delete the secret.",
-        "name, service, caller-id, address, uptime, encoding. Typically no property sheet."
-    ),
-    guide!(
-        "ppp-aaa",
-        "PPP authentication, authorization, and accounting: whether to use local secrets, \
-         RADIUS, or both.",
-        "Point incoming PPP at RADIUS when User Manager or an external AAA server owns the \
-         users.",
-        "use-radius, accounting, interim-update, and related AAA toggles."
-    ),
-    guide!(
-        "ppp-client",
-        "Generic PPP client (serial/async or similar). Most WAN links use PPPoE Client \
-         instead.",
-        "Use it for analog/serial PPP or uncommon client modes, not typical Ethernet PPPoE.",
-        "port, user, password, profile, add-default-route, dial-on-demand."
-    ),
-    guide!(
-        "pppoe-clients",
-        "PPPoE client interfaces: the usual ISP last-mile session over Ethernet.",
-        "Create one per WAN when the ISP authenticates with PPPoE. Needs user/password and \
-         the Ethernet (or VLAN) facing the ISP.",
-        "interface, user, password, add-default-route, use-peer-dns, profile, ac-name/service."
-    ),
-    guide!(
-        "pppoe-servers",
-        "PPPoE server instances that accept customer sessions on an interface.",
-        "Use it when this router is the ISP concentrator. Secrets/RADIUS decide who may \
-         connect.",
-        "interface, service-name, default-profile, max-mtu/mru, authentication methods."
-    ),
-    guide!(
-        "pppoe-server-ifaces",
-        "Per-interface PPPoE server bindings (which ports run the server).",
-        "Attach the server to the customer-facing Ethernet or VLAN.",
-        "interface and the server/service it belongs to."
-    ),
-    guide!(
-        "pptp-client",
-        "PPTP VPN client. The protocol is obsolete and insecure by modern standards.",
-        "Only for legacy peers that cannot do L2TP, SSTP, WireGuard, or IPsec.",
-        "connect-to, user, password, profile, add-default-route."
-    ),
-    guide!(
-        "pptp-server-ifaces",
-        "Interfaces where the PPTP server listens.",
-        "Legacy PPTP access concentrator bindings.",
-        "interface assignment for the PPTP server."
-    ),
-    guide!(
-        "pptp-server",
-        "Global PPTP server settings (enable, default profile, authentication).",
-        "Leave disabled unless you must terminate PPTP. Prefer WireGuard, IPsec, or L2TP.",
-        "enabled, default-profile, authentication, keepalive-timeout."
-    ),
-    guide!(
-        "l2tp-client",
-        "L2TP client, often combined with IPsec (L2TP/IPsec) for site or road-warrior VPNs.",
-        "Use it to join a remote L2TP concentrator. Pair with IPsec when the peer requires it.",
-        "connect-to, user, password, profile, use-ipsec/ipsec-secret, add-default-route."
-    ),
-    guide!(
-        "l2tp-server-ifaces",
-        "Interfaces associated with the L2TP server.",
-        "Bind L2TP service to specific interfaces when not listening globally.",
-        "interface membership for the L2TP server."
-    ),
-    guide!(
-        "l2tp-server",
-        "Global L2TP server: enable incoming L2TP (optionally with IPsec).",
-        "Use it to terminate remote L2TP clients. Secrets or RADIUS authenticate users.",
-        "enabled, default-profile, use-ipsec, ipsec-secret, authentication, keepalive."
-    ),
-    guide!(
-        "sstp-client",
-        "SSTP client: PPP inside TLS, typically to a Windows or RouterOS SSTP server.",
-        "Use it when the path must look like HTTPS (TCP 443) to pass strict firewalls.",
-        "connect-to, user, password, proxy, certificates, add-default-route."
-    ),
-    guide!(
-        "sstp-server-ifaces",
-        "Interfaces for the SSTP server.",
-        "Bind SSTP where TLS should terminate.",
-        "interface assignment for SSTP."
-    ),
-    guide!(
-        "sstp-server",
-        "Global SSTP server (TLS-wrapped PPP).",
-        "Terminate SSTP clients with a certificate. Often used instead of PPTP through NAT.",
-        "enabled, certificate, default-profile, authentication, port (usually 443)."
-    ),
-    guide!(
-        "ovpn-client",
-        "OpenVPN client. RouterOS supports a subset of OpenVPN features (mode, auth, ciphers).",
-        "Use it to connect to an OpenVPN server. WireGuard is usually simpler if both ends \
-         can run it.",
-        "connect-to, port, mode, user/password or certificates, profile, cipher, auth."
-    ),
-    guide!(
-        "ovpn-server-ifaces",
-        "Interfaces for the OpenVPN server.",
-        "Bind OpenVPN to a local interface when required.",
-        "interface assignment for OpenVPN."
-    ),
-    guide!(
-        "ovpn-server",
-        "Global OpenVPN server settings.",
-        "Terminate OpenVPN clients. Check mode (ip/ethernet) and certificates against the \
-         client config.",
-        "enabled, port, mode, certificate, default-profile, auth, cipher."
-    ),
-    guide!(
-        "bridges",
-        "Software (and hardware-offloaded) bridges that join Ethernet-like ports into one \
-         L2 domain. Transparent: hosts on different ports look like one LAN.",
-        "Use a bridge for switching, VLAN filtering, or STP. For one routed port, an IP on \
-         Ethernet is enough — you do not need a bridge.",
-        "name, vlan-filtering, protocol-mode (none/stp/rstp/mstp), admin-mac/auto-mac, \
-         igmp-snooping, dhcp-snooping.",
-        "https://manual.mikrotik.com/docs/bridging-and-switching/"
-    ),
-    guide!(
-        "bridge-ports",
-        "Member ports of a bridge: PVID, frame types, trusted, edge, and STP costs.",
-        "Add every interface that should share the bridge forwarding domain. Horizon splits \
-         ports so they cannot flood to each other (split horizon).",
-        "bridge, interface, pvid, frame-types, ingress-filtering, trusted, edge, \
-         point-to-point, hw (offload).",
-        "https://manual.mikrotik.com/docs/bridging-and-switching/"
-    ),
-    guide!(
-        "bridge-hosts",
-        "Learned or static MAC table of the bridge (which port a MAC was seen on).",
-        "Inspect flooding/learning issues. Static entries pin a MAC to a port.",
-        "mac-address, on-interface, vid, local/dynamic/authorized flags.",
-        "https://manual.mikrotik.com/docs/bridging-and-switching/"
-    ),
-    guide!(
-        "bridge-vlans",
-        "Bridge VLAN table: which ports are tagged or untagged for each VLAN ID when \
-         vlan-filtering is on. This is switching, not `/interface vlan`.",
-        "Required for proper trunk/access ports. Interface lists can be used as tagged or \
-         untagged from RouterOS 7.17.",
-        "bridge, vlan-ids, tagged, untagged, current-tagged/untagged (read-only).",
-        "https://manual.mikrotik.com/docs/bridging-and-switching/"
-    ),
-    guide!(
-        "bridge-mdb",
-        "Multicast database for IGMP/MLD snooping: which ports should receive a group.",
-        "Inspect or pin multicast forwarding when igmp-snooping is enabled.",
-        "bridge, group, ports, vid, dynamic.",
-        "https://manual.mikrotik.com/docs/bridging-and-switching/"
-    ),
-    guide!(
-        "bridge-msti",
-        "Multiple Spanning Tree Instances: separate STP topologies per VLAN group (MSTP).",
-        "Only when protocol-mode is mstp and you need VLANs to follow different trees.",
-        "bridge, identifier, vlan-mapping, priority.",
-        "https://manual.mikrotik.com/docs/bridging-and-switching/"
-    ),
-    guide!(
-        "bridge-filter",
-        "Bridge firewall (L2): match MAC/VLAN and drop, accept, or mark frames in the bridge.",
-        "Filter at Layer 2 before routing. IP firewall still applies after a frame is routed.",
-        "chain, mac-protocol, src/dst-mac, in/out-interface, vlan-id, action.",
-        "https://manual.mikrotik.com/docs/bridging-and-switching/"
-    ),
-    guide!(
-        "bridge-nat",
-        "Bridge NAT: rewrite MAC addresses as frames pass the bridge.",
-        "Rare; used for MAC mapping rather than IP NAT.",
-        "chain, src/dst-mac, action (src-nat/dst-nat), to-src-mac/to-dst-mac.",
-        "https://manual.mikrotik.com/docs/bridging-and-switching/"
-    ),
-    guide!(
-        "bridge-settings",
-        "Global bridge settings (one object): allow-fast-path, use-ip-firewall, and related \
-         toggles that apply to all bridges.",
-        "Change this when you need IP firewall to see bridged traffic, or to disable fast-path \
-         for debugging. Most devices keep defaults.",
-        "use-ip-firewall, use-ip-firewall-for-vlan/pppoe, allow-fast-path, \
-         forward-reserved-addresses.",
-        "https://manual.mikrotik.com/docs/bridging-and-switching/"
-    ),
-    guide!(
-        "bridge-port-controller",
-        "CRS/switch port-controller (802.1BR) coordinator settings.",
-        "Only on supported switch hardware using a port extender architecture. Ignore on \
-         ordinary routers.",
-        "enabled and controller identity fields."
-    ),
-    guide!(
-        "bridge-port-controller-device",
-        "Discovered or configured port-extender devices attached to the controller.",
-        "Inventory of extenders in a 802.1BR setup.",
-        "name, identity, and status of each extender."
-    ),
-    guide!(
-        "bridge-port-controller-port",
-        "Ports on the controller side of a port-extender topology.",
-        "Map extended ports. Skip unless you run PE hardware.",
-        "port, device, and cascade relations."
-    ),
-    guide!(
-        "bridge-port-extender",
-        "Port extender (PE) role settings when this device is the satellite, not the \
-         controller.",
-        "Configure only on extender hardware that joins a controller.",
-        "controller address and extender identity."
     ),
     guide!(
         "switch",
@@ -1617,6 +1367,9 @@ mod tests {
     fn every_resource_and_dashboard_has_a_guide() {
         let mut ids: Vec<&str> = crate::features::interfaces::guides::GUIDES
             .iter()
+            .chain(crate::features::wireguard::guides::GUIDES)
+            .chain(crate::features::ppp::guides::GUIDES)
+            .chain(crate::features::bridge::guides::GUIDES)
             .chain(GUIDES)
             .map(|(id, _)| *id)
             .collect();

@@ -316,24 +316,41 @@ mod tests {
     use super::*;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     #[test]
-    fn hotspot_create_is_short() {
-        assert_eq!(create_keys(&HOTSPOT_FORM), ["name", "interface"]);
-        assert_eq!(create_keys(&HOTSPOT_PROFILE_FORM), ["name"]);
-        assert_eq!(create_keys(&HOTSPOT_USER_FORM), ["name", "password"]);
-        assert_eq!(create_keys(&HOTSPOT_HOST_FORM), ["mac-address"]);
-        assert_eq!(create_keys(&HOTSPOT_IP_BINDING_FORM), ["mac-address"]);
-        assert_eq!(create_keys(&HOTSPOT_WALLED_GARDEN_FORM), ["dst-host"]);
-        assert_eq!(create_keys(&HOTSPOT_WALLED_GARDEN_IP_FORM), ["dst-address"]);
+    fn hotspot_create_matches_writable_sheet() {
+        assert_eq!(create_keys(&HOTSPOT_FORM), HOTSPOT_FORM.writable_keys());
+        assert_eq!(
+            create_keys(&HOTSPOT_PROFILE_FORM),
+            HOTSPOT_PROFILE_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&HOTSPOT_USER_FORM),
+            HOTSPOT_USER_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&HOTSPOT_HOST_FORM),
+            HOTSPOT_HOST_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&HOTSPOT_IP_BINDING_FORM),
+            HOTSPOT_IP_BINDING_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&HOTSPOT_WALLED_GARDEN_FORM),
+            HOTSPOT_WALLED_GARDEN_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&HOTSPOT_WALLED_GARDEN_IP_FORM),
+            HOTSPOT_WALLED_GARDEN_IP_FORM.writable_keys()
+        );
         assert!(PROXY_FORM.create_sections.is_empty());
-        assert_eq!(create_keys(&PROXY_ACCESS_FORM), ["action"]);
+        assert_eq!(
+            create_keys(&PROXY_ACCESS_FORM),
+            PROXY_ACCESS_FORM.writable_keys()
+        );
         assert!(HOTSPOT_USER_FORM.writable_keys().contains(&"password"));
         assert!(!HOTSPOT_HOST_FORM.writable_keys().contains(&"authorized"));
     }

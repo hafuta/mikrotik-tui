@@ -97,7 +97,7 @@ impl<'a> FormRow<'a> {
     }
 }
 
-fn rows_for_section<'a>(session: &FormSession, section: &'a FormSection) -> Vec<FormRow<'a>> {
+fn rows_for_section(session: &FormSession, section: &FormSection) -> Vec<FormRow<'static>> {
     let mut rows = Vec::new();
     for field in section
         .fields
@@ -481,11 +481,11 @@ impl FormSession {
     }
 
     #[must_use]
-    pub fn schema_sections<'a>(&self, schema: &'a FormSchema) -> &'a [FormSection] {
+    pub fn schema_sections(&self, schema: &FormSchema) -> Vec<FormSection> {
         if let Some(prompt) = self.prompt_schema {
             prompt.sections_for(true)
         } else if self.prompt_command.is_some() {
-            COPY_SECTIONS
+            COPY_SECTIONS.to_vec()
         } else {
             schema.sections_for(self.mode == FormMode::Create)
         }
@@ -539,10 +539,10 @@ impl FormSession {
             .collect()
     }
 
-    fn visible_rows<'a>(&self, schema: &'a FormSchema) -> Vec<FormRow<'a>> {
+    fn visible_rows(&self, schema: &FormSchema) -> Vec<FormRow<'static>> {
         let mut rows = Vec::new();
         for section in self.schema_sections(schema) {
-            rows.extend(rows_for_section(self, section));
+            rows.extend(rows_for_section(self, &section));
         }
         rows
     }
@@ -1230,20 +1230,27 @@ pub fn render_form_sheet(
         .iter()
         .filter(|section| {
             !rows_for_section(session, section).is_empty()
-                || (section.read_only && !session.sheet_extras().is_empty())
+                || (session.mode != FormMode::Create
+                    && section.read_only
+                    && !session.sheet_extras().is_empty())
         })
         .count();
+    let extra_n = if session.mode == FormMode::Create {
+        0
+    } else {
+        session.sheet_extras().len()
+    };
     let field_n = session
         .visible_rows(schema)
         .len()
         .saturating_add(heading_n)
-        .saturating_add(session.sheet_extras().len());
+        .saturating_add(extra_n);
     let chrome = 2u16.saturating_add(SHEET_HINT_ROWS);
     let geometry = layout::sheet_geometry(area.width, area.height, field_n.max(3), chrome);
     let width = geometry.width;
     let height = geometry.height;
     let list_h = geometry.viewport_height;
-    let focus_line = sheet_focus_line(session, sections);
+    let focus_line = sheet_focus_line(session, &sections);
     let field_view = ScrollView::around_focus(focus_line, list_h, field_n);
     let rect = compact_modal_rect(area, width, height);
     frame.render_widget(Clear, rect);
@@ -1252,7 +1259,7 @@ pub fn render_form_sheet(
         rect,
         session,
         schema,
-        sections,
+        &sections,
         styles,
         FormChrome::Modal {
             range_label: &field_view.range_label(),
@@ -1275,7 +1282,7 @@ pub fn render_form_page(
         area,
         session,
         schema,
-        sections,
+        &sections,
         styles,
         FormChrome::Page,
     );
@@ -1390,7 +1397,8 @@ fn sheet_field_lines(
     for section in sections {
         let rows = rows_for_section(session, section);
         let extras = session.sheet_extras();
-        let has_extras = section.read_only && !extras.is_empty();
+        let has_extras =
+            session.mode != FormMode::Create && section.read_only && !extras.is_empty();
         if rows.is_empty() && !has_extras {
             continue;
         }
@@ -1406,7 +1414,7 @@ fn sheet_field_lines(
             extras_rendered = true;
         }
     }
-    if !extras_rendered && !session.sheet_extras().is_empty() {
+    if session.mode != FormMode::Create && !extras_rendered && !session.sheet_extras().is_empty() {
         display.push(DisplayLine::Heading("Status"));
         for (key, value) in session.sheet_extras() {
             display.push(DisplayLine::Extra(key, value));
@@ -1452,7 +1460,8 @@ fn sheet_focus_line(session: &FormSession, sections: &[FormSection]) -> usize {
     for section in sections {
         let rows = rows_for_section(session, section);
         let extras = session.sheet_extras();
-        let has_extras = section.read_only && !extras.is_empty();
+        let has_extras =
+            session.mode != FormMode::Create && section.read_only && !extras.is_empty();
         if rows.is_empty() && !has_extras {
             continue;
         }
@@ -2095,6 +2104,37 @@ mod tests {
             ],
             create_sections: &[],
         }
+    }
+
+    #[test]
+    fn create_sheet_shows_writable_fields_and_hides_status() {
+        let schema = sample_schema();
+        let session = FormSession::create("interfaces", &schema);
+        let keys: Vec<_> = session
+            .visible_fields(&schema)
+            .into_iter()
+            .map(|(_, field)| field.key)
+            .collect();
+        assert!(keys.contains(&"name"));
+        assert!(keys.contains(&"disabled"));
+        assert!(!keys.contains(&"running"));
+        assert!(
+            session
+                .schema_sections(&schema)
+                .iter()
+                .all(|section| section.id != "status")
+        );
+        let edit = FormSession::edit(
+            "interfaces",
+            "*1",
+            &HashMap::from([("name".into(), "ether1".into())]),
+            &schema,
+        );
+        assert!(
+            edit.schema_sections(&schema)
+                .iter()
+                .any(|section| section.id == "status")
+        );
     }
 
     #[test]

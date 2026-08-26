@@ -242,11 +242,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     fn tab_ids(schema: &FormSchema) -> Vec<&'static str> {
@@ -381,7 +377,7 @@ mod tests {
         assert_eq!(tab_ids(&SWITCH_VLAN_FORM), ["general"]);
         assert_eq!(
             create_keys(&SWITCH_VLAN_FORM),
-            ["switch", "vlan-id", "ports"]
+            SWITCH_VLAN_FORM.writable_keys()
         );
         assert_eq!(
             SWITCH_VLAN_FORM.writable_keys(),
@@ -405,7 +401,10 @@ mod tests {
             tab_ids(&SWITCH_RULE_FORM),
             ["general", "advanced", "status"]
         );
-        assert_eq!(create_keys(&SWITCH_RULE_FORM), ["switch", "ports"]);
+        assert_eq!(
+            create_keys(&SWITCH_RULE_FORM),
+            SWITCH_RULE_FORM.writable_keys()
+        );
         assert!(
             SWITCH_RULE_FORM
                 .sections
@@ -421,12 +420,8 @@ mod tests {
                 .writable_keys()
                 .contains(&"redirect-to-cpu")
         );
-        assert!(!SWITCH_RULE_FORM.create_sections.iter().any(|section| {
-            section
-                .fields
-                .iter()
-                .any(|field| field.key == "mac-protocol" || field.key == "comment")
-        }));
+        assert!(SWITCH_RULE_FORM.create_keys().contains(&"mac-protocol"));
+        assert!(SWITCH_RULE_FORM.create_keys().contains(&"comment"));
     }
 
     #[test]
