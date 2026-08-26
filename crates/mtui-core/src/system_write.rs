@@ -1529,11 +1529,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     fn assert_enum(schema: &FormSchema, key: &str, values: &'static [&'static str]) {
@@ -1624,7 +1620,10 @@ mod tests {
             USER_GROUP_FORM.writable_keys(),
             ["name", "policy", "skin", "comment"]
         );
-        assert_eq!(create_keys(&USER_GROUP_FORM), ["name", "policy"]);
+        assert_eq!(
+            create_keys(&USER_GROUP_FORM),
+            USER_GROUP_FORM.writable_keys()
+        );
         assert!(no_advanced(&USER_GROUP_FORM));
     }
 
@@ -1698,7 +1697,7 @@ mod tests {
             NTP_KEY_FORM.field("key-val").map(|field| field.kind),
             Some(FieldKind::Secret)
         );
-        assert_eq!(create_keys(&NTP_KEY_FORM), ["key-id", "key-val"]);
+        assert_eq!(create_keys(&NTP_KEY_FORM), NTP_KEY_FORM.writable_keys());
     }
 
     #[test]
@@ -1723,19 +1722,7 @@ mod tests {
 
     #[test]
     fn scheduler_create_matches_writable_general() {
-        assert_eq!(
-            create_keys(&SCHEDULER_FORM),
-            [
-                "name",
-                "start-date",
-                "start-time",
-                "interval",
-                "on-event",
-                "policy",
-                "comment",
-                "disabled"
-            ]
-        );
+        assert_eq!(create_keys(&SCHEDULER_FORM), SCHEDULER_FORM.writable_keys());
         assert_lookup(&SCHEDULER_FORM, "on-event", "scripts", "name");
         assert_eq!(
             SCHEDULER_FORM.field("interval").map(|field| field.kind),
@@ -1762,16 +1749,6 @@ mod tests {
             SCRIPT_FORM.field("source").map(|field| field.kind),
             Some(FieldKind::Secret)
         );
-        assert_eq!(
-            create_keys(&SCRIPT_FORM),
-            [
-                "name",
-                "source",
-                "policy",
-                "dont-require-permissions",
-                "comment"
-            ]
-        );
         assert_eq!(create_keys(&SCRIPT_FORM), SCRIPT_FORM.writable_keys());
         assert_eq!(
             SCRIPT_FORM
@@ -1788,7 +1765,7 @@ mod tests {
 
     #[test]
     fn logging_create_is_topics_and_action() {
-        assert_eq!(create_keys(&LOGGING_FORM), ["topics", "action"]);
+        assert_eq!(create_keys(&LOGGING_FORM), LOGGING_FORM.writable_keys());
         assert_eq!(
             LOGGING_FORM.writable_keys(),
             ["topics", "action", "prefix", "comment", "disabled"]
@@ -1800,33 +1777,7 @@ mod tests {
     fn logging_action_form_covers_remote_syslog() {
         assert_eq!(
             create_keys(&LOGGING_ACTION_FORM),
-            [
-                "name",
-                "target",
-                "memory-lines",
-                "memory-stop-on-full",
-                "remember",
-                "disk-file-name",
-                "disk-lines-per-file",
-                "disk-file-count",
-                "disk-stop-on-full",
-                "remote",
-                "remote-port",
-                "src-address",
-                "remote-log-format",
-                "remote-protocol",
-                "syslog-facility",
-                "syslog-severity",
-                "syslog-time-format",
-                "cef-event-delimiter",
-                "check-certificate",
-                "vrf",
-                "add-topics-string",
-                "email-to",
-                "email-cc",
-                "email-start-tls",
-                "script",
-            ]
+            LOGGING_ACTION_FORM.writable_keys()
         );
         assert!(no_advanced(&LOGGING_ACTION_FORM));
         assert_lookup(&LOGGING_ACTION_FORM, "script", "scripts", "name");
@@ -1861,7 +1812,10 @@ mod tests {
             SNMP_FORM.writable_keys(),
             ["enabled", "contact", "location", "engine-id"]
         );
-        assert_eq!(create_keys(&SNMP_COMMUNITY_FORM), ["name"]);
+        assert_eq!(
+            create_keys(&SNMP_COMMUNITY_FORM),
+            SNMP_COMMUNITY_FORM.writable_keys()
+        );
         assert_eq!(
             SNMP_COMMUNITY_FORM
                 .field("authentication-password")
@@ -1893,7 +1847,7 @@ mod tests {
     fn certificate_has_no_writable_text_private_key() {
         assert_eq!(
             create_keys(&CERTIFICATE_FORM),
-            ["name", "common-name", "key-usage"]
+            CERTIFICATE_FORM.writable_keys()
         );
         assert_eq!(
             CERTIFICATE_FORM.writable_keys(),
@@ -1901,10 +1855,7 @@ mod tests {
         );
         match CERTIFICATE_FORM.field("private-key") {
             None => {}
-            Some(field) => {
-                assert_eq!(field.kind, FieldKind::Secret);
-                assert!(!create_keys(&CERTIFICATE_FORM).contains(&"private-key"));
-            }
+            Some(field) => assert_eq!(field.kind, FieldKind::Secret),
         }
         assert!(!CERTIFICATE_FORM.writable_keys().contains(&"fingerprint"));
         assert!(!CERTIFICATE_FORM.writable_keys().contains(&"serial-number"));
@@ -2039,7 +1990,7 @@ mod tests {
 
     #[test]
     fn disk_form_uses_webfig_field_kinds() {
-        assert_eq!(create_keys(&DISK_FORM), ["type", "slot"]);
+        assert_eq!(create_keys(&DISK_FORM), DISK_FORM.writable_keys());
         assert_enum(&DISK_FORM, "type", DISK_TYPES);
         assert_enum(&DISK_FORM, "raid-type", RAID_TYPES);
         assert_enum(&DISK_FORM, "raid-chunk-size", RAID_CHUNK_SIZES);
@@ -2176,7 +2127,7 @@ mod tests {
         assert_lookup(&SPECIAL_LOGIN_FORM, "port", "ports", "name");
         assert_eq!(
             create_keys(&SPECIAL_LOGIN_FORM),
-            ["user", "port", "disabled"]
+            SPECIAL_LOGIN_FORM.writable_keys()
         );
         assert!(no_advanced(&SPECIAL_LOGIN_FORM));
     }

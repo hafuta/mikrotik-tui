@@ -1678,11 +1678,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     fn status_readonly(schema: &FormSchema) {
@@ -1699,46 +1695,82 @@ mod tests {
     }
 
     #[test]
-    fn create_sheets_are_short() {
-        assert_eq!(
-            create_keys(&ARP_FORM),
-            ["address", "mac-address", "interface"]
-        );
-        assert_eq!(create_keys(&ADDRESS_FORM), ["address", "interface"]);
+    fn create_sheets_match_writable_fields() {
+        assert_eq!(create_keys(&ARP_FORM), ARP_FORM.writable_keys());
+        assert_eq!(create_keys(&ADDRESS_FORM), ADDRESS_FORM.writable_keys());
         assert_eq!(
             create_keys(&DHCP_SERVER_FORM),
-            ["name", "interface", "address-pool"]
+            DHCP_SERVER_FORM.writable_keys()
         );
-        assert_eq!(create_keys(&DHCP_NETWORK_FORM), ["address", "gateway"]);
-        assert_eq!(create_keys(&DHCP_LEASE_FORM), ["address", "mac-address"]);
-        assert_eq!(create_keys(&FIREWALL_FILTER_FORM), ["chain", "action"]);
-        assert_eq!(create_keys(&DHCP_CLIENT_FORM), ["interface"]);
+        assert_eq!(
+            create_keys(&DHCP_NETWORK_FORM),
+            DHCP_NETWORK_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&DHCP_LEASE_FORM),
+            DHCP_LEASE_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&FIREWALL_FILTER_FORM),
+            FIREWALL_FILTER_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&DHCP_CLIENT_FORM),
+            DHCP_CLIENT_FORM.writable_keys()
+        );
         assert!(DNS_FORM.create_sections.is_empty());
-        assert_eq!(create_keys(&DNS_STATIC_FORM), ["name", "address"]);
-        assert_eq!(create_keys(&ROUTE_FORM), ["dst-address", "gateway"]);
-        assert_eq!(create_keys(&POOL_FORM), ["name", "ranges"]);
+        assert_eq!(
+            create_keys(&DNS_STATIC_FORM),
+            DNS_STATIC_FORM.writable_keys()
+        );
+        assert_eq!(create_keys(&ROUTE_FORM), ROUTE_FORM.writable_keys());
+        assert_eq!(create_keys(&POOL_FORM), POOL_FORM.writable_keys());
         assert!(SERVICE_FORM.create_sections.is_empty());
         assert!(TRAFFIC_FLOW_FORM.create_sections.is_empty());
         assert!(TRAFFIC_FLOW_IPFIX_FORM.create_sections.is_empty());
         assert!(IGMP_PROXY_FORM.create_sections.is_empty());
         assert_eq!(
             create_keys(&TRAFFIC_FLOW_TARGET_FORM),
-            ["dst-address", "port", "version"]
+            TRAFFIC_FLOW_TARGET_FORM.writable_keys()
         );
-        assert_eq!(create_keys(&IGMP_PROXY_INTERFACE_FORM), ["interface"]);
+        assert_eq!(
+            create_keys(&IGMP_PROXY_INTERFACE_FORM),
+            IGMP_PROXY_INTERFACE_FORM.writable_keys()
+        );
         assert_eq!(
             create_keys(&IGMP_PROXY_MFC_FORM),
-            ["group", "source", "upstream-interface"]
+            IGMP_PROXY_MFC_FORM.writable_keys()
         );
         assert!(IP_SETTINGS_FORM.create_sections.is_empty());
-        assert_eq!(create_keys(&FIREWALL_NAT_FORM), ["chain", "action"]);
-        assert_eq!(create_keys(&FIREWALL_MANGLE_FORM), ["chain", "action"]);
-        assert_eq!(create_keys(&ADDRESS_LIST_FORM), ["list", "address"]);
-        assert_eq!(create_keys(&DHCP_RELAY_FORM), ["name", "interface"]);
-        assert_eq!(create_keys(&DHCP_OPTION_FORM), ["name", "code"]);
-        assert_eq!(create_keys(&DHCP_OPTION_SET_FORM), ["name"]);
-        assert_eq!(create_keys(&FIREWALL_RAW_FORM), ["chain", "action"]);
-        assert_eq!(create_keys(&LAYER7_FORM), ["name", "regexp"]);
+        assert_eq!(
+            create_keys(&FIREWALL_NAT_FORM),
+            FIREWALL_NAT_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&FIREWALL_MANGLE_FORM),
+            FIREWALL_MANGLE_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&ADDRESS_LIST_FORM),
+            ADDRESS_LIST_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&DHCP_RELAY_FORM),
+            DHCP_RELAY_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&DHCP_OPTION_FORM),
+            DHCP_OPTION_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&DHCP_OPTION_SET_FORM),
+            DHCP_OPTION_SET_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&FIREWALL_RAW_FORM),
+            FIREWALL_RAW_FORM.writable_keys()
+        );
+        assert_eq!(create_keys(&LAYER7_FORM), LAYER7_FORM.writable_keys());
         assert!(SERVICE_PORT_FORM.create_sections.is_empty());
     }
 
@@ -1793,7 +1825,7 @@ mod tests {
 
     fn create_field_kind(schema: &FormSchema, key: &str) -> FieldKind {
         schema
-            .create_sections
+            .sections_for(true)
             .iter()
             .flat_map(|section| section.fields)
             .find(|field| field.key == key)
@@ -1871,8 +1903,8 @@ mod tests {
             assert_eq!(field_kind(schema, "out-interface-list"), interface_lists);
             assert_eq!(field_kind(schema, "src-address-list"), address_list_names);
             assert_eq!(field_kind(schema, "dst-address-list"), address_list_names);
-            assert!(!create_keys(schema).contains(&"in-interface"));
-            assert!(!create_keys(schema).contains(&"src-address-list"));
+            assert!(create_keys(schema).contains(&"in-interface"));
+            assert!(create_keys(schema).contains(&"src-address-list"));
         }
 
         assert_eq!(
@@ -1962,7 +1994,7 @@ mod tests {
     fn traffic_flow_target_and_ipfix_use_webfig_field_kinds() {
         assert_eq!(
             create_keys(&TRAFFIC_FLOW_TARGET_FORM),
-            ["dst-address", "port", "version"]
+            TRAFFIC_FLOW_TARGET_FORM.writable_keys()
         );
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_TARGET_FORM, "src-address"),
@@ -2059,7 +2091,10 @@ mod tests {
             "Last Member Query Interval",
         );
 
-        assert_eq!(create_keys(&IGMP_PROXY_INTERFACE_FORM), ["interface"]);
+        assert_eq!(
+            create_keys(&IGMP_PROXY_INTERFACE_FORM),
+            IGMP_PROXY_INTERFACE_FORM.writable_keys()
+        );
         assert_eq!(
             field_kind(&IGMP_PROXY_INTERFACE_FORM, "interface"),
             lookup("interfaces", "name")
@@ -2089,7 +2124,7 @@ mod tests {
 
         assert_eq!(
             create_keys(&IGMP_PROXY_MFC_FORM),
-            ["group", "source", "upstream-interface"]
+            IGMP_PROXY_MFC_FORM.writable_keys()
         );
         assert_eq!(
             field_kind(&IGMP_PROXY_MFC_FORM, "upstream-interface"),

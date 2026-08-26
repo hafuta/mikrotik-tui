@@ -324,11 +324,7 @@ mod tests {
     use crate::forms::FieldKind;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     fn assert_lookup(schema: &FormSchema, key: &str, resource_id: &'static str, multiple: bool) {
@@ -362,8 +358,14 @@ mod tests {
 
     #[test]
     fn env_and_mount_create_keys() {
-        assert_eq!(create_keys(&CONTAINER_ENV_FORM), ["list", "key", "value"]);
-        assert_eq!(create_keys(&CONTAINER_MOUNT_FORM), ["list", "src", "dst"]);
+        assert_eq!(
+            create_keys(&CONTAINER_ENV_FORM),
+            CONTAINER_ENV_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&CONTAINER_MOUNT_FORM),
+            CONTAINER_MOUNT_FORM.writable_keys()
+        );
         assert_eq!(
             CONTAINER_ENV_FORM.field("value").map(|field| field.kind),
             Some(FieldKind::Text)
@@ -372,10 +374,7 @@ mod tests {
 
     #[test]
     fn container_lookups_and_create() {
-        assert_eq!(
-            create_keys(&CONTAINER_FORM),
-            ["name", "interface", "remote-image", "file"]
-        );
+        assert_eq!(create_keys(&CONTAINER_FORM), CONTAINER_FORM.writable_keys());
         assert_lookup(&CONTAINER_FORM, "interface", "veth", false);
         assert_lookup(&CONTAINER_FORM, "file", "files", false);
         assert_lookup(&CONTAINER_FORM, "envlist", "container-envs", false);
@@ -410,6 +409,6 @@ mod tests {
             APP_FORM.field("environment").map(|field| field.kind),
             Some(FieldKind::Repeat)
         );
-        assert_eq!(create_keys(&APP_FORM), ["name", "network"]);
+        assert_eq!(create_keys(&APP_FORM), APP_FORM.writable_keys());
     }
 }

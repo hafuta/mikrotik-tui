@@ -148,11 +148,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     fn assert_lookup(
@@ -173,7 +169,10 @@ mod tests {
 
     #[test]
     fn queue_simple_status_is_runtime_only() {
-        assert_eq!(create_keys(&QUEUE_SIMPLE_FORM), ["name", "target"]);
+        assert_eq!(
+            create_keys(&QUEUE_SIMPLE_FORM),
+            QUEUE_SIMPLE_FORM.writable_keys()
+        );
         assert!(!QUEUE_SIMPLE_FORM.writable_keys().contains(&"rate"));
         assert!(!QUEUE_SIMPLE_FORM.writable_keys().contains(&"dropped"));
         assert!(QUEUE_SIMPLE_FORM.writable_keys().contains(&"burst-time"));
@@ -185,9 +184,15 @@ mod tests {
 
     #[test]
     fn queue_tree_and_type_create() {
-        assert_eq!(create_keys(&QUEUE_TREE_FORM), ["name", "parent"]);
+        assert_eq!(
+            create_keys(&QUEUE_TREE_FORM),
+            QUEUE_TREE_FORM.writable_keys()
+        );
         assert_lookup(&QUEUE_TREE_FORM, "parent", "queue-tree", "name");
-        assert_eq!(create_keys(&QUEUE_TYPE_FORM), ["name", "kind"]);
+        assert_eq!(
+            create_keys(&QUEUE_TYPE_FORM),
+            QUEUE_TYPE_FORM.writable_keys()
+        );
         assert!(QUEUE_TREE_FORM.writable_keys().contains(&"packet-mark"));
         assert!(QUEUE_TYPE_FORM.writable_keys().contains(&"pfifo-limit"));
     }

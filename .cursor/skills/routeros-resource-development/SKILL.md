@@ -1,6 +1,6 @@
 ---
 name: routeros-resource-development
-description: Develop and review MikroTik RouterOS resources, API mappings, mutations, fixtures, and property-sheet form tabs. Use when adding RouterOS endpoints, resource models, client operations, edit/create forms, General/Advanced/Status tabs, field kinds (enum, lookup, toggle, text), or resource tests in this repository.
+description: Develop and review MikroTik RouterOS resources, API mappings, mutations, fixtures, and property-sheet forms. Use when adding RouterOS endpoints, resource models, client operations, edit/create forms, General/Advanced/Status sections, field kinds (enum, lookup, toggle, text), or resource tests in this repository.
 ---
 # RouterOS resource development
 
@@ -14,7 +14,11 @@ description: Develop and review MikroTik RouterOS resources, API mappings, mutat
    password, secret, passphrase, private-key, and pre-shared-key values before
    they reach a component; add a marker-secret regression test.
 7. Add table-driven tests for decoding, encoding, optional fields, RouterOS error replies, cancellation, and malformed data. Use fakes; tests must not require a router.
-8. Run `cargo fmt`, the affected crate tests, and `cargo test --workspace`.
+8. Run `cargo fmt`, Clippy with `-D warnings` (`just prepush` / `just check`),
+   the affected crate tests, and `cargo test --workspace`. In `//!` / `///`,
+   wrap CamelCase product names in backticks (`` `WireGuard` ``). Otherwise
+   Clippy `doc_markdown` fails CI with `item in documentation is missing
+   backticks`.
 9. Add a `ScreenGuide` in `about.rs` for every new resource id (and dashboard).
    Paraphrase the RouterOS manual; do not invent protocol claims or copy
    property tables. Prefer a conceptual `manual.mikrotik.com` URL when one
@@ -73,12 +77,12 @@ while the Select list and PATCH still use the API value. Space/Enter on an
 Enum opens the same nested **Select** modal as Lookup: filter, ↑↓, a
 bounded scroll viewport, Enter to set the API value.
 
-## Property-sheet tabs
+## Property-sheet sections
 
-Schemas live in `mtui-core` (see `interface_write.rs` for the Interfaces
-group). The sheet shows **numbered tabs**, not a left rail and not an
-accordion. Omit a tab when it would have no fields. A single-section sheet
-hides the tab bar.
+Schemas live in `mtui-core` (feature `forms.rs` for isolated groups). Add
+and Edit are **one vertically scrollable sheet** with inline WebFig section
+headings. Do not add section tabs. Omit a heading when it would have no
+fields.
 
 Match **WinBox/WebFig for that menu**, not an arbitrary “keep General small”
 heuristic. Operators already know those groupings.
@@ -111,17 +115,23 @@ link times, `default-name`, derived MAC/switch state. Unknown keys returned
 by the router and missing from the schema render here as extras. Never mix
 editable fields into Status.
 
-### Create sheets
+**Status is Edit-only.** New must not show a Status heading, Status fields,
+or runtime extras. Details and inspect of an existing row may show Status.
 
-`create_sections` is usually a **short General list**: required identity
-and parent keys only (name, vlan-id, interface, tunnel endpoints). Comment
-is optional. Do not copy Status or Advanced into create.
+### Create (New)
 
-When WebFig **New** is the same General page as edit (Logging Actions),
-copy that General field list into `create_sections` and still omit
-Status. Type-specific knobs belong on General and appear only when
-`field_visible` says they apply. Do not park them on Advanced so they
-stay in a locked flat list. Omit a tab that would have no visible fields.
+New is the **full writable sheet**, not a minimal identity stub. PPP
+Secrets New must include the same fields as Edit (caller-id, local/remote
+address, IPv6 prefix, Enabled, and the rest), not only name/password/
+service/profile. Same rule for every form in the app.
+
+`FormSchema::sections_for(true)` uses `sections` and drops Status. Do not
+maintain a short `create_sections` list to hide fields on New.
+`create_sections` is only for prompt-only schemas whose `sections` slice
+is empty.
+
+Type-specific knobs belong on General (or the matching WebFig section) and
+appear only when `field_visible` says they apply.
 
 ### Actions vs fields
 

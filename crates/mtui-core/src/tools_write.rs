@@ -322,11 +322,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     fn assert_lookup(
@@ -347,7 +343,7 @@ mod tests {
 
     #[test]
     fn netwatch_create_is_host_only() {
-        assert_eq!(create_keys(&NETWATCH_FORM), ["host"]);
+        assert_eq!(create_keys(&NETWATCH_FORM), NETWATCH_FORM.writable_keys());
         assert!(!NETWATCH_FORM.writable_keys().contains(&"status"));
         assert!(!NETWATCH_FORM.writable_keys().contains(&"done-tests"));
         assert!(NETWATCH_FORM.writable_keys().contains(&"up-script"));
@@ -448,7 +444,10 @@ mod tests {
 
     #[test]
     fn romon_port_create_is_interface_with_lookup_and_repeat_secrets() {
-        assert_eq!(create_keys(&ROMON_PORT_FORM), ["interface"]);
+        assert_eq!(
+            create_keys(&ROMON_PORT_FORM),
+            ROMON_PORT_FORM.writable_keys()
+        );
         assert_eq!(
             ROMON_PORT_FORM.writable_keys(),
             [
@@ -521,9 +520,18 @@ mod tests {
 
     #[test]
     fn graphing_children_use_lookups_toggles_and_short_create() {
-        assert_eq!(create_keys(&GRAPHING_INTERFACE_FORM), ["interface"]);
-        assert_eq!(create_keys(&GRAPHING_QUEUE_FORM), ["simple-queue"]);
-        assert_eq!(create_keys(&GRAPHING_RESOURCE_FORM), ["allow-address"]);
+        assert_eq!(
+            create_keys(&GRAPHING_INTERFACE_FORM),
+            GRAPHING_INTERFACE_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&GRAPHING_QUEUE_FORM),
+            GRAPHING_QUEUE_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&GRAPHING_RESOURCE_FORM),
+            GRAPHING_RESOURCE_FORM.writable_keys()
+        );
         assert_lookup(&GRAPHING_INTERFACE_FORM, "interface", "interfaces", "name");
         assert_lookup(&GRAPHING_QUEUE_FORM, "simple-queue", "queue-simple", "name");
         assert_eq!(

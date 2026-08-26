@@ -795,6 +795,18 @@ fn declared_field_state(
     {
         return Some(state);
     }
+    if let Some(state) =
+        crate::features::wireguard::rules::form_field_state(resource_id, key, values)
+    {
+        return Some(state);
+    }
+    if let Some(state) = crate::features::ppp::rules::form_field_state(resource_id, key, values) {
+        return Some(state);
+    }
+    if let Some(state) = crate::features::bridge::rules::form_field_state(resource_id, key, values)
+    {
+        return Some(state);
+    }
     evaluate_field_rules(crate::switch_write::FIELD_RULES, resource_id, key, values)
 }
 
@@ -806,22 +818,52 @@ pub struct FormSection {
     pub read_only: bool,
 }
 
+impl FormSection {
+    /// Status (and any other read-only runtime block) is Edit-only.
+    #[must_use]
+    pub fn hidden_on_create(&self) -> bool {
+        self.read_only || self.id.eq_ignore_ascii_case("status")
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormSchema {
     pub title_key: &'static str,
     pub subtitle_keys: &'static [&'static str],
     pub sections: &'static [FormSection],
+    /// Prompt-only schemas may put fields here when `sections` is empty.
+    /// New otherwise uses every non-Status section from `sections`. Do not
+    /// keep a short identity-only list here.
     pub create_sections: &'static [FormSection],
 }
 
 impl FormSchema {
     #[must_use]
-    pub fn sections_for(&self, create: bool) -> &'static [FormSection] {
-        if create && !self.create_sections.is_empty() {
+    pub fn sections_for(&self, create: bool) -> Vec<FormSection> {
+        let source = if self.sections.is_empty() {
             self.create_sections
         } else {
             self.sections
+        };
+        source
+            .iter()
+            .copied()
+            .filter(|section| !create || !section.hidden_on_create())
+            .collect()
+    }
+
+    /// Writable keys shown on New: the full sheet minus Status.
+    #[must_use]
+    pub fn create_keys(&self) -> Vec<&'static str> {
+        let mut keys = Vec::new();
+        for section in self.sections_for(true) {
+            for field in section.fields {
+                if field.kind.writable() && !keys.contains(&field.key) {
+                    keys.push(field.key);
+                }
+            }
         }
+        keys
     }
 
     #[must_use]
@@ -946,7 +988,7 @@ pub fn validate_form_values(
     current: &HashMap<String, String>,
 ) -> Option<String> {
     schema
-        .sections_for(false)
+        .sections
         .iter()
         .chain(schema.create_sections.iter())
         .filter(|section| !section.read_only)
@@ -1027,6 +1069,7 @@ fn looks_secret_key(key: &str) -> bool {
         || normalized == "k"
 }
 
+#[allow(dead_code)] // compared from feature tests; values also live on labeled enums
 pub const ARP_VALUES: &[&str] = &[
     "enabled",
     "disabled",
@@ -1073,6 +1116,25 @@ mod tests {
         ],
         create_sections: &[],
     };
+
+    #[test]
+    fn create_mode_keeps_writable_fields_and_hides_status() {
+        let create_ids: Vec<_> = SAMPLE
+            .sections_for(true)
+            .iter()
+            .map(|section| section.id)
+            .collect();
+        let edit_ids: Vec<_> = SAMPLE
+            .sections_for(false)
+            .iter()
+            .map(|section| section.id)
+            .collect();
+        assert_eq!(create_ids, ["general"]);
+        assert_eq!(edit_ids, ["general", "status"]);
+        assert_eq!(SAMPLE.create_keys(), SAMPLE.writable_keys());
+        assert_eq!(SAMPLE.create_keys(), ["name", "comment"]);
+        assert!(!SAMPLE.create_keys().contains(&"running"));
+    }
 
     #[test]
     fn patch_body_skips_readonly_and_unchanged() {

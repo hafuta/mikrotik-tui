@@ -443,7 +443,12 @@ mod tests {
                     .collect::<Vec<_>>(),
                 ["general", "status", "traffic"]
             );
-            assert_eq!(schema.sections, schema.create_sections);
+            assert!(
+                schema
+                    .sections_for(true)
+                    .iter()
+                    .all(|section| !section.hidden_on_create())
+            );
         }
         assert!(MACVLAN_FORM.field("arp").is_none());
         assert!(MACVLAN_FORM.field("loop-protect").is_none());

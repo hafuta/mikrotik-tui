@@ -390,11 +390,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
-        schema
-            .create_sections
-            .iter()
-            .flat_map(|section| section.fields.iter().map(|field| field.key))
-            .collect()
+        schema.create_keys()
     }
 
     fn status_readonly(schema: &FormSchema) {
@@ -412,7 +408,10 @@ mod tests {
 
     #[test]
     fn create_peer_requires_name_and_address() {
-        assert_eq!(create_keys(&IPSEC_PEER_FORM), ["name", "address"]);
+        assert_eq!(
+            create_keys(&IPSEC_PEER_FORM),
+            IPSEC_PEER_FORM.writable_keys()
+        );
         assert!(IPSEC_PEER_FORM.writable_keys().contains(&"exchange-mode"));
         assert!(IPSEC_PEER_FORM.writable_keys().contains(&"local-address"));
         assert!(!IPSEC_PEER_FORM.writable_keys().contains(&"dynamic"));
@@ -482,7 +481,7 @@ mod tests {
         assert!(!IPSEC_POLICY_FORM.writable_keys().contains(&"ph2-state"));
         assert_eq!(
             create_keys(&IPSEC_POLICY_FORM),
-            ["src-address", "dst-address"]
+            IPSEC_POLICY_FORM.writable_keys()
         );
     }
 
@@ -511,8 +510,14 @@ mod tests {
         ] {
             assert!(IPSEC_PROFILE_FORM.writable_keys().contains(&key), "{key}");
         }
-        assert_eq!(create_keys(&IPSEC_PROPOSAL_FORM), ["name"]);
-        assert_eq!(create_keys(&IPSEC_PROFILE_FORM), ["name"]);
+        assert_eq!(
+            create_keys(&IPSEC_PROPOSAL_FORM),
+            IPSEC_PROPOSAL_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&IPSEC_PROFILE_FORM),
+            IPSEC_PROFILE_FORM.writable_keys()
+        );
     }
 
     #[test]
@@ -589,7 +594,10 @@ mod tests {
 
     #[test]
     fn rsa_keys_are_named_with_readonly_size() {
-        assert_eq!(create_keys(&IPSEC_KEY_RSA_FORM), ["name"]);
+        assert_eq!(
+            create_keys(&IPSEC_KEY_RSA_FORM),
+            IPSEC_KEY_RSA_FORM.writable_keys()
+        );
         assert!(IPSEC_KEY_RSA_FORM.writable_keys().contains(&"name"));
         assert!(!IPSEC_KEY_RSA_FORM.writable_keys().contains(&"key-size"));
         status_readonly(&IPSEC_KEY_RSA_FORM);
@@ -597,7 +605,10 @@ mod tests {
 
     #[test]
     fn psk_keys_use_peer_lookup_and_secret() {
-        assert_eq!(create_keys(&IPSEC_KEY_PSK_FORM), ["peer", "id", "key"]);
+        assert_eq!(
+            create_keys(&IPSEC_KEY_PSK_FORM),
+            IPSEC_KEY_PSK_FORM.writable_keys()
+        );
         assert_lookup(&IPSEC_KEY_PSK_FORM, "peer", "ipsec-peers");
         assert_eq!(
             IPSEC_KEY_PSK_FORM.field("key").map(|field| field.kind),
