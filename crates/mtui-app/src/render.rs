@@ -908,7 +908,7 @@ mod tests {
             record_id: "*h1".into(),
             record_ids: Vec::new(),
             record_name: "set by admin at noon".into(),
-            endpoint: "/rest/system/history".into(),
+            endpoint: "/system/history".into(),
             fields: BTreeMap::new(),
         });
         let rendered = canvas(&app);

@@ -35,6 +35,20 @@ use crate::write::{ConfirmSession, MutationOp};
 
 const LOG_BUFFER_CAP: usize = 500;
 
+fn log_row_keys(row: &Resource) -> Vec<String> {
+    let body = format!(
+        "body:{}|{}|{}",
+        row.field("time").unwrap_or(""),
+        row.field("topics").unwrap_or(""),
+        row.field("message").unwrap_or(""),
+    );
+    if row.id.is_empty() {
+        vec![body]
+    } else {
+        vec![format!("id:{}", row.id), body]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectIntent {
     Login,
@@ -1345,6 +1359,9 @@ impl App {
                     } else {
                         format!("Refresh failed: {err}")
                     };
+                    if resource_id == "logs" {
+                        self.log_hold_follow_paint = false;
+                    }
                     return Vec::new();
                 }
                 self.note_data_ok();
@@ -1360,7 +1377,8 @@ impl App {
                     loaded
                 );
                 if resource_id == "logs" {
-                    self.ingest_logs(rows);
+                    self.ingest_logs(rows, true);
+                    self.log_hold_follow_paint = false;
                 } else {
                     let selected_id = self
                         .table
@@ -1490,7 +1508,7 @@ impl App {
                     return Vec::new();
                 }
                 if resource_id == "logs" {
-                    self.ingest_logs(vec![row]);
+                    self.ingest_logs(vec![row], false);
                     return Vec::new();
                 }
                 let selected_id = self
@@ -1840,6 +1858,7 @@ impl App {
             return;
         }
         self.lifecycle_return_to = None;
+        self.log_hold_follow_paint = id == "logs";
         self.bind_page_form();
     }
 
@@ -2052,44 +2071,41 @@ impl App {
         geo.firewall_height.saturating_sub(1).max(1)
     }
 
-    fn ingest_logs(&mut self, rows: Vec<Resource>) {
+    fn ingest_logs(&mut self, rows: Vec<Resource>, paint: bool) {
+        let added = self.push_log_rows(rows);
+        if self.log_paused {
+            return;
+        }
+        if paint || (added > 0 && !self.log_hold_follow_paint) {
+            self.rebuild_log_table();
+        }
+    }
+
+    fn push_log_rows(&mut self, rows: Vec<Resource>) -> usize {
+        let mut added = 0;
         for row in rows {
-            let key = if row.id.is_empty() {
-                format!(
-                    "{}|{}|{}",
-                    row.field("time").unwrap_or(""),
-                    row.field("topics").unwrap_or(""),
-                    row.field("message").unwrap_or("")
-                )
-            } else {
-                row.id.clone()
-            };
-            if !self.log_seen.insert(key) {
+            if !self.remember_log(&row) {
                 continue;
             }
+            added += 1;
             if !self.log_follow {
                 self.log_unread = self.log_unread.saturating_add(1);
             }
             self.log_buffer.push_back(row);
             while self.log_buffer.len() > LOG_BUFFER_CAP {
-                if let Some(old) = self.log_buffer.pop_front() {
-                    let old_key = if old.id.is_empty() {
-                        format!(
-                            "{}|{}|{}",
-                            old.field("time").unwrap_or(""),
-                            old.field("topics").unwrap_or(""),
-                            old.field("message").unwrap_or("")
-                        )
-                    } else {
-                        old.id.clone()
-                    };
-                    self.log_seen.remove(&old_key);
-                }
+                self.log_buffer.pop_front();
             }
         }
-        if !self.log_paused {
-            self.rebuild_log_table();
+        added
+    }
+
+    fn remember_log(&mut self, row: &Resource) -> bool {
+        let keys = log_row_keys(row);
+        let known = keys.iter().any(|key| self.log_seen.contains(key));
+        for key in keys {
+            self.log_seen.insert(key);
         }
+        !known
     }
 
     pub(crate) fn rebuild_log_table(&mut self) {
@@ -2934,6 +2950,92 @@ mod dashboard_tests {
             resource_loaded_message("clock", &singleton),
             "resource loaded clock"
         );
+    }
+}
+
+#[cfg(test)]
+mod log_ingest_tests {
+    use super::*;
+    use crate::event::AppEvent;
+
+    fn log_row(id: &str, n: usize) -> Resource {
+        let mut fields = HashMap::new();
+        fields.insert("time".into(), format!("00:00:{n:02}"));
+        fields.insert("topics".into(), "info".into());
+        fields.insert("message".into(), format!("msg{n}"));
+        Resource {
+            id: id.into(),
+            fields,
+        }
+    }
+
+    fn logs_app() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("logs");
+        app.pane = Pane::Content;
+        app.loading = false;
+        app
+    }
+
+    fn print_logs(app: &mut App, rows: Vec<Resource>) {
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "logs".into(),
+            rows,
+            error: None,
+        }));
+    }
+
+    fn follow_log(app: &mut App, row: Resource) {
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ListenDelta {
+            session: app.test_session(),
+            generation: app.poll_generation,
+            resource_id: "logs".into(),
+            row,
+        }));
+    }
+
+    #[test]
+    fn log_print_caps_buffer_and_jumps_to_newest_once() {
+        let mut app = logs_app();
+        let rows: Vec<_> = (1..=600).map(|n| log_row(&format!("*{n}"), n)).collect();
+        print_logs(&mut app, rows);
+        assert_eq!(app.log_buffer.len(), LOG_BUFFER_CAP);
+        assert_eq!(app.table.row_count(), LOG_BUFFER_CAP);
+        assert_eq!(app.table.selected, LOG_BUFFER_CAP - 1);
+        let selected = app.table.selected;
+        let offset = app.table.row_offset;
+        follow_log(&mut app, log_row("*1", 1));
+        follow_log(&mut app, log_row("*600", 600));
+        assert_eq!(app.log_buffer.len(), LOG_BUFFER_CAP);
+        assert_eq!(app.table.row_count(), LOG_BUFFER_CAP);
+        assert_eq!(app.table.selected, selected);
+        assert_eq!(app.table.row_offset, offset);
+    }
+
+    #[test]
+    fn log_follow_replay_is_held_until_print_lands() {
+        let mut app = logs_app();
+        assert!(app.log_hold_follow_paint);
+        follow_log(&mut app, log_row("*1", 1));
+        follow_log(&mut app, log_row("*2", 2));
+        assert_eq!(app.log_buffer.len(), 2);
+        assert_eq!(app.table.row_count(), 0);
+        print_logs(
+            &mut app,
+            vec![log_row("*1", 1), log_row("*2", 2), log_row("*3", 3)],
+        );
+        assert!(!app.log_hold_follow_paint);
+        assert_eq!(app.log_buffer.len(), 3);
+        assert_eq!(app.table.row_count(), 3);
+        assert_eq!(app.table.selected, 2);
+        follow_log(&mut app, log_row("*4", 4));
+        assert_eq!(app.log_buffer.len(), 4);
+        assert_eq!(app.table.row_count(), 4);
+        assert_eq!(app.table.selected, 3);
     }
 }
 

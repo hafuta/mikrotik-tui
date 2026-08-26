@@ -66,7 +66,7 @@ pub enum ActionCommand {
 
 impl ActionCommand {
     #[must_use]
-    pub fn rest_name(self) -> &'static str {
+    pub fn api_name(self) -> &'static str {
         match self {
             Self::Enable | Self::ToggleDisabled => "enable",
             Self::Disable => "disable",
@@ -1266,30 +1266,30 @@ mod tests {
         let ids: Vec<_> = FILTER_ACTIONS.iter().map(|action| action.id).collect();
         assert!(ids.contains(&"move-up"));
         assert!(ids.contains(&"move-down"));
-        assert_eq!(ActionCommand::MoveUp.rest_name(), "move");
-        assert_eq!(ActionCommand::MoveDown.rest_name(), "move");
+        assert_eq!(ActionCommand::MoveUp.api_name(), "move");
+        assert_eq!(ActionCommand::MoveDown.api_name(), "move");
     }
 
     #[test]
     fn lease_actions_include_make_static() {
         let ids: Vec<_> = LEASE_ACTIONS.iter().map(|action| action.id).collect();
         assert!(ids.contains(&"make-static"));
-        assert_eq!(ActionCommand::MakeStatic.rest_name(), "make-static");
+        assert_eq!(ActionCommand::MakeStatic.api_name(), "make-static");
         assert!(LEASE_ACTIONS.iter().any(|action| action.id == "release"));
-        assert_eq!(ActionCommand::Release.rest_name(), "release");
+        assert_eq!(ActionCommand::Release.api_name(), "release");
         assert!(SCRIPT_ACTIONS.iter().any(|action| action.id == "run"));
         assert!(RADIO_ACTIONS.iter().any(|action| action.id == "scan"));
-        assert_eq!(ActionCommand::Flush.rest_name(), "flush");
-        assert_eq!(ActionCommand::Upgrade.rest_name(), "upgrade");
-        assert_eq!(ActionCommand::Restart.rest_name(), "restart");
-        assert_eq!(ActionCommand::Kill.rest_name(), "kill");
-        assert_eq!(ActionCommand::ContainerUpdate.rest_name(), "update");
-        assert_eq!(ActionCommand::Repull.rest_name(), "repull");
+        assert_eq!(ActionCommand::Flush.api_name(), "flush");
+        assert_eq!(ActionCommand::Upgrade.api_name(), "upgrade");
+        assert_eq!(ActionCommand::Restart.api_name(), "restart");
+        assert_eq!(ActionCommand::Kill.api_name(), "kill");
+        assert_eq!(ActionCommand::ContainerUpdate.api_name(), "update");
+        assert_eq!(ActionCommand::Repull.api_name(), "repull");
     }
 
     #[test]
     fn history_undo_needs_a_selected_row() {
-        assert_eq!(ActionCommand::Undo.rest_name(), "undo");
+        assert_eq!(ActionCommand::Undo.api_name(), "undo");
         let history: Vec<_> = resolve_actions(HISTORY_ACTIONS, false, None)
             .iter()
             .map(|action| action.id)
@@ -1326,10 +1326,10 @@ mod tests {
             with_row,
             ["add", "edit", "copy", "remove", "sign", "import", "export"]
         );
-        assert_eq!(ActionCommand::Sign.rest_name(), "sign");
-        assert_eq!(ActionCommand::Import.rest_name(), "import");
+        assert_eq!(ActionCommand::Sign.api_name(), "sign");
+        assert_eq!(ActionCommand::Import.api_name(), "import");
         assert_eq!(
-            ActionCommand::ExportCertificate.rest_name(),
+            ActionCommand::ExportCertificate.api_name(),
             "export-certificate"
         );
     }

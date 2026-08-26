@@ -1,19 +1,19 @@
 //! Form schemas for the IPv6 nav group.
 //!
 //! Catalog wiring (do not register here):
-//! - `ipv6-addresses` → `/rest/ipv6/address` (`IPV6_ADDRESS_FORM`)
-//! - `ipv6-neighbors` → `/rest/ipv6/neighbor` (`IPV6_NEIGHBOR_FORM`)
-//! - `ipv6-nd` → `/rest/ipv6/nd` (`IPV6_ND_FORM`)
-//! - `ipv6-routes` → `/rest/ipv6/route` (`IPV6_ROUTE_FORM`)
-//! - `ipv6-pool` → `/rest/ipv6/pool` (`IPV6_POOL_FORM`)
-//! - `ipv6-settings` → `/rest/ipv6/settings` (`IPV6_SETTINGS_FORM`)
-//! - `ipv6-firewall-filter` → `/rest/ipv6/firewall/filter` (`IPV6_FIREWALL_FILTER_FORM`)
-//! - `ipv6-dhcp-client` → `/rest/ipv6/dhcp-client` (`IPV6_DHCP_CLIENT_FORM`, `MEMBER_ACTIONS`)
-//! - `ipv6-dhcp-server` → `/rest/ipv6/dhcp-server` (`IPV6_DHCP_SERVER_FORM`, `MEMBER_ACTIONS`)
-//! - `ipv6-nd-prefix` → `/rest/ipv6/nd/prefix` (`IPV6_ND_PREFIX_FORM`, `MEMBER_ACTIONS`)
-//! - `ipv6-firewall-nat` → `/rest/ipv6/firewall/nat` (`IPV6_FIREWALL_NAT_FORM`, `FILTER_ACTIONS`)
-//! - `ipv6-address-list` → `/rest/ipv6/firewall/address-list` (`IPV6_ADDRESS_LIST_FORM`, `MEMBER_ACTIONS`)
-//! - `ipv6-firewall-connections` → `/rest/ipv6/firewall/connection` (inspect/remove only; no form)
+//! - `ipv6-addresses` → `/ipv6/address` (`IPV6_ADDRESS_FORM`)
+//! - `ipv6-neighbors` → `/ipv6/neighbor` (`IPV6_NEIGHBOR_FORM`)
+//! - `ipv6-nd` → `/ipv6/nd` (`IPV6_ND_FORM`)
+//! - `ipv6-routes` → `/ipv6/route` (`IPV6_ROUTE_FORM`)
+//! - `ipv6-pool` → `/ipv6/pool` (`IPV6_POOL_FORM`)
+//! - `ipv6-settings` → `/ipv6/settings` (`IPV6_SETTINGS_FORM`)
+//! - `ipv6-firewall-filter` → `/ipv6/firewall/filter` (`IPV6_FIREWALL_FILTER_FORM`)
+//! - `ipv6-dhcp-client` → `/ipv6/dhcp-client` (`IPV6_DHCP_CLIENT_FORM`, `MEMBER_ACTIONS`)
+//! - `ipv6-dhcp-server` → `/ipv6/dhcp-server` (`IPV6_DHCP_SERVER_FORM`, `MEMBER_ACTIONS`)
+//! - `ipv6-nd-prefix` → `/ipv6/nd/prefix` (`IPV6_ND_PREFIX_FORM`, `MEMBER_ACTIONS`)
+//! - `ipv6-firewall-nat` → `/ipv6/firewall/nat` (`IPV6_FIREWALL_NAT_FORM`, `FILTER_ACTIONS`)
+//! - `ipv6-address-list` → `/ipv6/firewall/address-list` (`IPV6_ADDRESS_LIST_FORM`, `MEMBER_ACTIONS`)
+//! - `ipv6-firewall-connections` → `/ipv6/firewall/connection` (inspect/remove only; no form)
 //!
 //! Group id: `ipv6-group`.
 

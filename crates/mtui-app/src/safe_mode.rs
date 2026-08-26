@@ -13,7 +13,7 @@ use crate::event::WorkerMsg;
 use crate::session::SessionId;
 use crate::write::MutationOp;
 
-pub(crate) const SAFE_MODE_ENDPOINT: &str = "/rest/safe-mode";
+pub(crate) const SAFE_MODE_ENDPOINT: &str = "/safe-mode";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SafeModeVerb {

@@ -64,7 +64,7 @@ Device gates, in order:
    Inspect uses `ResourceSpec::cli_path()`, not the nav group. Set
    `cli_path: Some("/certificate")` when the command does not live under the
    group prefix (Certificates is under System, path is `/certificate`).
-   `None` means the REST endpoint with `/rest` stripped. Overlay-only screens
+   `None` means the catalog `endpoint` (`/interface/vlan`, `/log`). Overlay-only screens
    (`FetchKind::Local`) always set `cli_path` because they have no endpoint.
 3. **Print trap.** Opening a menu that replies `no such command prefix` hides
    that id immediately, so a Hex does not stay on a CRS-only node such as

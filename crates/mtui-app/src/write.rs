@@ -202,7 +202,7 @@ impl App {
             self.page_form = Some(FormSession::prompt_with(
                 spec.id,
                 String::new(),
-                ActionCommand::ResetConfiguration.rest_name(),
+                ActionCommand::ResetConfiguration.api_name(),
                 &RESET_CONFIG_PROMPT,
                 values,
             ));
@@ -261,7 +261,7 @@ impl App {
             record_id: String::new(),
             record_ids: Vec::new(),
             record_name: String::new(),
-            endpoint: command_base_path(action.id, "/rest/system"),
+            endpoint: command_base_path(action.id, "/system"),
             fields: BTreeMap::new(),
         });
         tracing::trace!(overlay = "confirm", action = action.id, "opened pane");
@@ -731,7 +731,7 @@ impl App {
         self.overlay = Overlay::Form(FormSession::prompt_with(
             resource_id,
             id,
-            command.rest_name(),
+            command.api_name(),
             schema,
             values,
         ));
@@ -745,7 +745,7 @@ impl App {
         self.overlay = Overlay::Form(FormSession::prompt_fields(
             self.current_resource.clone(),
             String::new(),
-            ActionCommand::BackupSave.rest_name(),
+            ActionCommand::BackupSave.api_name(),
             &mtui_ui::BACKUP_SAVE_FORM,
             values,
         ));
@@ -871,7 +871,7 @@ impl App {
         self.status = "Moving…".into();
         vec![self.mutate_command(MutationOp::Command {
             endpoint: spec.endpoint().to_string(),
-            command: ActionCommand::MoveUp.rest_name().to_string(),
+            command: ActionCommand::MoveUp.api_name().to_string(),
             fields,
         })]
     }
@@ -1009,7 +1009,7 @@ impl App {
         let Some(spec) = resource_by_id(&resource_id) else {
             return Vec::new();
         };
-        let (endpoint, fields, status) = if command == ActionCommand::BackupSave.rest_name() {
+        let (endpoint, fields, status) = if command == ActionCommand::BackupSave.api_name() {
             let mut fields = BTreeMap::new();
             let Some(name) = values
                 .get("name")
@@ -1035,7 +1035,7 @@ impl App {
                 fields,
                 "Saving backup…",
             )
-        } else if command == ActionCommand::Copy.rest_name() {
+        } else if command == ActionCommand::Copy.api_name() {
             let mut fields = BTreeMap::new();
             fields.insert(".id".into(), record_id);
             if let Some(name) = values.get("new-name") {
@@ -1136,7 +1136,7 @@ impl App {
         let Some(command) = session.prompt_command else {
             return Vec::new();
         };
-        if command != ActionCommand::ResetConfiguration.rest_name() {
+        if command != ActionCommand::ResetConfiguration.api_name() {
             return Vec::new();
         }
         let mut fields = BTreeMap::new();
@@ -1168,7 +1168,7 @@ impl App {
             record_id: String::new(),
             record_ids: Vec::new(),
             record_name: String::new(),
-            endpoint: command_base_path("reset-configuration", "/rest/system"),
+            endpoint: command_base_path("reset-configuration", "/system"),
             fields,
         });
         Vec::new()
@@ -1368,7 +1368,7 @@ impl App {
             .cloned();
         let record_id = session.record_id.clone();
         let endpoint = resource_by_id(&session.resource_id)
-            .map_or_else(|| "/rest/file".into(), |spec| spec.endpoint().to_string());
+            .map_or_else(|| "/file".into(), |spec| spec.endpoint().to_string());
         if let Overlay::Form(session) = &mut self.overlay {
             session.saving = true;
             session.error = None;
@@ -1451,7 +1451,7 @@ impl App {
         }
         self.status = "Fetching…".into();
         vec![self.mutate_command(MutationOp::Command {
-            endpoint: "/rest/tool".into(),
+            endpoint: "/tool".into(),
             command: "fetch".into(),
             fields,
         })]
@@ -1561,7 +1561,7 @@ impl App {
             },
             other => MutationOp::Command {
                 endpoint,
-                command: other.rest_name().to_string(),
+                command: other.api_name().to_string(),
                 fields,
             },
         };
@@ -1596,7 +1596,7 @@ impl App {
         fields.insert(".id".into(), id.to_string());
         MutationOp::Command {
             endpoint,
-            command: command.rest_name().to_string(),
+            command: command.api_name().to_string(),
             fields,
         }
     }
@@ -1695,7 +1695,7 @@ impl App {
         tracing::info!("file upload");
         self.status = "Uploading…".into();
         vec![self.mutate_command(MutationOp::Put {
-            endpoint: "/rest/file".into(),
+            endpoint: "/file".into(),
             fields,
         })]
     }
@@ -2047,13 +2047,13 @@ fn bulk_interface_endpoint(app: &App, session: &ConfirmSession, id: &str) -> Str
 
 fn command_base_path(action_id: &str, resource_endpoint: &str) -> String {
     match action_id {
-        "reboot" | "shutdown" | "reset-configuration" => "/rest/system".into(),
-        "backup-save" | "backup-load" => "/rest/system/backup".into(),
-        "upgrade" | "usb-power-reset" => "/rest/system/routerboard".into(),
-        "export-config" | "export" | "import-config" => "/rest".into(),
-        "check-for-updates" => "/rest/system/package/update".into(),
-        "wol" | "wake-on-lan" => "/rest/tool".into(),
-        "sms" | "send-sms" => "/rest/tool/sms".into(),
+        "reboot" | "shutdown" | "reset-configuration" => "/system".into(),
+        "backup-save" | "backup-load" => "/system/backup".into(),
+        "upgrade" | "usb-power-reset" => "/system/routerboard".into(),
+        "export-config" | "export" | "import-config" => "/".into(),
+        "check-for-updates" => "/system/package/update".into(),
+        "wol" | "wake-on-lan" => "/tool".into(),
+        "sms" | "send-sms" => "/tool/sms".into(),
         _ => resource_endpoint.to_string(),
     }
 }
@@ -2249,7 +2249,7 @@ mod tests {
             panic!("expected FetchFormRecord");
         };
         assert_eq!(resource_id, "ethernet");
-        assert_eq!(endpoint, "/rest/interface/ethernet");
+        assert_eq!(endpoint, "/interface/ethernet");
         assert_eq!(id, "*5");
         let Overlay::Form(session) = &app.overlay else {
             panic!("expected form");
@@ -2332,7 +2332,7 @@ mod tests {
             panic!("expected FetchFormRecord for ethernet details");
         };
         assert_eq!(resource_id, "ethernet");
-        assert_eq!(endpoint, "/rest/interface/ethernet");
+        assert_eq!(endpoint, "/interface/ethernet");
         assert_eq!(id, "*s");
         assert!(!app.inspector.fields.iter().any(|(label, _)| label == "SFP"));
 
@@ -2396,7 +2396,7 @@ mod tests {
             panic!("expected FetchFormRecord for vlan details");
         };
         assert_eq!(resource_id, "vlan");
-        assert_eq!(endpoint, "/rest/interface/vlan");
+        assert_eq!(endpoint, "/interface/vlan");
         assert_eq!(id, "*v");
         assert!(
             !app.inspector
@@ -2461,7 +2461,7 @@ mod tests {
             panic!("expected FetchFormRecord for switch details");
         };
         assert_eq!(resource_id, "switch");
-        assert_eq!(endpoint, "/rest/interface/ethernet/switch");
+        assert_eq!(endpoint, "/interface/ethernet/switch");
         assert_eq!(id, "*sw");
         assert!(
             !app.inspector
@@ -2524,7 +2524,7 @@ mod tests {
             panic!("expected FetchFormRecord for switch-port details");
         };
         assert_eq!(resource_id, "switch-port");
-        assert_eq!(endpoint, "/rest/interface/ethernet/switch/port");
+        assert_eq!(endpoint, "/interface/ethernet/switch/port");
         assert_eq!(id, "*p");
         assert!(
             !app.inspector
@@ -2576,11 +2576,11 @@ mod tests {
         let Overlay::Confirm(session) = &app.overlay else {
             panic!("expected remove confirm, got {:?}", app.overlay);
         };
-        assert_eq!(session.endpoint, "/rest/interface/eoip");
+        assert_eq!(session.endpoint, "/interface/eoip");
         let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
         match command_op(&cmds) {
             MutationOp::Delete { endpoint, id } => {
-                assert_eq!(endpoint, "/rest/interface/eoip");
+                assert_eq!(endpoint, "/interface/eoip");
                 assert_eq!(id, "*e");
             }
             other => panic!("expected eoip delete, got {other:?}"),
@@ -2611,10 +2611,7 @@ mod tests {
                 paths.sort_unstable();
                 assert_eq!(
                     paths,
-                    vec![
-                        ("/rest/interface/eoip", "*e"),
-                        ("/rest/interface/vlan", "*v"),
-                    ]
+                    vec![("/interface/eoip", "*e"), ("/interface/vlan", "*v"),]
                 );
             }
             other => panic!("expected batch delete, got {other:?}"),
@@ -2642,7 +2639,7 @@ mod tests {
                 command,
                 fields,
             } => {
-                assert_eq!(endpoint, "/rest/interface/eoip");
+                assert_eq!(endpoint, "/interface/eoip");
                 assert_eq!(command, "copy");
                 assert_eq!(fields.get(".id").map(String::as_str), Some("*e"));
             }
@@ -2919,7 +2916,7 @@ mod tests {
         };
         assert_eq!(session.command, ActionCommand::Disable);
         assert_eq!(session.record_id, "*smbs2");
-        assert_eq!(session.endpoint, "/rest/ip/smb/shares");
+        assert_eq!(session.endpoint, "/ip/smb/shares");
         let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
         match command_op(&cmds) {
             MutationOp::Command {
@@ -2927,7 +2924,7 @@ mod tests {
                 command,
                 fields,
             } => {
-                assert_eq!(endpoint, "/rest/ip/smb/shares");
+                assert_eq!(endpoint, "/ip/smb/shares");
                 assert_eq!(command, "disable");
                 assert_eq!(fields.get(".id").map(String::as_str), Some("*smbs2"));
             }
@@ -3229,7 +3226,7 @@ mod tests {
         }
         let cmds = app.save_form();
         let (endpoint, command, fields) = command_fields(&cmds);
-        assert_eq!(endpoint, "/rest/certificate");
+        assert_eq!(endpoint, "/certificate");
         assert_eq!(command, "sign");
         assert_eq!(fields.get(".id").map(String::as_str), Some("*c1"));
         assert_eq!(fields.get("ca").map(String::as_str), Some("root-ca"));
@@ -3256,7 +3253,7 @@ mod tests {
         }
         let cmds = app.save_form();
         let (endpoint, command, fields) = command_fields(&cmds);
-        assert_eq!(endpoint, "/rest/certificate");
+        assert_eq!(endpoint, "/certificate");
         assert_eq!(command, "import");
         assert!(!fields.contains_key(".id"));
         assert_eq!(fields.get("file-name").map(String::as_str), Some("web.p12"));
@@ -3283,7 +3280,7 @@ mod tests {
         }
         let cmds = app.save_form();
         let (endpoint, command, fields) = command_fields(&cmds);
-        assert_eq!(endpoint, "/rest/certificate");
+        assert_eq!(endpoint, "/certificate");
         assert_eq!(command, "export-certificate");
         assert_eq!(fields.get(".id").map(String::as_str), Some("*c1"));
         assert_eq!(
@@ -3328,7 +3325,7 @@ mod tests {
         );
         let cmds = app.save_form();
         let (endpoint, command, fields) = command_fields(&cmds);
-        assert_eq!(endpoint, "/rest/interface/vlan");
+        assert_eq!(endpoint, "/interface/vlan");
         assert_eq!(command, "copy");
         assert_eq!(fields.get(".id").map(String::as_str), Some("*3"));
         assert_eq!(
@@ -3380,7 +3377,7 @@ mod tests {
             panic!("expected reboot confirm, got {:?}", app.overlay);
         };
         assert_eq!(session.command, ActionCommand::Reboot);
-        assert_eq!(session.endpoint, "/rest/system");
+        assert_eq!(session.endpoint, "/system");
         assert!(session.record_id.is_empty());
         assert!(session.body.contains("Active sessions will drop"));
         assert!(!session.body.contains("Safe Mode cannot undo"));
@@ -3391,7 +3388,7 @@ mod tests {
                 command,
                 fields,
             } => {
-                assert_eq!(endpoint, "/rest/system");
+                assert_eq!(endpoint, "/system");
                 assert_eq!(command, "reboot");
                 assert!(fields.is_empty());
             }
@@ -3541,7 +3538,7 @@ mod tests {
             panic!("expected reset confirm, got {:?}", app.overlay);
         };
         assert_eq!(session.command, ActionCommand::ResetConfiguration);
-        assert_eq!(session.endpoint, "/rest/system");
+        assert_eq!(session.endpoint, "/system");
     }
 
     #[test]
@@ -3587,7 +3584,7 @@ mod tests {
             panic!("expected undo confirm, got {:?}", app.overlay);
         };
         assert_eq!(session.command, ActionCommand::Undo);
-        assert_eq!(session.endpoint, "/rest/system/history");
+        assert_eq!(session.endpoint, "/system/history");
         assert_eq!(session.record_id, "*h1");
         assert_eq!(session.action_id, "undo");
         assert!(
@@ -3604,7 +3601,7 @@ mod tests {
                 command,
                 fields,
             } => {
-                assert_eq!(endpoint, "/rest/system/history");
+                assert_eq!(endpoint, "/system/history");
                 assert_eq!(command, "undo");
                 assert_eq!(fields.get(".id").map(String::as_str), Some("*h1"));
             }
@@ -3818,7 +3815,7 @@ mod tests {
                 command,
                 fields,
             } => {
-                assert_eq!(endpoint, "/rest/system");
+                assert_eq!(endpoint, "/system");
                 assert_eq!(command, "shutdown");
                 assert!(fields.is_empty());
             }
@@ -3850,7 +3847,7 @@ mod tests {
                 command,
                 fields,
             } => {
-                assert_eq!(endpoint, "/rest/system/backup");
+                assert_eq!(endpoint, "/system/backup");
                 assert_eq!(command, "save");
                 assert_eq!(fields.get("name").map(String::as_str), Some("nightly"));
                 assert_eq!(fields.get("password").map(String::as_str), Some("secret"));
@@ -3930,7 +3927,7 @@ mod tests {
                 command,
                 fields,
             } => {
-                assert_eq!(endpoint, "/rest/system/backup");
+                assert_eq!(endpoint, "/system/backup");
                 assert_eq!(command, "load");
                 assert_eq!(fields.get("name").map(String::as_str), Some("foo.backup"));
             }
@@ -3982,7 +3979,7 @@ mod tests {
         };
         assert_eq!(session.command, ActionCommand::Enable);
         assert_eq!(session.record_id, "*3");
-        assert_eq!(session.endpoint, "/rest/interface/vlan");
+        assert_eq!(session.endpoint, "/interface/vlan");
         let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
         match command_op(&cmds) {
             MutationOp::Command {
@@ -3990,7 +3987,7 @@ mod tests {
                 command,
                 fields,
             } => {
-                assert_eq!(endpoint, "/rest/interface/vlan");
+                assert_eq!(endpoint, "/interface/vlan");
                 assert_eq!(command, "enable");
                 assert_eq!(fields.get(".id").map(String::as_str), Some("*3"));
             }
@@ -4044,7 +4041,7 @@ mod tests {
         assert_eq!(
             op,
             MutationOp::Command {
-                endpoint: "/rest/ip/firewall/filter".into(),
+                endpoint: "/ip/firewall/filter".into(),
                 command: "move".into(),
                 fields: BTreeMap::from([
                     (".id".into(), "*2".into()),
@@ -4093,7 +4090,7 @@ mod tests {
         assert_eq!(
             op,
             MutationOp::Command {
-                endpoint: "/rest/ip/dhcp-server/lease".into(),
+                endpoint: "/ip/dhcp-server/lease".into(),
                 command: "make-static".into(),
                 fields: BTreeMap::from([(".id".into(), "*9".into())]),
             }
@@ -4348,7 +4345,7 @@ mod tests {
                     ..
                 },
             ] => {
-                assert_eq!(endpoint, "/rest/tool");
+                assert_eq!(endpoint, "/tool");
                 assert_eq!(command, "bandwidth-test");
                 assert_eq!(fields.get("address").map(String::as_str), Some("192.0.2.8"));
                 assert_eq!(fields.get("duration").map(String::as_str), Some("10"));
@@ -4396,7 +4393,7 @@ mod tests {
             .insert("mac".into(), "4C:5E:0C:00:00:01".into());
         let cmds = app.save_form();
         let (endpoint, command, fields) = command_fields(&cmds);
-        assert_eq!(endpoint, "/rest/tool");
+        assert_eq!(endpoint, "/tool");
         assert_eq!(command, "wol");
         assert_eq!(fields.get("interface").map(String::as_str), Some("ether1"));
         assert_eq!(
@@ -4826,11 +4823,11 @@ mod tests {
         };
         assert_eq!(session.command, ActionCommand::Remove);
         assert_eq!(session.record_id, "*36");
-        assert_eq!(session.endpoint, "/rest/ipv6/firewall/connection");
+        assert_eq!(session.endpoint, "/ipv6/firewall/connection");
         let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
         match command_op(&cmds) {
             MutationOp::Delete { endpoint, id } => {
-                assert_eq!(endpoint, "/rest/ipv6/firewall/connection");
+                assert_eq!(endpoint, "/ipv6/firewall/connection");
                 assert_eq!(id, "*36");
             }
             other => panic!("unexpected op {other:?}"),
@@ -4939,7 +4936,7 @@ mod tests {
         let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
         match command_op(&cmds) {
             MutationOp::Delete { endpoint, id } => {
-                assert_eq!(endpoint, "/rest/tool/romon/port");
+                assert_eq!(endpoint, "/tool/romon/port");
                 assert_eq!(id, "*rp1");
             }
             other => panic!("unexpected op {other:?}"),
@@ -5228,11 +5225,11 @@ mod tests {
         };
         assert_eq!(session.command, ActionCommand::Remove);
         assert_eq!(session.record_id, "*1");
-        assert_eq!(session.endpoint, "/rest/ip/neighbor");
+        assert_eq!(session.endpoint, "/ip/neighbor");
         let cmds = app.update(AppEvent::Input(press(KeyCode::Char('y'))));
         match command_op(&cmds) {
             MutationOp::Delete { endpoint, id } => {
-                assert_eq!(endpoint, "/rest/ip/neighbor");
+                assert_eq!(endpoint, "/ip/neighbor");
                 assert_eq!(id, "*1");
             }
             other => panic!("expected delete, got {other:?}"),

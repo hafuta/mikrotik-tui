@@ -10,7 +10,7 @@ pub const INTERFACES: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "Interface",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface",
+        endpoint: "/interface",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -52,7 +52,7 @@ pub const INTERFACE_LISTS: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "Lists",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/list",
+        endpoint: "/interface/list",
     },
     columns: &[
         col!("name", "Name", 20),
@@ -72,7 +72,7 @@ pub const INTERFACE_LIST_MEMBERS: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "List members",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/list/member",
+        endpoint: "/interface/list/member",
     },
     columns: &[
         col!("list", "List", 16),
@@ -92,7 +92,7 @@ pub const ETHERNET: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "Ethernet",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/ethernet",
+        endpoint: "/interface/ethernet",
     },
     columns: &[
         col!("name", "Name", 18),

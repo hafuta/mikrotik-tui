@@ -1,31 +1,31 @@
 //! Form schemas for the System nav group.
 //!
 //! Extra API endpoints for the parent catalog (not wired from this module):
-//! - `/rest/system/identity`
-//! - `/rest/system/resource`
-//! - `/rest/system/health`
-//! - `/rest/system/package`
-//! - `/rest/system/scheduler`
-//! - `/rest/system/script`
-//! - `/rest/system/logging`
-//! - `/rest/system/logging/action`
-//! - `/rest/system/ntp/server`
-//! - `/rest/system/ntp/key`
-//! - `/rest/snmp`
-//! - `/rest/snmp/community`
-//! - `/rest/certificate`
-//! - `/rest/system/watchdog`
-//! - `/rest/system/console`
-//! - `/rest/system/led`
-//! - `/rest/system/led/settings`
-//! - `/rest/port`
-//! - `/rest/special-login`
-//! - `/rest/system/routerboard/settings`
-//! - `/rest/system/note`
-//! - `/rest/system/license`
-//! - `/rest/disk`
-//! - `/rest/system/device-mode`
-//! - `/rest/user/group`
+//! - `/system/identity`
+//! - `/system/resource`
+//! - `/system/health`
+//! - `/system/package`
+//! - `/system/scheduler`
+//! - `/system/script`
+//! - `/system/logging`
+//! - `/system/logging/action`
+//! - `/system/ntp/server`
+//! - `/system/ntp/key`
+//! - `/snmp`
+//! - `/snmp/community`
+//! - `/certificate`
+//! - `/system/watchdog`
+//! - `/system/console`
+//! - `/system/led`
+//! - `/system/led/settings`
+//! - `/port`
+//! - `/special-login`
+//! - `/system/routerboard/settings`
+//! - `/system/note`
+//! - `/system/license`
+//! - `/disk`
+//! - `/system/device-mode`
+//! - `/user/group`
 
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 

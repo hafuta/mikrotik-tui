@@ -1406,7 +1406,7 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "hotspot-hosts",
         "Live Hotspot hosts with authenticate and bypass actions.",
-        "See who is in the portal. Authenticate or bypass a row when REST exposes those commands.",
+        "See who is in the portal. Authenticate or bypass a row when the API exposes those commands.",
         "mac-address, address, server, authorized, bypassed, uptime."
     ),
     guide!(
@@ -1454,7 +1454,7 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "ssh-keys",
         "User SSH public keys (`/user ssh-keys`).",
-        "Install keys so operators can log in without a password. Private keys stay off this table unless REST exposes them.",
+        "Install keys so operators can log in without a password. Private keys stay off this table unless the API exposes them.",
         "user, key-owner."
     ),
     guide!(
@@ -1542,7 +1542,7 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "bgp-advertisements",
         "BGP advertisements table. Monitor-only.",
-        "See what this router is announcing. VPN table is omitted unless REST lists it stably.",
+        "See what this router is announcing. VPN table is omitted unless the API lists it stably.",
         "prefix, nexthop, peer, as-path."
     ),
     guide!(
@@ -1589,7 +1589,7 @@ static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "sms",
-        "SMS send (`/tool sms send`) when the sms package/REST exists.",
+        "SMS send (`/tool sms send`) when the sms package exists.",
         "Send a short message via a modem channel. Skip if the package is absent.",
         "phone-number, message, channel."
     ),

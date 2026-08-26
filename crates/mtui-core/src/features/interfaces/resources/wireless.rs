@@ -10,7 +10,7 @@ pub const WIRELESS: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "Wireless",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wireless",
+        endpoint: "/interface/wireless",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -36,7 +36,7 @@ pub const WIRELESS_SECURITY_PROFILES: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "Security Profiles",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wireless/security-profiles",
+        endpoint: "/interface/wireless/security-profiles",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -55,7 +55,7 @@ pub const WIRELESS_ACCESS_LIST: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "Access List",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wireless/access-list",
+        endpoint: "/interface/wireless/access-list",
     },
     columns: &[
         col!("mac-address", "MAC", 18),
@@ -74,7 +74,7 @@ pub const WIRELESS_REGISTRATION_TABLE: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "Registration",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/wireless/registration-table",
+        endpoint: "/interface/wireless/registration-table",
     },
     columns: &[
         col!("mac-address", "MAC", 18),

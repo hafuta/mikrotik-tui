@@ -422,6 +422,7 @@ impl App {
                 self.status = if self.log_paused {
                     "Ⅱ PAUSED".into()
                 } else {
+                    self.rebuild_log_table();
                     "● LIVE".into()
                 };
             }
@@ -2632,12 +2633,12 @@ mod console_tests {
                 time: "2026-08-22 03:25:01.000".into(),
                 level: ConsoleLevel::Info,
                 message: "outbound request".into(),
-                fields: vec![("endpoint".into(), "/rest/interface".into())],
+                fields: vec![("endpoint".into(), "/interface".into())],
             },
             ConsoleEntry {
                 time: "2026-08-22 03:25:02.000".into(),
                 level: ConsoleLevel::Error,
-                message: "response PUT /rest/interface/list".into(),
+                message: "response /interface/list/add".into(),
                 fields: vec![
                     ("status".into(), "400".into()),
                     (
@@ -2782,7 +2783,7 @@ mod console_tests {
             cmds.iter().any(|cmd| matches!(
                 cmd,
                 crate::app::AppCommand::CopyToClipboard { text, .. }
-                    if text.contains("outbound request") && text.contains("endpoint: /rest/interface")
+                    if text.contains("outbound request") && text.contains("endpoint: /interface")
             )),
             "expected copy command, got {cmds:?}"
         );

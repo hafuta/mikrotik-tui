@@ -10,7 +10,7 @@ pub const LTE: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "LTE",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/lte",
+        endpoint: "/interface/lte",
     },
     columns: &[
         col!("name", "Name", 18),
@@ -34,7 +34,7 @@ pub const LTE_APN: ResourceSpec = ResourceSpec {
     cli_path: None,
     label: "LTE APN",
     fetch: FetchKind::List {
-        endpoint: "/rest/interface/lte/apn",
+        endpoint: "/interface/lte/apn",
     },
     columns: &[
         col!("name", "Name", 18),

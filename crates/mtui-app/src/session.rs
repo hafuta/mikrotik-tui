@@ -89,6 +89,8 @@ pub struct Session {
     pub log_follow: bool,
     pub log_severity: LogSeverity,
     pub log_unread: usize,
+    /// While waiting for `/log/print`, follow replay is buffered and not painted.
+    pub(crate) log_hold_follow_paint: bool,
     pub console: ConsoleState,
     pub console_entries: Vec<ConsoleEntry>,
     pub(crate) console_log_seq: u64,
@@ -151,6 +153,7 @@ impl Session {
             log_follow: true,
             log_severity: LogSeverity::All,
             log_unread: 0,
+            log_hold_follow_paint: false,
             console: ConsoleState::default(),
             console_entries: Vec::new(),
             console_log_seq: 0,

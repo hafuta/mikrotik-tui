@@ -1,7 +1,7 @@
 //! Form schemas for the RADIUS nav group.
 //!
 //! Catalog wiring (do not register here):
-//! - `radius` → `/rest/radius` (`RADIUS_FORM`)
+//! - `radius` → `/radius` (`RADIUS_FORM`)
 //!
 //! Group id: `radius-group`.
 

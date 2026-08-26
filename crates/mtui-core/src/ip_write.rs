@@ -15,7 +15,7 @@
 //!     id: "neighbors",
 //!     group: "ip-group",
 //!     label: "Neighbors",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/neighbor" },
+//!     fetch: FetchKind::List { endpoint: "/ip/neighbor" },
 //!     columns: &[
 //!         col!("interface", "Interface", 16),
 //!         col!("address", "Address", 18),
@@ -36,7 +36,7 @@
 //!     id: "dhcp-clients",
 //!     group: "ip-group",
 //!     label: "DHCP Client",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/dhcp-client" },
+//!     fetch: FetchKind::List { endpoint: "/ip/dhcp-client" },
 //!     columns: &[
 //!         col!("interface", "Interface", 16),
 //!         col!("status", "Status", 12),
@@ -56,7 +56,7 @@
 //!     id: "dns",
 //!     group: "ip-group",
 //!     label: "DNS",
-//!     fetch: FetchKind::System { endpoint: "/rest/ip/dns" },
+//!     fetch: FetchKind::System { endpoint: "/ip/dns" },
 //!     columns: &[
 //!         col!("servers", "Servers", 28),
 //!         col!("allow-remote-requests", "Remote", 8),
@@ -71,7 +71,7 @@
 //!     id: "dns-static",
 //!     group: "ip-group",
 //!     label: "Static DNS",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/dns/static" },
+//!     fetch: FetchKind::List { endpoint: "/ip/dns/static" },
 //!     columns: &[
 //!         col!("name", "Name", 24),
 //!         col!("address", "Address", 18),
@@ -88,7 +88,7 @@
 //!     id: "routes",
 //!     group: "ip-group",
 //!     label: "Routes",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/route" },
+//!     fetch: FetchKind::List { endpoint: "/ip/route" },
 //!     columns: &[
 //!         col!("dst-address", "Dst", 20),
 //!         col!("gateway", "Gateway", 18),
@@ -109,7 +109,7 @@
 //!     id: "pools",
 //!     group: "ip-group",
 //!     label: "Pool",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/pool" },
+//!     fetch: FetchKind::List { endpoint: "/ip/pool" },
 //!     columns: &[
 //!         col!("name", "Name", 18),
 //!         col!("ranges", "Ranges", 36),
@@ -124,7 +124,7 @@
 //!     id: "ip-services",
 //!     group: "ip-group",
 //!     label: "Services",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/service" },
+//!     fetch: FetchKind::List { endpoint: "/ip/service" },
 //!     columns: &[
 //!         col!("name", "Name", 14),
 //!         col!("port", "Port", 6),
@@ -142,7 +142,7 @@
 //!     id: "ip-settings",
 //!     group: "ip-group",
 //!     label: "Settings",
-//!     fetch: FetchKind::System { endpoint: "/rest/ip/settings" },
+//!     fetch: FetchKind::System { endpoint: "/ip/settings" },
 //!     columns: &[
 //!         col!("ip-forward", "Forward", 8),
 //!         col!("rp-filter", "RP filter", 12),
@@ -158,7 +158,7 @@
 //!     id: "firewall-nat",
 //!     group: "ip-group",
 //!     label: "NAT",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/firewall/nat" },
+//!     fetch: FetchKind::List { endpoint: "/ip/firewall/nat" },
 //!     columns: &[
 //!         col!("chain", "Chain", 10),
 //!         col!("action", "Action", 14),
@@ -185,7 +185,7 @@
 //!     id: "firewall-mangle",
 //!     group: "ip-group",
 //!     label: "Mangle",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/firewall/mangle" },
+//!     fetch: FetchKind::List { endpoint: "/ip/firewall/mangle" },
 //!     columns: &[
 //!         col!("chain", "Chain", 10),
 //!         col!("action", "Action", 14),
@@ -211,7 +211,7 @@
 //!     id: "address-list",
 //!     group: "ip-group",
 //!     label: "Address List",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/firewall/address-list" },
+//!     fetch: FetchKind::List { endpoint: "/ip/firewall/address-list" },
 //!     columns: &[
 //!         col!("list", "List", 16),
 //!         col!("address", "Address", 20),
@@ -229,7 +229,7 @@
 //!     id: "dhcp-relay",
 //!     group: "ip-group",
 //!     label: "DHCP Relay",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/dhcp-relay" },
+//!     fetch: FetchKind::List { endpoint: "/ip/dhcp-relay" },
 //!     columns: &[
 //!         col!("name", "Name", 18),
 //!         col!("interface", "Interface", 16),
@@ -246,7 +246,7 @@
 //!     id: "dhcp-options",
 //!     group: "ip-group",
 //!     label: "DHCP Options",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/dhcp-server/option" },
+//!     fetch: FetchKind::List { endpoint: "/ip/dhcp-server/option" },
 //!     columns: &[
 //!         col!("name", "Name", 18),
 //!         col!("code", "Code", 6),
@@ -261,7 +261,7 @@
 //!     id: "dhcp-option-sets",
 //!     group: "ip-group",
 //!     label: "DHCP Option Sets",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/dhcp-server/option/sets" },
+//!     fetch: FetchKind::List { endpoint: "/ip/dhcp-server/option/sets" },
 //!     columns: &[
 //!         col!("name", "Name", 18),
 //!         col!("options", "Options", 36),
@@ -275,7 +275,7 @@
 //!     id: "firewall-raw",
 //!     group: "ip-group",
 //!     label: "Raw",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/firewall/raw" },
+//!     fetch: FetchKind::List { endpoint: "/ip/firewall/raw" },
 //!     columns: &[
 //!         col!("chain", "Chain", 12),
 //!         col!("action", "Action", 14),
@@ -299,7 +299,7 @@
 //!     id: "firewall-layer7",
 //!     group: "ip-group",
 //!     label: "Layer7 Protocol",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/firewall/layer7-protocol" },
+//!     fetch: FetchKind::List { endpoint: "/ip/firewall/layer7-protocol" },
 //!     columns: &[
 //!         col!("name", "Name", 18),
 //!         col!("regexp", "Regexp", 36),
@@ -313,7 +313,7 @@
 //!     id: "firewall-service-port",
 //!     group: "ip-group",
 //!     label: "Service Port",
-//!     fetch: FetchKind::List { endpoint: "/rest/ip/firewall/service-port" },
+//!     fetch: FetchKind::List { endpoint: "/ip/firewall/service-port" },
 //!     columns: &[
 //!         col!("name", "Name", 14),
 //!         col!("ports", "Ports", 20),

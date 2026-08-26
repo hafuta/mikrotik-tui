@@ -391,7 +391,7 @@ fn dispatch_commands(
                         session,
                         client,
                         generation,
-                        "/rest/tool".into(),
+                        "/tool".into(),
                         "ping".into(),
                         fields,
                         tx,
@@ -428,7 +428,7 @@ fn dispatch_commands(
                         session,
                         client,
                         generation,
-                        "/rest/tool".into(),
+                        "/tool".into(),
                         "traceroute".into(),
                         fields,
                         tx,
@@ -630,7 +630,7 @@ fn dispatch_commands(
                 };
                 let tx = tx.clone();
                 rt.spawn(async move {
-                    let result = client.system("/rest/safe-mode").await;
+                    let result = client.system("/safe-mode").await;
                     let (row, error) = match result {
                         Ok(row) => (Some(row), None),
                         Err(err) => {
@@ -676,7 +676,7 @@ async fn connect_worker(
         }
     }
     match Client::connect(options).await {
-        Ok(client) => match client.system("/rest/system/resource").await {
+        Ok(client) => match client.system("/system/resource").await {
             Ok(router) => {
                 let version = router.field("version").unwrap_or("");
                 if let Err(message) = routeros_meets_minimum(version) {
@@ -891,7 +891,7 @@ async fn fetch_access(
     generation: u64,
 ) -> WorkerMsg {
     let _ = request_id;
-    let (users, groups) = tokio::join!(client.list("/rest/user"), client.list("/rest/user/group"),);
+    let (users, groups) = tokio::join!(client.list("/user"), client.list("/user/group"),);
     match (users, groups) {
         (Ok(users), Ok(groups)) => WorkerMsg::AccessResult {
             session,
@@ -1066,10 +1066,8 @@ async fn fetch_header(
     view_rx: &mut watch::Receiver<u64>,
     gate: &StreamGate,
 ) {
-    let (sys, interfaces) = tokio::join!(
-        client.system("/rest/system/resource"),
-        client.list("/rest/interface"),
-    );
+    let (sys, interfaces) =
+        tokio::join!(client.system("/system/resource"), client.list("/interface"),);
 
     let (system, system_error) = match sys {
         Ok(record) => (Some(record), None),
@@ -1112,10 +1110,10 @@ async fn fetch_dashboard(
     gate: &StreamGate,
 ) {
     let (cpu, sys, interfaces, firewall) = tokio::join!(
-        client.list("/rest/system/resource/cpu"),
-        client.system("/rest/system/resource"),
-        client.list("/rest/interface"),
-        client.list("/rest/ip/firewall/filter"),
+        client.list("/system/resource/cpu"),
+        client.system("/system/resource"),
+        client.list("/interface"),
+        client.list("/ip/firewall/filter"),
     );
 
     let (cpu, cpu_error) = match cpu {
@@ -1275,7 +1273,7 @@ async fn stream_torch(
     if !port.trim().is_empty() {
         fields.insert("port".into(), port);
     }
-    let mut stream = match client.stream_command("/rest/tool", "torch", &fields).await {
+    let mut stream = match client.stream_command("/tool", "torch", &fields).await {
         Ok(stream) => stream,
         Err(err) => {
             let _ = tx.send(WorkerMsg::TorchResult {

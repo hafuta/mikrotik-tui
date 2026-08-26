@@ -1467,10 +1467,9 @@ fn resource_from_fields(id: &str, fields: &BTreeMap<String, String>) -> Resource
 }
 
 fn resource_id_for_endpoint(endpoint: &str) -> Option<&'static str> {
-    let path = endpoint.trim_start_matches("/rest");
     mtui_core::ALL_RESOURCES
         .iter()
-        .find(|spec| spec.endpoint().trim_start_matches("/rest") == path)
+        .find(|spec| spec.endpoint() == endpoint)
         .map(|spec| spec.id)
 }
 
@@ -1537,7 +1536,7 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Delete {
-                endpoint: "/rest/ipv6/firewall/connection".into(),
+                endpoint: "/ipv6/firewall/connection".into(),
                 id: "*36".into(),
             })
             .expect("delete");
@@ -1551,7 +1550,7 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/container".into(),
+                endpoint: "/container".into(),
                 command: "start".into(),
                 fields: BTreeMap::from([(".id".into(), "*c1".into())]),
             })
@@ -1652,7 +1651,7 @@ mod tests {
         );
         assert_eq!(
             store.apply(&MutationOp::Patch {
-                endpoint: "/rest/tool/romon".into(),
+                endpoint: "/tool/romon".into(),
                 id: None,
                 fields: BTreeMap::from([("enabled".into(), "true".into())]),
             }),
@@ -1666,7 +1665,7 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/system/history".into(),
+                endpoint: "/system/history".into(),
                 command: "undo".into(),
                 fields: BTreeMap::from([(".id".into(), "*h1".into())]),
             })
@@ -1684,7 +1683,7 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "take".into(),
                 fields: BTreeMap::new(),
             })
@@ -1714,14 +1713,14 @@ mod tests {
         let mut store = DemoStore::new();
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "take".into(),
                 fields: BTreeMap::new(),
             })
             .expect("take");
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "unroll".into(),
                 fields: BTreeMap::new(),
             })
@@ -1731,14 +1730,14 @@ mod tests {
         assert_eq!(row.field("current"), Some("false"));
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "take".into(),
                 fields: BTreeMap::new(),
             })
             .expect("take again");
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/safe-mode".into(),
+                endpoint: "/safe-mode".into(),
                 command: "release".into(),
                 fields: BTreeMap::new(),
             })
@@ -1755,7 +1754,7 @@ mod tests {
         fields.insert(".id".into(), "*30".into());
         store
             .apply(&MutationOp::Command {
-                endpoint: "/rest/ip/firewall/filter".into(),
+                endpoint: "/ip/firewall/filter".into(),
                 command: "disable".into(),
                 fields,
             })
