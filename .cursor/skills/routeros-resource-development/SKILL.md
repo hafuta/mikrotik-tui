@@ -25,10 +25,12 @@ description: Develop and review MikroTik RouterOS resources, API mappings, mutat
    exists; the CLI reference URL is derived from the resource path.
 10. Group property-sheet fields using the tab rules below. Do not invent a
    “tiny General / leftover Advanced” split.
-11. When moving a whole navigation group out of `LEGACY_RESOURCES`, follow
-    `.cursor/skills/feature-extraction/SKILL.md` (hybrid catalog, facades,
-    New/Status, Enabled inverted toggle). This skill stays the field-kind
-    and section vocabulary.
+11. The catalog is fully owned. Every `NAVIGATION` group lives under
+    `crates/mtui-core/src/features/<name>/` (resources, forms, guides,
+    rules, tests). Add or change a screen in that tree. `LEGACY_RESOURCES`
+    is empty — do not resurrect a leftover table. Write modules
+    (`system_write.rs`, `routing_write.rs`, …) are facades. New/Status and
+    Enabled inverted toggle rules in this skill still apply.
 
 ## Field kinds
 
@@ -59,10 +61,16 @@ keystrokes; do not show a validation message. Do not retag Text fields
 as Number just to get this filter.
 
 When WebFig **shows or hides** a control based on Type, format, or another
-selection, encode that in `field_visible`. Render only associated fields.
+selection, encode that in the feature `rules.rs` `form_field_state` (wired
+from `forms.rs` `declared_field_state`). Render only associated fields.
 Do not keep a flat list of inapplicable rows and mark them locked. Locked
 is for Status / `FieldKind::Readonly` (or a control that is present but
 not editable). Hidden fields must not be typed, cycled, or sent on save.
+
+Chip- or board-only print keys (Switch `cpu-flow-control`, RouterBOARD
+`cpu-frequency`) use `FieldPredicate::HasKey` so the row appears only when
+that print included the key. Enum pickers must keep a printed value that
+is not in the static list.
 
 `field_enabled` is the edit/save gate. For Logging Actions it follows
 visibility: Type `memory` shows Memory Lines; `remote` shows Remote
@@ -83,7 +91,7 @@ bounded scroll viewport, Enter to set the API value.
 
 ## Property-sheet sections
 
-Schemas live in `mtui-core` (feature `forms.rs` for isolated groups). Add
+Schemas live in `mtui-core` feature `forms.rs` (or `forms/` when split). Add
 and Edit are **one vertically scrollable sheet** with inline WebFig section
 headings. Do not add section tabs. Omit a heading when it would have no
 fields.
