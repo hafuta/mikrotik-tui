@@ -64,16 +64,32 @@ impl DemoStore {
     }
 
     #[must_use]
+    pub fn lookup_options(
+        &self,
+        resource_id: &str,
+        value_key: &str,
+    ) -> Vec<mtui_core::LookupOption> {
+        let mut options: Vec<mtui_core::LookupOption> = Vec::new();
+        for row in self.rows(resource_id) {
+            let Some(value) = row.field(value_key).filter(|value| !value.is_empty()) else {
+                continue;
+            };
+            if options.iter().any(|option| option.value == value) {
+                continue;
+            }
+            options.push(mtui_core::LookupOption::from_fields(value, &row.fields));
+        }
+        options.sort_by(|left, right| left.value.cmp(&right.value));
+        options
+    }
+
+    #[cfg(test)]
+    #[must_use]
     pub fn lookup_values(&self, resource_id: &str, value_key: &str) -> Vec<String> {
-        let mut values: Vec<String> = self
-            .rows(resource_id)
+        self.lookup_options(resource_id, value_key)
             .into_iter()
-            .filter_map(|row| row.field(value_key).map(str::to_string))
-            .filter(|value| !value.is_empty())
-            .collect();
-        values.sort();
-        values.dedup();
-        values
+            .map(|option| option.value)
+            .collect()
     }
 
     pub fn apply(&mut self, op: &MutationOp) -> Result<(), String> {
@@ -1364,7 +1380,7 @@ pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>>
             session: *session,
             request_id: *request_id,
             generation: *generation,
-            options: store.lookup_values(resource_id, value_key),
+            options: store.lookup_options(resource_id, value_key),
             error: None,
         }]),
         AppCommand::FetchFormRecord {

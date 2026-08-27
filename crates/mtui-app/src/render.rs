@@ -353,7 +353,7 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
     fill_rect(frame, chunks[0], styles.band);
     let header = session_header(
-        "mikrotik-tui",
+        "routeros-tui",
         &app.session_identity(),
         &app.header_signals(),
         &app.safe_mode_signals(),

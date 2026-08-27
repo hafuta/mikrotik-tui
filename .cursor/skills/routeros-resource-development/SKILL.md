@@ -41,10 +41,14 @@ API key is not the control: `/system logging action` stores Type as
 
 | WebFig / WinBox control | `FieldKind` |
 |---|---|
-| Combo with a fixed RouterOS enum | `Enum { values }` (API strings: `udp`, `memory`, `default`) |
-| Combo of other objects (VRF, script, interface, logging action name) | `Lookup { resource_id, value_key, multiple }` |
+| Combo with a fixed RouterOS enum | `Enum { values }` (API strings: `udp`, `memory`, `default`). Lists are observed, not closed: keep a printed value that is not in the static list. Same for `LabeledEnum`. |
+| Combo of other objects (VRF, script, interface, logging action name) | `Lookup { resource_id, value_key, multiple }`. Disabled/dynamic rows stay selectable; annotate them, do not treat them as errors. |
 | Checkbox / yes-no | `Toggle` |
+| Presence flag (`blackhole`, `fib`) | `Flag` (checkbox; REST `true`/`false`; omit off on create unless turning an existing flag off) |
 | Number spinner | `Number` (ASCII digits only; `port` / `*-port` cap at 5 digits) |
+| IP / prefix | `Ip` / `Ipv6` |
+| MAC | `Mac` |
+| RouterOS time (`1d02:03:04`, `10s`) | `Time` |
 | Password / secret | `Secret` |
 | Free text | `Text` |
 | Repeater (`+` rows: addresses, VLAN IDs, servers) | `Repeat` (stored as a comma list) |

@@ -149,10 +149,10 @@ pub static CONTAINER_FORM: FormSchema = FormSchema {
                         values: RESTART_POLICY,
                     }
                 ),
-                f!("restart-interval", "Restart Interval", FieldKind::Text),
+                f!("restart-interval", "Restart Interval", FieldKind::Time),
                 f!("restart-max-count", "Restart Max Count", FieldKind::Number),
                 f!("stop-signal", "Stop Signal", FieldKind::Text),
-                f!("stop-time", "Stop Time", FieldKind::Text),
+                f!("stop-time", "Stop Time", FieldKind::Time),
                 f!("user", "User", FieldKind::Text),
                 f!("devices", "Devices", FieldKind::Text),
                 f!("cpu-list", "CPU List", FieldKind::Text),

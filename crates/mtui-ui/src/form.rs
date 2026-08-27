@@ -3,9 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use mtui_core::{
-    FieldKind, FieldSpec, FormSchema, FormSection, ScalarKind, default_writable_value,
-    extra_status_fields, field_enabled, field_visible, join_ros_list, prepare_lookup_options,
-    split_ros_list, with_leading_none,
+    FieldKind, FieldSpec, FormSchema, FormSection, LookupOption, ScalarKind,
+    default_writable_value, extra_status_fields, field_enabled, field_visible, join_ros_list,
+    prepare_lookup_options, split_ros_list, with_leading_none,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -166,6 +166,7 @@ pub struct LookupPicker {
     /// Wire value to display label for typed enum choices.
     pub labels: HashMap<String, String>,
     pub selected: Vec<String>,
+    pub flags: HashMap<String, LookupOption>,
     pub focus: usize,
     pub loading: bool,
     pub error: Option<String>,
@@ -732,7 +733,7 @@ impl FormSession {
             return;
         }
         match field.kind {
-            FieldKind::Toggle | FieldKind::InvertedToggle => {
+            FieldKind::Toggle | FieldKind::InvertedToggle | FieldKind::Flag => {
                 let now = self.values.get(field.key).map_or("false", String::as_str);
                 let next = if matches!(now, "true" | "yes" | "1") {
                     "false"
@@ -765,6 +766,7 @@ impl FormSession {
                     options,
                     labels: HashMap::new(),
                     selected: Vec::new(),
+                    flags: HashMap::new(),
                     focus,
                     loading: false,
                     error: None,
@@ -793,6 +795,7 @@ impl FormSession {
                     options: Vec::new(),
                     labels: HashMap::new(),
                     selected,
+                    flags: HashMap::new(),
                     focus: 0,
                     loading: true,
                     error: None,
@@ -806,10 +809,13 @@ impl FormSession {
 
     fn open_static_picker(&mut self, field_key: &str, choices: &[mtui_core::EnumChoice]) {
         let now = self.values.get(field_key).cloned().unwrap_or_default();
-        let options: Vec<String> = choices
+        let mut options: Vec<String> = choices
             .iter()
             .map(|choice| choice.value.to_string())
             .collect();
+        if !now.is_empty() && !options.iter().any(|option| option == &now) {
+            options.push(now.clone());
+        }
         let labels = choices
             .iter()
             .map(|choice| (choice.value.to_string(), choice.label.to_string()))
@@ -831,6 +837,7 @@ impl FormSession {
             options,
             labels,
             selected: Vec::new(),
+            flags: HashMap::new(),
             focus,
             loading: false,
             error: None,
@@ -939,7 +946,7 @@ impl FormSession {
         &mut self,
         request_id: u64,
         generation: u64,
-        options: Vec<String>,
+        options: Vec<LookupOption>,
         error: Option<String>,
     ) -> bool {
         let Some(picker) = &self.lookup else {
@@ -957,15 +964,24 @@ impl FormSession {
         let picker = self.lookup.as_mut().expect("lookup still open");
         picker.loading = false;
         picker.error = error;
-        let options = prepare_lookup_options(&sheet_id, picker.resource_id, options);
+        picker.flags = options
+            .iter()
+            .filter(|option| option.disabled || option.dynamic)
+            .map(|option| (option.value.clone(), option.clone()))
+            .collect();
+        let values: Vec<String> = options.into_iter().map(|option| option.value).collect();
+        let values = prepare_lookup_options(&sheet_id, picker.resource_id, values);
         picker.options = if matches!(
             picker.field_key.as_str(),
             "raid-master" | "media-interface" | "crypted-backend"
         ) {
-            with_leading_none(options)
+            with_leading_none(values)
         } else {
-            options
+            values
         };
+        if !current.is_empty() && !picker.options.iter().any(|option| option == &current) {
+            picker.options.push(current.clone());
+        }
         let filtered = filtered_picker_options(picker);
         if picker.focus >= filtered.len() {
             picker.focus = filtered.len().saturating_sub(1);
@@ -1647,7 +1663,13 @@ fn lookup_picker_lines(
             .get(option)
             .cloned()
             .unwrap_or_else(|| enum_display_value(&picker.field_key, option));
-        let body = format!("{caret} {mark}{label}");
+        let note = picker
+            .flags
+            .get(option)
+            .and_then(LookupOption::annotation)
+            .map(|note| format!("  {note}"))
+            .unwrap_or_default();
+        let body = format!("{caret} {mark}{label}{note}");
         let style = if idx == picker.focus {
             styles.focus
         } else {
@@ -1848,7 +1870,7 @@ mod retired_row_rendering {
             );
         }
         match field.kind {
-            FieldKind::Toggle | FieldKind::InvertedToggle => {
+            FieldKind::Toggle | FieldKind::InvertedToggle | FieldKind::Flag => {
                 toggle_control(field.kind.toggle_is_on(raw), locked, focused, width, styles)
             }
             FieldKind::Enum { .. } | FieldKind::LabeledEnum { .. } | FieldKind::Lookup { .. } => {
@@ -2477,6 +2499,72 @@ mod tests {
         let picker = session.lookup.as_ref().expect("picker");
         assert_eq!(picker.options, ["auto", "716MHz", "500MHz"]);
         assert_eq!(picker.focus, 2);
+    }
+
+    #[test]
+    fn labeled_enum_picker_keeps_printed_value_not_in_static_list() {
+        const CHOICES: &[mtui_core::EnumChoice] = &[mtui_core::EnumChoice {
+            label: "Automatic",
+            value: "auto",
+        }];
+        let schema = FormSchema {
+            title_key: "speed",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "speed",
+                    label: "Speed",
+                    kind: FieldKind::LabeledEnum { choices: CHOICES },
+                }],
+            }],
+            create_sections: &[],
+        };
+        let mut row = HashMap::new();
+        row.insert("speed".into(), "board-only".into());
+        let mut session = FormSession::edit("ethernet", "*0", &row, &schema);
+        session.activate(&schema);
+        let picker = session.lookup.as_ref().expect("picker");
+        assert_eq!(picker.options, ["auto", "board-only"]);
+        assert_eq!(picker.focus, 1);
+    }
+
+    #[test]
+    fn lookup_keeps_printed_value_and_annotates_disabled() {
+        let (schema, mut session) = lookup_session();
+        session.values.insert("interface".into(), "vlan99".into());
+        session.activate(&schema);
+        let picker = session.lookup.as_mut().expect("picker");
+        picker.request_id = 1;
+        let generation = picker.generation;
+        assert!(session.apply_lookup_result(
+            1,
+            generation,
+            vec![
+                LookupOption {
+                    value: "ether1".into(),
+                    disabled: true,
+                    dynamic: false,
+                },
+                LookupOption::plain("ether2"),
+            ],
+            None,
+        ));
+        let picker = session.lookup.as_ref().expect("picker");
+        assert_eq!(picker.options, ["ether1", "ether2", "vlan99"]);
+        assert!(picker.flags.get("ether1").is_some_and(|row| row.disabled));
+        assert!(!picker.flags.contains_key("ether2"));
+        let theme = DefaultTheme::new();
+        let rendered = lookup_picker_lines(picker, 40, 8, &Styles::from_palette(theme.palette()));
+        let body: String = rendered
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert!(body.contains("disabled"), "{body}");
+        assert!(body.contains("vlan99"), "{body}");
     }
 
     #[test]

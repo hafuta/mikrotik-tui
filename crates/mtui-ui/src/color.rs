@@ -6,7 +6,7 @@
 //! wash the screen green. Those builds get indexed-256 colors instead.
 //!
 //! Detection is capability-based, not “every `Apple_Terminal`”:
-//! 1. `MIKROTIK_TUI_COLOR` (`auto` / `truecolor` / `256`)
+//! 1. `ROUTEROS_TUI_COLOR` (`auto` / `truecolor` / `256`)
 //! 2. `COLORTERM=truecolor|24bit`
 //! 3. `TERM` ending in `-direct` or containing `truecolor`
 //! 4. `TERM_PROGRAM=Apple_Terminal` below the Tahoe cutoff → 256
@@ -55,7 +55,7 @@ impl ColorDepth {
         let mut override_color = None;
         for (key, value) in vars {
             match key.as_ref() {
-                "MIKROTIK_TUI_COLOR" => override_color = Some(value.as_ref().to_string()),
+                "ROUTEROS_TUI_COLOR" => override_color = Some(value.as_ref().to_string()),
                 "COLORTERM" => colorterm = Some(value.as_ref().to_string()),
                 "TERM" => term = Some(value.as_ref().to_string()),
                 "TERM_PROGRAM" => program = Some(value.as_ref().to_string()),
@@ -296,7 +296,7 @@ mod tests {
     fn override_forces_256() {
         assert_eq!(
             depth(&[
-                ("MIKROTIK_TUI_COLOR", "256"),
+                ("ROUTEROS_TUI_COLOR", "256"),
                 ("COLORTERM", "truecolor"),
                 ("TERM_PROGRAM", "iTerm.app"),
             ]),

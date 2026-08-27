@@ -19,6 +19,56 @@ pub struct EnumChoice {
     pub value: &'static str,
 }
 
+/// One live lookup candidate, including object flags that are not errors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LookupOption {
+    pub value: String,
+    pub disabled: bool,
+    pub dynamic: bool,
+}
+
+impl LookupOption {
+    #[must_use]
+    pub fn plain(value: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+            disabled: false,
+            dynamic: false,
+        }
+    }
+
+    #[must_use]
+    pub fn from_fields(value: impl Into<String>, fields: &HashMap<String, String>) -> Self {
+        Self {
+            value: value.into(),
+            disabled: toggle_wire_on(fields.get("disabled").map_or("", String::as_str)),
+            dynamic: toggle_wire_on(fields.get("dynamic").map_or("", String::as_str)),
+        }
+    }
+
+    #[must_use]
+    pub fn annotation(&self) -> Option<&'static str> {
+        match (self.disabled, self.dynamic) {
+            (true, true) => Some("disabled dynamic"),
+            (true, false) => Some("disabled"),
+            (false, true) => Some("dynamic"),
+            (false, false) => None,
+        }
+    }
+}
+
+impl From<String> for LookupOption {
+    fn from(value: String) -> Self {
+        Self::plain(value)
+    }
+}
+
+impl From<&str> for LookupOption {
+    fn from(value: &str) -> Self {
+        Self::plain(value)
+    }
+}
+
 /// Scalar controls that can be collapsed behind an optional `+` affordance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScalarKind {
@@ -46,6 +96,11 @@ pub enum FieldKind {
     Mac,
     Raw,
     Toggle,
+    /// Presence-style `RouterOS` argument (`blackhole`, `fib`).
+    ///
+    /// The control is a checkbox. REST still sends `true`/`false`; an off
+    /// flag is omitted from create/PATCH unless the printed row was on.
+    Flag,
     /// Checkbox whose checked state is the inverse of the wire value.
     ///
     /// The `Enabled` control stores `disabled=false` when checked.
@@ -94,6 +149,7 @@ impl FieldKind {
             Self::Mac => "mac",
             Self::Raw => "raw",
             Self::Toggle | Self::InvertedToggle => "toggle",
+            Self::Flag => "flag",
             Self::Enum { .. } | Self::LabeledEnum { .. } => "select",
             Self::Readonly => "read",
             Self::Secret => "secret",
@@ -117,7 +173,7 @@ impl FieldKind {
             | Self::Raw
             | Self::Secret
             | Self::Repeat => "type value",
-            Self::Toggle | Self::InvertedToggle => "space toggle",
+            Self::Toggle | Self::InvertedToggle | Self::Flag => "space toggle",
             Self::Enum { .. } | Self::LabeledEnum { .. } | Self::Lookup { .. } => "space pick",
             Self::Readonly => "read only",
             Self::Optional { kind, .. } => kind.edit_hint(),
@@ -197,11 +253,11 @@ impl FieldKind {
                     "yes".to_string()
                 }
             }
-            Self::Toggle => {
+            Self::Toggle | Self::Flag => {
                 if toggle_wire_on(raw) {
-                    "on".to_string()
+                    "yes".to_string()
                 } else {
-                    "off".to_string()
+                    "no".to_string()
                 }
             }
             _ => raw.to_string(),
@@ -210,7 +266,7 @@ impl FieldKind {
 
     #[must_use]
     pub fn is_toggle(self) -> bool {
-        matches!(self, Self::Toggle | Self::InvertedToggle)
+        matches!(self, Self::Toggle | Self::InvertedToggle | Self::Flag)
     }
 
     #[must_use]
@@ -233,7 +289,6 @@ impl FieldKind {
             Self::Ip => valid_ip_or_prefix(value),
             Self::Ipv6 => valid_ipv6_or_prefix(value),
             Self::Mac => valid_mac(value),
-            Self::LabeledEnum { choices } => choices.iter().any(|choice| choice.value == value),
             Self::Optional { kind, unset, .. } => value == unset || kind.validate(value),
             _ => true,
         }
@@ -289,8 +344,7 @@ impl ScalarKind {
             Self::Ip => valid_ip_or_prefix(value),
             Self::Ipv6 => valid_ipv6_or_prefix(value),
             Self::Mac => valid_mac(value),
-            Self::Enum { choices } => choices.iter().any(|choice| choice.value == value),
-            Self::Text | Self::Raw => true,
+            Self::Enum { .. } | Self::Text | Self::Raw => true,
         }
     }
 }
@@ -1008,7 +1062,19 @@ pub fn form_mutation_body(
     masked_token: &str,
 ) -> BTreeMap<String, String> {
     let mut body = patch_body(schema, original, current, masked_token);
-    body.retain(|key, _| field_enabled(resource_id, key, current));
+    body.retain(|key, value| {
+        if !field_enabled(resource_id, key, current) {
+            return false;
+        }
+        if schema
+            .field(key)
+            .is_some_and(|field| matches!(field.kind, FieldKind::Flag))
+            && !toggle_wire_on(value)
+        {
+            return original.get(key).is_some_and(|was| toggle_wire_on(was));
+        }
+        true
+    });
     body
 }
 
@@ -1619,7 +1685,8 @@ mod tests {
         assert_eq!(kind.display_value("1G-baseT-full"), "1 Gbps");
         assert_eq!(default_writable_value(kind), "auto");
         assert!(kind.validate("1G-baseT-full"));
-        assert!(!kind.validate("1 Gbps"));
+        assert!(kind.validate("board-only-speed"));
+        assert_eq!(kind.display_value("board-only-speed"), "board-only-speed");
     }
 
     #[test]
@@ -1667,5 +1734,61 @@ mod tests {
         assert_eq!(body.get("authentication").map(String::as_str), Some("none"));
         assert!(!body.contains_key("password"));
         assert!(!body.contains_key("running"));
+    }
+
+    #[test]
+    fn flag_mutation_omits_off_unless_turning_an_existing_flag_off() {
+        let schema = FormSchema {
+            title_key: "dst-address",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "blackhole",
+                    label: "Blackhole",
+                    kind: FieldKind::Flag,
+                }],
+            }],
+            create_sections: &[],
+        };
+        let body = form_mutation_body(
+            "routes",
+            &schema,
+            &HashMap::new(),
+            &HashMap::from([("blackhole".into(), "false".into())]),
+            "********",
+        );
+        assert!(!body.contains_key("blackhole"));
+
+        let body = form_mutation_body(
+            "routes",
+            &schema,
+            &HashMap::new(),
+            &HashMap::from([("blackhole".into(), "true".into())]),
+            "********",
+        );
+        assert_eq!(body.get("blackhole").map(String::as_str), Some("true"));
+
+        let body = form_mutation_body(
+            "routes",
+            &schema,
+            &HashMap::from([("blackhole".into(), "true".into())]),
+            &HashMap::from([("blackhole".into(), "false".into())]),
+            "********",
+        );
+        assert_eq!(body.get("blackhole").map(String::as_str), Some("false"));
+    }
+
+    #[test]
+    fn lookup_option_annotations_are_live_state_not_errors() {
+        let option = LookupOption {
+            value: "ether2".into(),
+            disabled: true,
+            dynamic: true,
+        };
+        assert_eq!(option.annotation(), Some("disabled dynamic"));
+        assert_eq!(LookupOption::plain("ether1").annotation(), None);
     }
 }

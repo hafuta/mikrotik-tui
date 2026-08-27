@@ -55,7 +55,7 @@ const LOOKUP_IPV6_ADDRESS_LIST: FieldKind = FieldKind::Lookup {
     multiple: false,
 };
 
-const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Text);
+const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ipv6);
 const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const ENABLED: FieldSpec = f!("disabled", "Enabled", FieldKind::InvertedToggle);
@@ -80,8 +80,8 @@ const NAT_CHAIN: FieldSpec = f!(
     }
 );
 const ADDRESS_POOL: FieldSpec = f!("address-pool", "Address pool", LOOKUP_IPV6_POOL);
-const SRC_ADDRESS: FieldSpec = f!("src-address", "Src address", FieldKind::Text);
-const DST_ADDRESS: FieldSpec = f!("dst-address", "Dst address", FieldKind::Text);
+const SRC_ADDRESS: FieldSpec = f!("src-address", "Src address", FieldKind::Ipv6);
+const DST_ADDRESS: FieldSpec = f!("dst-address", "Dst address", FieldKind::Ipv6);
 const SRC_ADDRESS_LIST: FieldSpec = f!(
     "src-address-list",
     "Src address list",
@@ -93,7 +93,7 @@ const DST_ADDRESS_LIST: FieldSpec = f!(
     LOOKUP_IPV6_ADDRESS_LIST
 );
 const ADDRESS_LIST_NAME: FieldSpec = f!("list", "List", LOOKUP_IPV6_ADDRESS_LIST);
-const PREFIX: FieldSpec = f!("prefix", "Prefix", FieldKind::Text);
+const PREFIX: FieldSpec = f!("prefix", "Prefix", FieldKind::Ipv6);
 
 pub static IPV6_ADDRESS_FORM: FormSchema = FormSchema {
     title_key: "address",
@@ -140,7 +140,7 @@ pub static IPV6_NEIGHBOR_FORM: FormSchema = FormSchema {
             fields: &[
                 ADDRESS,
                 INTERFACE,
-                f!("mac-address", "MAC address", FieldKind::Text),
+                f!("mac-address", "MAC address", FieldKind::Mac),
                 COMMENT,
             ],
         },
@@ -166,9 +166,9 @@ pub static IPV6_ND_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             INTERFACE,
-            f!("ra-interval", "RA interval", FieldKind::Text),
-            f!("ra-delay", "RA delay", FieldKind::Text),
-            f!("mtu", "MTU", FieldKind::Text),
+            f!("ra-interval", "RA interval", FieldKind::Time),
+            f!("ra-delay", "RA delay", FieldKind::Time),
+            f!("mtu", "MTU", FieldKind::Number),
             f!("advertise-mac-address", "Advertise MAC", FieldKind::Toggle),
             f!("advertise-dns", "Advertise DNS", FieldKind::Toggle),
             COMMENT,
@@ -187,10 +187,11 @@ pub static IPV6_ROUTE_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                f!("dst-address", "Dst address", FieldKind::Text),
+                f!("dst-address", "Dst address", FieldKind::Ipv6),
                 f!("gateway", "Gateway", FieldKind::Text),
-                f!("distance", "Distance", FieldKind::Text),
+                f!("distance", "Distance", FieldKind::Number),
                 ROUTING_TABLE,
+                f!("blackhole", "Blackhole", FieldKind::Flag),
                 COMMENT,
                 ENABLED,
             ],
@@ -364,7 +365,7 @@ pub static IPV6_FIREWALL_NAT_FORM: FormSchema = FormSchema {
                 DST_ADDRESS,
                 DST_ADDRESS_LIST,
                 f!("dst-port", "Dst port", FieldKind::Text),
-                f!("to-addresses", "To addresses", FieldKind::Text),
+                f!("to-addresses", "To addresses", FieldKind::Ipv6),
                 f!("to-ports", "To ports", FieldKind::Text),
                 IN_INTERFACE,
                 IN_INTERFACE_LIST,

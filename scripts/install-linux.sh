@@ -1,18 +1,19 @@
 #!/bin/sh
-# Install or upgrade mikrotik-tui from the latest GitHub Release.
+# Install or upgrade routeros-tui from the latest GitHub Release.
 # Linux amd64 / arm64 only. Do not run this on macOS or Windows.
 #
-#   curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh -s -- --yes
+#   curl -fsSL https://raw.githubusercontent.com/hafuta/routeros-tui/master/scripts/install-linux.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/hafuta/routeros-tui/master/scripts/install-linux.sh | sh -s -- --yes
 set -eu
 
-REPO="${MIKROTIK_TUI_INSTALL_REPO:-hafuta/mikrotik-tui}"
-BIN="mikrotik-tui"
+REPO="${ROUTEROS_TUI_INSTALL_REPO:-hafuta/routeros-tui}"
+BIN="routeros-tui"
+LEGACY_BIN="mikrotik-tui"
 RELEASES="https://github.com/${REPO}/releases"
 
 YES=0
 FORCE=0
-PREFIX="${MIKROTIK_TUI_INSTALL_PREFIX:-}"
+PREFIX="${ROUTEROS_TUI_INSTALL_PREFIX:-}"
 
 usage() {
   cat <<EOF
@@ -124,7 +125,7 @@ file_sha256() {
 }
 
 bin_version() {
-  # clap: "mikrotik-tui 0.1.5"
+  # clap: "routeros-tui 0.1.5"
   _ver_out=$("$1" --version 2>/dev/null) || { printf 'unknown'; return 0; }
   set -- $_ver_out
   while [ "$#" -gt 0 ]; do
@@ -186,6 +187,8 @@ add_prefix_candidate() {
 existing_bin_dir() {
   if command -v "$BIN" >/dev/null 2>&1; then
     dirname "$(command -v "$BIN")"
+  elif command -v "$LEGACY_BIN" >/dev/null 2>&1; then
+    dirname "$(command -v "$LEGACY_BIN")"
   fi
 }
 
@@ -388,6 +391,8 @@ if command -v "$BIN" >/dev/null 2>&1; then
   if [ "$_onpath" != "$dest" ]; then
     log "note: another ${BIN} is on PATH at ${_onpath}"
   fi
+elif command -v "$LEGACY_BIN" >/dev/null 2>&1; then
+  log "note: ${LEGACY_BIN} is still on PATH; the command is now ${BIN}"
 fi
 
 log "installing ${BIN} ${new_ver} to ${dest} ($(prefix_note "$PREFIX"))"

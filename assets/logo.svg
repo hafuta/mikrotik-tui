@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="RouterOS TUI">
+  <rect x="14" y="14" width="228" height="228" rx="52" fill="#E8F2FB" stroke="#8BB8E0" stroke-width="4"/>
+  <g transform="translate(128 122)">
+    <text
+      x="0"
+      y="0"
+      text-anchor="middle"
+      dominant-baseline="central"
+      font-family="Segoe UI, Inter, Helvetica Neue, Arial, sans-serif"
+      font-size="92"
+      font-weight="700"
+      fill="#3B82F6"
+    >RT</text>
+    <rect x="-40" y="38" width="80" height="14" rx="7" fill="#2EC4A3"/>
+  </g>
+</svg>

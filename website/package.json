@@ -1,5 +1,5 @@
 {
-  "name": "mikrotik-tui-site",
+  "name": "routeros-tui-site",
   "private": true,
   "license": "MIT",
   "type": "module",

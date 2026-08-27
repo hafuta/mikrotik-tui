@@ -749,18 +749,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "mikrotik-tui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "mtui-app",
- "mtui-config",
- "mtui-core",
- "tracing",
-]
-
-[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1131,6 +1119,18 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "routeros-tui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "mtui-app",
+ "mtui-config",
+ "mtui-core",
+ "tracing",
 ]
 
 [[package]]

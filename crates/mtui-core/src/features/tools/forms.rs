@@ -72,9 +72,9 @@ pub static NETWATCH_FORM: FormSchema = FormSchema {
                         values: NETWATCH_TYPE,
                     }
                 ),
-                f!("interval", "Interval", FieldKind::Text),
-                f!("timeout", "Timeout", FieldKind::Text),
-                f!("start-delay", "Start delay", FieldKind::Text),
+                f!("interval", "Interval", FieldKind::Time),
+                f!("timeout", "Timeout", FieldKind::Time),
+                f!("start-delay", "Start delay", FieldKind::Time),
                 UP_SCRIPT,
                 DOWN_SCRIPT,
                 COMMENT,
@@ -222,7 +222,7 @@ pub static GRAPHING_FORM: FormSchema = FormSchema {
                     values: STORE_EVERY,
                 }
             ),
-            f!("page-refresh", "Page Refresh", FieldKind::Text),
+            f!("page-refresh", "Page Refresh", FieldKind::Time),
         ],
     }],
     create_sections: &[],

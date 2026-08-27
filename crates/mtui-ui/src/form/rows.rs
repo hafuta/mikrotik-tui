@@ -136,7 +136,7 @@ fn field_control(
         );
     }
     match field.kind {
-        FieldKind::Toggle | FieldKind::InvertedToggle => {
+        FieldKind::Toggle | FieldKind::InvertedToggle | FieldKind::Flag => {
             toggle_control(field.kind.toggle_is_on(raw), locked, focused, width, styles)
         }
         FieldKind::Enum { .. } | FieldKind::LabeledEnum { .. } | FieldKind::Lookup { .. } => {
@@ -319,7 +319,7 @@ fn toggle_control(
     styles: &Styles,
 ) -> Vec<Span<'static>> {
     let mark = if on { "[x]" } else { "[ ]" };
-    let word = if on { "on" } else { "off" };
+    let word = if on { "yes" } else { "no" };
     let mark_style = if focused && !locked {
         styles.focus
     } else if on {

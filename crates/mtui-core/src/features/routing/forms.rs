@@ -98,7 +98,7 @@ pub static ROUTING_TABLE_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, f!("fib", "FIB", FieldKind::Toggle), COMMENT],
+        fields: &[NAME, f!("fib", "FIB", FieldKind::Flag), COMMENT],
     }],
     create_sections: &[],
 };
@@ -111,8 +111,8 @@ pub static ROUTING_RULE_FORM: FormSchema = FormSchema {
         label: "General",
         read_only: false,
         fields: &[
-            f!("src-address", "Src. Address", FieldKind::Text),
-            f!("dst-address", "Dst. Address", FieldKind::Text),
+            f!("src-address", "Src. Address", FieldKind::Ip),
+            f!("dst-address", "Dst. Address", FieldKind::Ip),
             f!("routing-mark", "Routing Mark", FieldKind::Text),
             f!(
                 "action",
@@ -145,7 +145,7 @@ pub static OSPF_INSTANCE_FORM: FormSchema = FormSchema {
                     values: OSPF_VERSION_VALUES,
                 }
             ),
-            f!("router-id", "Router ID", FieldKind::Text),
+            f!("router-id", "Router ID", FieldKind::Ip),
             f!(
                 "originate-default",
                 "Originate Default",
@@ -170,7 +170,7 @@ pub static OSPF_AREA_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             OSPF_INSTANCE,
-            f!("area-id", "Area ID", FieldKind::Text),
+            f!("area-id", "Area ID", FieldKind::Ip),
             f!(
                 "type",
                 "Type",
@@ -244,7 +244,7 @@ pub static BGP_CONNECTION_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("remote.address", "Remote Address", FieldKind::Text),
+            f!("remote.address", "Remote Address", FieldKind::Ip),
             f!("remote.as", "Remote AS", FieldKind::Text),
             f!(
                 "local.role",
@@ -253,7 +253,7 @@ pub static BGP_CONNECTION_FORM: FormSchema = FormSchema {
                     values: BGP_LOCAL_ROLE_VALUES,
                 }
             ),
-            f!("local.address", "Local Address", FieldKind::Text),
+            f!("local.address", "Local Address", FieldKind::Ip),
             f!("connect", "Connect", FieldKind::Toggle),
             f!("listen", "Listen", FieldKind::Toggle),
             COMMENT,
@@ -273,7 +273,7 @@ pub static BGP_TEMPLATE_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             f!("as", "AS", FieldKind::Text),
-            f!("router-id", "Router ID", FieldKind::Text),
+            f!("router-id", "Router ID", FieldKind::Ip),
             f!("address-families", "Address Families", FieldKind::Repeat),
             f!("output.network", "Output Network", FieldKind::Text),
             COMMENT,

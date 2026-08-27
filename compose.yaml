@@ -1,11 +1,11 @@
 services:
-  mikrotik-tui:
+  routeros-tui:
     build: .
     network_mode: host
     stdin_open: true
     tty: true
     volumes:
-      - mikrotik-tui-data:/data
+      - routeros-tui-data:/data
 
 volumes:
-  mikrotik-tui-data:
+  routeros-tui-data:

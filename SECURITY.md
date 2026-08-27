@@ -1,6 +1,6 @@
 # Security
 
-MikroTik TUI mutates RouterOS through confirmed actions and property sheets.
+RouterOS TUI mutates RouterOS through confirmed actions and property sheets.
 It still handles credentials that can be valuable on a local network.
 
 - Use a dedicated RouterOS user with only the permissions required for the

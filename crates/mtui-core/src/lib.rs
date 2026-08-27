@@ -53,7 +53,7 @@ pub use features::interfaces::actions::INTERFACE_CREATE_TARGETS;
 pub use features::interfaces::edit_resource_for_interface_type;
 pub use forms::{
     BoxedFieldPredicate, EnumChoice, FieldKind, FieldPredicate, FieldRule, FieldSpec, FormSchema,
-    FormSection, ScalarKind, accepts_constrained_number_char, accepts_number_char,
+    FormSection, LookupOption, ScalarKind, accepts_constrained_number_char, accepts_number_char,
     default_writable_value, evaluate_field_rules, extra_status_fields, field_enabled,
     field_visible, form_mutation_body, join_ros_list, patch_body, prepare_lookup_options,
     preview_changes, split_ros_list, validate_form_values, with_leading_all, with_leading_none,

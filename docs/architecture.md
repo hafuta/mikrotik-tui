@@ -2,7 +2,7 @@
 
 ## Dependency direction
 
-`mikrotik-tui` composes `mtui-app`. `mtui-app` depends on `mtui-ui`,
+`routeros-tui` composes `mtui-app`. `mtui-app` depends on `mtui-ui`,
 `mtui-routeros`, `mtui-config`, and `mtui-core`. `mtui-ui` contains no
 networking or persistence. `mtui-routeros` contains no terminal code.
 `mtui-core` holds the resource catalog and theme palettes only.
@@ -78,6 +78,6 @@ is present.
 
 **System → Regulatory** (country / wireless regulatory domain) is omitted on
 purpose. It is not a catalog screen under System submenu parity
-(https://github.com/hafuta/mikrotik-tui/milestone/12). Do not add
+(https://github.com/hafuta/routeros-tui/milestone/12). Do not add
 `regulatory` / `/system/regulatory` later as an inspect-driven gap; wireless
 country rules are out of scope for this TUI.

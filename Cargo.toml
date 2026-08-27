@@ -6,7 +6,7 @@ members = [
     "crates/mtui-config",
     "crates/mtui-ui",
     "crates/mtui-app",
-    "crates/mikrotik-tui",
+    "crates/routeros-tui",
 ]
 
 [workspace.package]
@@ -15,7 +15,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
-authors = ["MikroTik TUI contributors"]
+authors = ["RouterOS TUI contributors"]
 
 [workspace.dependencies]
 mtui-core = { path = "crates/mtui-core" }

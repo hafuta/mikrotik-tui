@@ -34,7 +34,7 @@ const LOOKUP_CERT: FieldKind = FieldKind::Lookup {
 };
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
-const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Text);
+const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ip);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const ENABLED: FieldSpec = f!("disabled", "Enabled", FieldKind::InvertedToggle);
 const PEER: FieldSpec = f!("peer", "Peer", LOOKUP_PEER);
@@ -143,8 +143,8 @@ pub static IPSEC_POLICY_FORM: FormSchema = FormSchema {
                 PROPOSAL,
                 PEER,
                 f!("tunnel", "Tunnel", FieldKind::Toggle),
-                f!("sa-src-address", "SA src", FieldKind::Text),
-                f!("sa-dst-address", "SA dst", FieldKind::Text),
+                f!("sa-src-address", "SA src", FieldKind::Ip),
+                f!("sa-dst-address", "SA dst", FieldKind::Ip),
                 COMMENT,
                 ENABLED,
             ],
@@ -154,8 +154,8 @@ pub static IPSEC_POLICY_FORM: FormSchema = FormSchema {
             label: "Match",
             read_only: false,
             fields: &[
-                f!("src-address", "Src address", FieldKind::Text),
-                f!("dst-address", "Dst address", FieldKind::Text),
+                f!("src-address", "Src address", FieldKind::Ip),
+                f!("dst-address", "Dst address", FieldKind::Ip),
                 f!("src-port", "Src port", FieldKind::Text),
                 f!("dst-port", "Dst port", FieldKind::Text),
                 f!("protocol", "Protocol", FieldKind::Text),

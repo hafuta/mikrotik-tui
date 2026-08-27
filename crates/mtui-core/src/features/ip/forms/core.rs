@@ -72,8 +72,8 @@ const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const ENABLED: FieldSpec = f!("disabled", "Enabled", FieldKind::InvertedToggle);
 const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_INTERFACES);
-const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Text);
-const MAC: FieldSpec = f!("mac-address", "MAC address", FieldKind::Text);
+const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ip);
+const MAC: FieldSpec = f!("mac-address", "MAC address", FieldKind::Mac);
 const GATEWAY: FieldSpec = f!("gateway", "Gateway", FieldKind::Text);
 const FILTER_CHAIN: FieldSpec = f!(
     "chain",
@@ -98,8 +98,8 @@ const NAT_CHAIN: FieldSpec = f!(
 );
 const ACTION: FieldSpec = f!("action", "Action", FieldKind::Text);
 const PROTOCOL: FieldSpec = f!("protocol", "Protocol", FieldKind::Text);
-const SRC_ADDRESS: FieldSpec = f!("src-address", "Source", FieldKind::Text);
-const DST_ADDRESS: FieldSpec = f!("dst-address", "Destination", FieldKind::Text);
+const SRC_ADDRESS: FieldSpec = f!("src-address", "Source", FieldKind::Ip);
+const DST_ADDRESS: FieldSpec = f!("dst-address", "Destination", FieldKind::Ip);
 const SRC_PORT: FieldSpec = f!("src-port", "Src port", FieldKind::Text);
 const DST_PORT: FieldSpec = f!("dst-port", "Dst port", FieldKind::Text);
 const SRC_ADDRESS_LIST: FieldSpec = f!(
@@ -349,7 +349,7 @@ pub static DNS_STATIC_FORM: FormSchema = FormSchema {
             NAME,
             ADDRESS,
             f!("type", "Type", FieldKind::Text),
-            f!("ttl", "TTL", FieldKind::Text),
+            f!("ttl", "TTL", FieldKind::Time),
             COMMENT,
             ENABLED,
         ],
@@ -366,10 +366,11 @@ pub static ROUTE_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                f!("dst-address", "Dst address", FieldKind::Text),
+                f!("dst-address", "Dst address", FieldKind::Ip),
                 GATEWAY,
                 f!("distance", "Distance", FieldKind::Number),
                 ROUTING_TABLE,
+                f!("blackhole", "Blackhole", FieldKind::Flag),
                 COMMENT,
                 ENABLED,
             ],
@@ -1002,12 +1003,12 @@ pub static TRAFFIC_FLOW_FORM: FormSchema = FormSchema {
             f!(
                 "active-flow-timeout",
                 "Active Flow Timeout",
-                FieldKind::Text
+                FieldKind::Time
             ),
             f!(
                 "inactive-flow-timeout",
                 "Inactive Flow Timeout",
-                FieldKind::Text
+                FieldKind::Time
             ),
             f!("packet-sampling", "Packet Sampling", FieldKind::Toggle),
             f!("sampling-interval", "Sampling Interval", FieldKind::Number),
@@ -1025,8 +1026,8 @@ pub static TRAFFIC_FLOW_TARGET_FORM: FormSchema = FormSchema {
         label: "General",
         read_only: false,
         fields: &[
-            f!("src-address", "Src. Address", FieldKind::Text),
-            f!("dst-address", "Dst. Address", FieldKind::Text),
+            f!("src-address", "Src. Address", FieldKind::Ip),
+            f!("dst-address", "Dst. Address", FieldKind::Ip),
             f!("port", "Port", FieldKind::Number),
             f!(
                 "version",
@@ -1043,7 +1044,7 @@ pub static TRAFFIC_FLOW_TARGET_FORM: FormSchema = FormSchema {
             f!(
                 "v9-template-timeout",
                 "v9 Template Timeout",
-                FieldKind::Text
+                FieldKind::Time
             ),
             ENABLED,
         ],
@@ -1110,16 +1111,16 @@ pub static IGMP_PROXY_FORM: FormSchema = FormSchema {
         label: "General",
         read_only: false,
         fields: &[
-            f!("query-interval", "Query Interval", FieldKind::Text),
+            f!("query-interval", "Query Interval", FieldKind::Time),
             f!(
                 "query-response-interval",
                 "Query Response Interval",
-                FieldKind::Text
+                FieldKind::Time
             ),
             f!(
                 "last-member-query-interval",
                 "Last Member Query Interval",
-                FieldKind::Text
+                FieldKind::Time
             ),
             f!("robustness", "Robustness", FieldKind::Number),
             f!("quick-leave", "Quick Leave", FieldKind::Toggle),
@@ -1178,8 +1179,8 @@ pub static IGMP_PROXY_MFC_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                f!("group", "Group", FieldKind::Text),
-                f!("source", "Source", FieldKind::Text),
+                f!("group", "Group", FieldKind::Ip),
+                f!("source", "Source", FieldKind::Ip),
                 f!(
                     "upstream-interface",
                     "Upstream Interface",

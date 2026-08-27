@@ -1,7 +1,7 @@
 //! Headless environment/file secret overrides.
 //!
 //! Mirrors the `OverrideStore` behavior in `internal/credentials/credentials.go`,
-//! scoped to the generic (non-profile-prefixed) `MIKROTIK_TUI_*` variables:
+//! scoped to the generic (non-profile-prefixed) `ROUTEROS_TUI_*` variables:
 //! `HOST` (or deprecated `URL`), `USERNAME`, `PASSWORD`, `PASSWORD_FILE`,
 //! `CA_FILE`, `CERT_FINGERPRINT`, and `TLS`.
 
@@ -12,26 +12,26 @@ use crate::error::{ConfigError, Result};
 use crate::profile::Profile;
 
 /// Prefix shared by every override variable.
-pub const ENV_PREFIX: &str = "MIKROTIK_TUI";
+pub const ENV_PREFIX: &str = "ROUTEROS_TUI";
 
-/// Snapshot of `MIKROTIK_TUI_*` environment variables that override profile
+/// Snapshot of `ROUTEROS_TUI_*` environment variables that override profile
 /// and credential fields for headless/CI use. Populated once via
 /// [`EnvOverrides::from_env`] (or [`EnvOverrides::from_lookup`] in tests).
 #[derive(Debug, Clone, Default)]
 pub struct EnvOverrides {
-    /// `MIKROTIK_TUI_HOST`, or deprecated `MIKROTIK_TUI_URL`.
+    /// `ROUTEROS_TUI_HOST`, or deprecated `ROUTEROS_TUI_URL`.
     pub url: Option<String>,
-    /// `MIKROTIK_TUI_USERNAME`
+    /// `ROUTEROS_TUI_USERNAME`
     pub username: Option<String>,
-    /// `MIKROTIK_TUI_PASSWORD`
+    /// `ROUTEROS_TUI_PASSWORD`
     pub password: Option<String>,
-    /// `MIKROTIK_TUI_PASSWORD_FILE`
+    /// `ROUTEROS_TUI_PASSWORD_FILE`
     pub password_file: Option<String>,
-    /// `MIKROTIK_TUI_CA_FILE`
+    /// `ROUTEROS_TUI_CA_FILE`
     pub ca_file: Option<String>,
-    /// `MIKROTIK_TUI_CERT_FINGERPRINT`
+    /// `ROUTEROS_TUI_CERT_FINGERPRINT`
     pub cert_fingerprint: Option<String>,
-    /// `MIKROTIK_TUI_TLS` (`1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`).
+    /// `ROUTEROS_TUI_TLS` (`1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`).
     pub use_tls: Option<bool>,
 }
 
@@ -58,7 +58,7 @@ impl EnvOverrides {
     }
 
     /// Applies the URL, username, certificate fingerprint, and CA overrides
-    /// onto `profile` in place. `MIKROTIK_TUI_CA_FILE`, when set, is read
+    /// onto `profile` in place. `ROUTEROS_TUI_CA_FILE`, when set, is read
     /// and its contents replace `profile.custom_ca`.
     pub fn apply_to_profile(&self, profile: &mut Profile) -> Result<()> {
         if let Some(url) = &self.url {
@@ -87,9 +87,9 @@ impl EnvOverrides {
     }
 
     /// Resolves the router password using, in order:
-    /// 1. `MIKROTIK_TUI_PASSWORD_FILE` (file contents, trailing newline
+    /// 1. `ROUTEROS_TUI_PASSWORD_FILE` (file contents, trailing newline
     ///    trimmed),
-    /// 2. `MIKROTIK_TUI_PASSWORD`,
+    /// 2. `ROUTEROS_TUI_PASSWORD`,
     /// 3. `store.get(profile_name)`, if `store` is given.
     ///
     /// Returns `Ok(None)` when no source has a password, rather than
@@ -159,11 +159,11 @@ mod tests {
     #[test]
     fn from_lookup_reads_all_fields() {
         let mut map = HashMap::new();
-        map.insert("MIKROTIK_TUI_HOST", "10.0.0.1:8729");
-        map.insert("MIKROTIK_TUI_USERNAME", "admin");
-        map.insert("MIKROTIK_TUI_PASSWORD", "hunter2");
-        map.insert("MIKROTIK_TUI_CERT_FINGERPRINT", "aa:bb");
-        map.insert("MIKROTIK_TUI_TLS", "off");
+        map.insert("ROUTEROS_TUI_HOST", "10.0.0.1:8729");
+        map.insert("ROUTEROS_TUI_USERNAME", "admin");
+        map.insert("ROUTEROS_TUI_PASSWORD", "hunter2");
+        map.insert("ROUTEROS_TUI_CERT_FINGERPRINT", "aa:bb");
+        map.insert("ROUTEROS_TUI_TLS", "off");
         let overrides = EnvOverrides::from_lookup(lookup_from(map));
 
         assert_eq!(overrides.url, Some("10.0.0.1:8729".to_string()));
@@ -178,8 +178,8 @@ mod tests {
     #[test]
     fn host_overrides_deprecated_url() {
         let mut map = HashMap::new();
-        map.insert("MIKROTIK_TUI_HOST", "new.lan:8729");
-        map.insert("MIKROTIK_TUI_URL", "https://old.lan");
+        map.insert("ROUTEROS_TUI_HOST", "new.lan:8729");
+        map.insert("ROUTEROS_TUI_URL", "https://old.lan");
         let overrides = EnvOverrides::from_lookup(lookup_from(map));
         assert_eq!(overrides.url, Some("new.lan:8729".to_string()));
     }
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn deprecated_url_is_used_without_host() {
         let mut map = HashMap::new();
-        map.insert("MIKROTIK_TUI_URL", "https://10.0.0.1");
+        map.insert("ROUTEROS_TUI_URL", "https://10.0.0.1");
         let overrides = EnvOverrides::from_lookup(lookup_from(map));
         assert_eq!(overrides.url, Some("https://10.0.0.1".to_string()));
     }
@@ -195,8 +195,8 @@ mod tests {
     #[test]
     fn apply_to_profile_overrides_fields() {
         let mut map = HashMap::new();
-        map.insert("MIKROTIK_TUI_HOST", "override.lan:8729");
-        map.insert("MIKROTIK_TUI_USERNAME", "override-user");
+        map.insert("ROUTEROS_TUI_HOST", "override.lan:8729");
+        map.insert("ROUTEROS_TUI_USERNAME", "override-user");
         let overrides = EnvOverrides::from_lookup(lookup_from(map));
 
         let mut profile = Profile {
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn tls_env_overrides_profile() {
         let mut map = HashMap::new();
-        map.insert("MIKROTIK_TUI_TLS", "0");
+        map.insert("ROUTEROS_TUI_TLS", "0");
         let overrides = EnvOverrides::from_lookup(lookup_from(map));
         let mut profile = Profile {
             name: "r1".to_string(),
@@ -282,7 +282,7 @@ mod tests {
         fs::write(&secret_path, "from-file\n").unwrap();
 
         let mut map = HashMap::new();
-        map.insert("MIKROTIK_TUI_PASSWORD", "from-env");
+        map.insert("ROUTEROS_TUI_PASSWORD", "from-env");
         let mut overrides = EnvOverrides::from_lookup(lookup_from(map));
         overrides.password_file = Some(secret_path.to_string_lossy().to_string());
 

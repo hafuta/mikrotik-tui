@@ -1,5 +1,5 @@
 [package]
-name = "mikrotik-tui"
+name = "routeros-tui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 description = "Keyboard-first RouterOS control deck (Rust)"
 
 [[bin]]
-name = "mikrotik-tui"
+name = "routeros-tui"
 path = "src/main.rs"
 
 [dependencies]

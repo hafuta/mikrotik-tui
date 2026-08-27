@@ -1024,7 +1024,7 @@ async fn fetch_lookup(
             session,
             request_id,
             generation,
-            options: lookup_option_values(&rows, &value_key),
+            options: lookup_options(&rows, &value_key),
             error: None,
         },
         Err(err) => WorkerMsg::LookupResult {
@@ -1079,7 +1079,10 @@ async fn fetch_form_record(
     }
 }
 
-fn lookup_option_values(rows: &[mtui_routeros::Resource], value_key: &str) -> Vec<String> {
+fn lookup_options(
+    rows: &[mtui_routeros::Resource],
+    value_key: &str,
+) -> Vec<mtui_core::LookupOption> {
     let mut out = Vec::new();
     for row in rows {
         let value = if value_key == ".id" {
@@ -1090,9 +1093,13 @@ fn lookup_option_values(rows: &[mtui_routeros::Resource], value_key: &str) -> Ve
         let Some(value) = value.filter(|item| !item.is_empty()) else {
             continue;
         };
-        if !out.iter().any(|item| item == value) {
-            out.push(value.to_string());
+        if out
+            .iter()
+            .any(|item: &mtui_core::LookupOption| item.value == value)
+        {
+            continue;
         }
+        out.push(mtui_core::LookupOption::from_fields(value, &row.fields));
     }
     out
 }
@@ -1469,7 +1476,7 @@ async fn stream_probe(
 
 #[cfg(test)]
 mod tests {
-    use super::{WORKER_MSGS_PER_FRAME, lookup_option_values, take_worker_batch};
+    use super::{WORKER_MSGS_PER_FRAME, lookup_options, take_worker_batch};
     use crate::event::WorkerMsg;
     use crate::session::SessionId;
     use mtui_routeros::Resource;
@@ -1503,6 +1510,7 @@ mod tests {
         again.insert("name".into(), "ether1".into());
         let mut second = HashMap::new();
         second.insert("name".into(), "ether2".into());
+        second.insert("disabled".into(), "true".into());
         let rows = vec![
             Resource {
                 id: "*1".into(),
@@ -1521,6 +1529,15 @@ mod tests {
                 fields: second,
             },
         ];
-        assert_eq!(lookup_option_values(&rows, "name"), ["ether1", "ether2"]);
+        let options = lookup_options(&rows, "name");
+        assert_eq!(
+            options
+                .iter()
+                .map(|option| option.value.as_str())
+                .collect::<Vec<_>>(),
+            ["ether1", "ether2"]
+        );
+        assert!(!options[0].disabled);
+        assert!(options[1].disabled);
     }
 }

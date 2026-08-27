@@ -448,11 +448,11 @@ mod core {
         assert_enum(&TRAFFIC_FLOW_FORM, "cache-entries", CACHE_ENTRIES);
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_FORM, "active-flow-timeout"),
-            FieldKind::Text
+            FieldKind::Time
         );
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_FORM, "inactive-flow-timeout"),
-            FieldKind::Text
+            FieldKind::Time
         );
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_FORM, "packet-sampling"),
@@ -483,11 +483,11 @@ mod core {
         );
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_TARGET_FORM, "src-address"),
-            FieldKind::Text
+            FieldKind::Ip
         );
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_TARGET_FORM, "dst-address"),
-            FieldKind::Text
+            FieldKind::Ip
         );
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_TARGET_FORM, "port"),
@@ -500,7 +500,7 @@ mod core {
         );
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_TARGET_FORM, "v9-template-timeout"),
-            FieldKind::Text
+            FieldKind::Time
         );
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_TARGET_FORM, "disabled"),
@@ -551,15 +551,15 @@ mod core {
         );
         assert_eq!(
             field_kind(&IGMP_PROXY_FORM, "query-interval"),
-            FieldKind::Text
+            FieldKind::Time
         );
         assert_eq!(
             field_kind(&IGMP_PROXY_FORM, "query-response-interval"),
-            FieldKind::Text
+            FieldKind::Time
         );
         assert_eq!(
             field_kind(&IGMP_PROXY_FORM, "last-member-query-interval"),
-            FieldKind::Text
+            FieldKind::Time
         );
         assert_eq!(
             field_kind(&IGMP_PROXY_FORM, "robustness"),
@@ -619,7 +619,7 @@ mod core {
             field_kind(&IGMP_PROXY_MFC_FORM, "downstream-interfaces"),
             lookup_multi("interfaces", "name")
         );
-        assert_eq!(field_kind(&IGMP_PROXY_MFC_FORM, "group"), FieldKind::Text);
+        assert_eq!(field_kind(&IGMP_PROXY_MFC_FORM, "group"), FieldKind::Ip);
         status_readonly(&IGMP_PROXY_MFC_FORM);
         assert!(!IGMP_PROXY_MFC_FORM.writable_keys().contains(&"packets"));
         assert!(!IGMP_PROXY_MFC_FORM.writable_keys().contains(&"bytes"));
@@ -986,7 +986,7 @@ mod ipsec {
     fn non_resource_fields_stay_plain_text_or_secret() {
         assert_eq!(
             IPSEC_PEER_FORM.field("address").map(|field| field.kind),
-            Some(FieldKind::Text)
+            Some(FieldKind::Ip)
         );
         assert_eq!(
             IPSEC_IDENTITY_FORM.field("secret").map(|field| field.kind),
