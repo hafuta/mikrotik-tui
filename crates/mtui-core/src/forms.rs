@@ -814,7 +814,33 @@ fn declared_field_state(
     if let Some(state) = crate::features::ip::rules::form_field_state(resource_id, key, values) {
         return Some(state);
     }
-    crate::features::ipv6::rules::form_field_state(resource_id, key, values)
+    if let Some(state) = crate::features::ipv6::rules::form_field_state(resource_id, key, values) {
+        return Some(state);
+    }
+    if let Some(state) = crate::features::routing::rules::form_field_state(resource_id, key, values)
+    {
+        return Some(state);
+    }
+    if let Some(state) = crate::features::queues::rules::form_field_state(resource_id, key, values)
+    {
+        return Some(state);
+    }
+    if let Some(state) = crate::features::files::rules::form_field_state(resource_id, key, values) {
+        return Some(state);
+    }
+    if let Some(state) = crate::features::tools::rules::form_field_state(resource_id, key, values) {
+        return Some(state);
+    }
+    if let Some(state) = crate::features::radius::rules::form_field_state(resource_id, key, values)
+    {
+        return Some(state);
+    }
+    if let Some(state) =
+        crate::features::container::rules::form_field_state(resource_id, key, values)
+    {
+        return Some(state);
+    }
+    crate::features::system::rules::form_field_state(resource_id, key, values)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

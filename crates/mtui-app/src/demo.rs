@@ -182,7 +182,10 @@ impl DemoStore {
                 &[
                     ("boot-os", "router-os"),
                     ("boot-device", "nand-if-fail-then-ethernet"),
-                    ("boot-protocol", "dhcp"),
+                    ("boot-protocol", "bootp"),
+                    ("cpu-frequency", "auto"),
+                    ("memory-frequency", "auto"),
+                    ("enable-jumper-reset", "true"),
                     ("protected-routerboot", "disabled"),
                     ("silent-boot", "false"),
                     ("auto-upgrade", "false"),
