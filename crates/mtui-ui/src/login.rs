@@ -348,7 +348,7 @@ pub fn render_login(frame: &mut Frame<'_>, area: Rect, view: &LoginView<'_>, sty
     frame.render_widget(
         Paragraph::new(center_in_band(
             &session_header(
-                "mikrotik-tui",
+                "routeros-tui",
                 subtitle,
                 &clock_signals,
                 &[],
@@ -1106,7 +1106,7 @@ mod tests {
             for x in 0..buf.area.width {
                 row.push_str(buf[(x, y)].symbol());
             }
-            if row.contains("mikrotik-tui") {
+            if row.contains("routeros-tui") {
                 found_title = true;
             }
             if row.contains("2026-08-23") {

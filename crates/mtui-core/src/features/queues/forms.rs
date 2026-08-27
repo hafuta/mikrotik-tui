@@ -37,7 +37,7 @@ const PRIORITY: FieldSpec = f!("priority", "Priority", FieldKind::Text);
 const BUCKET_SIZE: FieldSpec = f!("bucket-size", "Bucket Size", FieldKind::Text);
 const BURST_LIMIT: FieldSpec = f!("burst-limit", "Burst Limit", FieldKind::Text);
 const BURST_THRESHOLD: FieldSpec = f!("burst-threshold", "Burst Threshold", FieldKind::Text);
-const BURST_TIME: FieldSpec = f!("burst-time", "Burst Time", FieldKind::Text);
+const BURST_TIME: FieldSpec = f!("burst-time", "Burst Time", FieldKind::Time);
 const TIME: FieldSpec = f!("time", "Time", FieldKind::Text);
 const QUEUE_TYPE: FieldSpec = f!("queue", "Queue", LOOKUP_QUEUE_TYPE);
 

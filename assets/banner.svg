@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" role="img" aria-label="RouterOS TUI: keyboard-first RouterOS">
+  <g transform="translate(86 100)">
+    <rect x="-78" y="-78" width="156" height="156" rx="36" fill="#E8F2FB" stroke="#8BB8E0" stroke-width="3"/>
+    <text
+      x="0"
+      y="-4"
+      text-anchor="middle"
+      dominant-baseline="central"
+      font-family="Segoe UI, Inter, Helvetica Neue, Arial, sans-serif"
+      font-size="62"
+      font-weight="700"
+      fill="#3B82F6"
+    >RT</text>
+    <rect x="-28" y="24" width="56" height="11" rx="5.5" fill="#2EC4A3"/>
+  </g>
+  <text
+    x="188"
+    y="96"
+    font-family="Segoe UI, Inter, Helvetica Neue, Arial, sans-serif"
+    font-size="46"
+    font-weight="700"
+    fill="#1D4ED8"
+  >RouterOS TUI</text>
+  <text
+    x="188"
+    y="136"
+    font-family="Segoe UI, Inter, Helvetica Neue, Arial, sans-serif"
+    font-size="22"
+    font-weight="500"
+    letter-spacing="1.4"
+    fill="#5B8FB8"
+  >keyboard-first RouterOS</text>
+</svg>

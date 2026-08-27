@@ -1,6 +1,6 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 
-app := "mikrotik-tui"
+app := "routeros-tui"
 
 # List available recipes
 default:
@@ -82,7 +82,7 @@ site:
     npm --prefix website install
     npm --prefix website run build
 
-# Serve the landing page locally (http://localhost:4321/mikrotik-tui/)
+# Serve the landing page locally (http://localhost:4321/routeros-tui/)
 site-dev:
     npm --prefix website install
     npm --prefix website run dev

@@ -167,7 +167,7 @@ fn netwatch_create_is_full_writable_sheet() {
     );
     assert_eq!(
         NETWATCH_FORM.field("interval").map(|field| field.kind),
-        Some(FieldKind::Text)
+        Some(FieldKind::Time)
     );
     assert_enum(&NETWATCH_FORM, "type", NETWATCH_TYPE);
     assert_label(&NETWATCH_FORM, "up-script", "Up script");
@@ -307,7 +307,7 @@ fn graphing_settings_use_store_every_enum() {
     assert_eq!(STORE_EVERY[0], "5min");
     assert_eq!(
         GRAPHING_FORM.field("page-refresh").map(|field| field.kind),
-        Some(FieldKind::Text)
+        Some(FieldKind::Time)
     );
     assert_label(&GRAPHING_FORM, "store-every", "Store Every");
     assert_label(&GRAPHING_FORM, "page-refresh", "Page Refresh");

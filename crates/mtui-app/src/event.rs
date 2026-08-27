@@ -127,7 +127,7 @@ pub enum WorkerMsg {
         session: SessionId,
         request_id: u64,
         generation: u64,
-        options: Vec<String>,
+        options: Vec<mtui_core::LookupOption>,
         error: Option<String>,
     },
     FormRecordResult {

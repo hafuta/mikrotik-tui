@@ -18,7 +18,7 @@ macro_rules! f {
     };
 }
 
-const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Text);
+const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ip);
 const SECRET: FieldSpec = f!("secret", "Secret", FieldKind::Secret);
 const SERVICE: FieldSpec = f!("service", "Service", FieldKind::Repeat);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);

@@ -654,7 +654,7 @@ mod tests {
     fn session_header_puts_metrics_on_the_right() {
         let styles = styles();
         let line = session_header(
-            "mikrotik-tui",
+            "routeros-tui",
             "CCR2004 · 192.0.2.1",
             &[
                 Signal::new("CPU", "18%", SignalLevel::Good),
@@ -667,12 +667,12 @@ mod tests {
             false,
         );
         let plain = line_plain(&line);
-        assert!(plain.contains("mikrotik-tui"));
+        assert!(plain.contains("routeros-tui"));
         assert!(plain.contains("CCR2004 · 192.0.2.1"));
         assert!(plain.contains("CPU 18%"));
         assert!(plain.contains("WAN 84.2 Mb/s"));
         assert_eq!(line_width(&line), 80);
-        let product = plain.find("mikrotik-tui").expect("product");
+        let product = plain.find("routeros-tui").expect("product");
         let wan = plain.find("WAN").expect("wan");
         assert!(product < wan);
         assert!(!plain.contains('●'));
@@ -682,7 +682,7 @@ mod tests {
     fn session_header_keeps_trailing_safe_mode_on_the_right() {
         let styles = styles();
         let line = session_header(
-            "mikrotik-tui",
+            "routeros-tui",
             "CCR2004 · 192.0.2.1",
             &[
                 Signal::new("CPU", "18%", SignalLevel::Good),
@@ -717,7 +717,7 @@ mod tests {
             Signal::new("WAN", "84.2 Mb/s", SignalLevel::Good),
         ];
         let idle = session_header(
-            "mikrotik-tui",
+            "routeros-tui",
             "CCR2004 · 192.0.2.1",
             &metrics,
             &[],
@@ -726,7 +726,7 @@ mod tests {
             false,
         );
         let busy = session_header(
-            "mikrotik-tui",
+            "routeros-tui",
             "CCR2004 · 192.0.2.1",
             &metrics,
             &[],

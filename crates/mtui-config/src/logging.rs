@@ -20,7 +20,7 @@ use crate::paths;
 use crate::redact::redact;
 
 /// Log file name, relative to the state (or cache) directory.
-pub const LOG_FILE_NAME: &str = "mikrotik-tui.log";
+pub const LOG_FILE_NAME: &str = "routeros-tui.log";
 
 static LOG_STORE: OnceLock<Arc<LogStore>> = OnceLock::new();
 
@@ -56,7 +56,7 @@ impl<W: Write> Write for RedactingWriter<W> {
 }
 
 /// Initializes file JSON tracing plus the in-memory console layer at
-/// `<state-or-cache-dir>/mikrotik-tui.log` and installs it as the global
+/// `<state-or-cache-dir>/routeros-tui.log` and installs it as the global
 /// default subscriber. Call once at startup; returns the resolved log path.
 pub fn init_file_logging() -> Result<PathBuf> {
     let dir = paths::state_dir()?;
@@ -75,7 +75,7 @@ pub fn init_file_logging() -> Result<PathBuf> {
             source,
         })?;
 
-    let env_filter = EnvFilter::try_from_env("MIKROTIK_TUI_LOG").unwrap_or_else(|_| {
+    let env_filter = EnvFilter::try_from_env("ROUTEROS_TUI_LOG").unwrap_or_else(|_| {
         EnvFilter::new("info,mtui_app=trace,mtui_routeros=info,mtui_config=info")
     });
 

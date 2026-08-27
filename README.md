@@ -1,15 +1,15 @@
-# MikroTik TUI
+# RouterOS TUI
 
 [![Rust](https://img.shields.io/badge/Rust-1.98+-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/hafuta/mikrotik-tui/ci.yml?branch=master&label=CI)](https://github.com/hafuta/mikrotik-tui/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/hafuta/routeros-tui/ci.yml?branch=master&label=CI)](https://github.com/hafuta/routeros-tui/actions/workflows/ci.yml)
 
 > [!CAUTION]
 > This project is new. Expect bugs and unstable behavior. Needs RouterOS
 > 7.18 or newer.
 
 <p align="center">
-  <img src="assets/banner.png" alt="MikroTik TUI" width="520">
+  <img src="assets/banner.png" alt="RouterOS TUI: keyboard-first RouterOS" width="520">
 </p>
 
 Keyboard-first terminal client for MikroTik RouterOS. It speaks the RouterOS
@@ -48,14 +48,14 @@ you only have read permission.
 macOS:
 
 ```sh
-brew tap hafuta/mikrotik-tui
-brew install mikrotik-tui
+brew tap hafuta/routeros-tui
+brew install routeros-tui
 ```
 
 Linux (amd64 and arm64):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/hafuta/mikrotik-tui/master/scripts/install-linux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/hafuta/routeros-tui/master/scripts/install-linux.sh | sh
 ```
 
 The script prefers a user-owned directory (`~/.local/bin`, then `~/bin`) so
@@ -65,7 +65,10 @@ such as `/usr/local/bin` are offered last. It asks before replacing an
 existing copy.
 
 Windows: download an archive from
-[Releases](https://github.com/hafuta/mikrotik-tui/releases).
+[Releases](https://github.com/hafuta/routeros-tui/releases).
+
+The command is `routeros-tui`. An existing `mikrotik-tui` config directory
+still applies until `routeros-tui` is created.
 
 On first launch, add a device: host (`192.168.88.1` or `host:port`), username,
 and password. TLS is on by default (port 8729). Turn TLS off for the
@@ -78,7 +81,7 @@ trusting it.
 
 Apple Terminal.app before macOS 26 Tahoe does not support 24-bit color; the
 app falls back to 256 colors there. iTerm2 and Terminal on Tahoe use truecolor.
-Set `MIKROTIK_TUI_COLOR=truecolor` or `256` to override.
+Set `ROUTEROS_TUI_COLOR=truecolor` or `256` to override.
 
 ## Keyboard
 

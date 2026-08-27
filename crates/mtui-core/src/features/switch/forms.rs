@@ -27,6 +27,8 @@ const LOOKUP_SWITCH_PORTS: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: true,
 };
+const VLAN_MODE_VALUES: &[&str] = &["disabled", "optional", "enabled", "fallback", "check"];
+const VLAN_HEADER_VALUES: &[&str] = &["leave-as-is", "always-strip", "always-add"];
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const NAME_RO: FieldSpec = f!("name", "Name", FieldKind::Readonly);
@@ -81,8 +83,20 @@ pub static SWITCH_PORT_FORM: FormSchema = FormSchema {
             fields: &[
                 NAME_RO,
                 SWITCH_RO,
-                f!("vlan-mode", "VLAN Mode", FieldKind::Text),
-                f!("vlan-header", "VLAN Header", FieldKind::Text),
+                f!(
+                    "vlan-mode",
+                    "VLAN Mode",
+                    FieldKind::Enum {
+                        values: VLAN_MODE_VALUES,
+                    }
+                ),
+                f!(
+                    "vlan-header",
+                    "VLAN Header",
+                    FieldKind::Enum {
+                        values: VLAN_HEADER_VALUES,
+                    }
+                ),
                 f!("default-vlan-id", "Default VLAN ID", FieldKind::Number),
             ],
         },
@@ -141,11 +155,11 @@ pub static SWITCH_RULE_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 f!("mac-protocol", "MAC Protocol", FieldKind::Text),
-                f!("src-mac-address", "Src. MAC Address", FieldKind::Text),
-                f!("dst-mac-address", "Dst. MAC Address", FieldKind::Text),
+                f!("src-mac-address", "Src. MAC Address", FieldKind::Mac),
+                f!("dst-mac-address", "Dst. MAC Address", FieldKind::Mac),
                 f!("protocol", "Protocol", FieldKind::Text),
-                f!("src-address", "Src. Address", FieldKind::Text),
-                f!("dst-address", "Dst. Address", FieldKind::Text),
+                f!("src-address", "Src. Address", FieldKind::Ip),
+                f!("dst-address", "Dst. Address", FieldKind::Ip),
                 f!("src-port", "Src. Port", FieldKind::Text),
                 f!("dst-port", "Dst. Port", FieldKind::Text),
                 VLAN_ID,

@@ -184,8 +184,6 @@ impl CredentialStore for FileCredentialStore {
     }
 }
 
-const KEYRING_SERVICE: &str = crate::paths::APPLICATION;
-
 /// OS keychain with owner-only JSON fallback.
 ///
 /// Remembered passwords are written to the platform keyring first. If the
@@ -210,27 +208,37 @@ impl PlatformCredentialStore {
     }
 }
 
-fn keyring_entry(profile: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(KEYRING_SERVICE, profile)
-        .map_err(|err| ConfigError::Keyring(err.to_string()))
+fn keyring_entry(service: &str, profile: &str) -> Result<keyring::Entry> {
+    keyring::Entry::new(service, profile).map_err(|err| ConfigError::Keyring(err.to_string()))
 }
 
 fn keyring_get(profile: &str) -> Result<Option<String>> {
-    match keyring_entry(profile)?.get_password() {
+    match keyring_entry(paths::APPLICATION, profile)?.get_password() {
         Ok(password) => Ok(Some(password)),
-        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(keyring::Error::NoEntry) => {
+            match keyring_entry(paths::LEGACY_APPLICATION, profile)?.get_password() {
+                Ok(password) => Ok(Some(password)),
+                Err(keyring::Error::NoEntry) => Ok(None),
+                Err(err) => Err(ConfigError::Keyring(err.to_string())),
+            }
+        }
         Err(err) => Err(ConfigError::Keyring(err.to_string())),
     }
 }
 
 fn keyring_put(profile: &str, password: &str) -> Result<()> {
-    keyring_entry(profile)?
+    keyring_entry(paths::APPLICATION, profile)?
         .set_password(password)
         .map_err(|err| ConfigError::Keyring(err.to_string()))
 }
 
 fn keyring_delete(profile: &str) -> Result<()> {
-    match keyring_entry(profile)?.delete_credential() {
+    let current = match keyring_entry(paths::APPLICATION, profile)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(err) => Err(ConfigError::Keyring(err.to_string())),
+    };
+    current?;
+    match keyring_entry(paths::LEGACY_APPLICATION, profile)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(err) => Err(ConfigError::Keyring(err.to_string())),
     }
