@@ -3498,7 +3498,12 @@ mod tests {
             .and_then(|spec| spec.form)
             .expect("schema");
         if let Some(session) = app.page_form.as_mut() {
-            session.focus = 0;
+            let boot_os = session
+                .visible_fields(schema)
+                .iter()
+                .position(|(_, field)| field.key == "boot-os")
+                .expect("boot-os");
+            session.focus = boot_os;
             session.activate(schema);
         }
         assert!(

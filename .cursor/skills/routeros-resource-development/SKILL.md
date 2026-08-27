@@ -25,6 +25,10 @@ description: Develop and review MikroTik RouterOS resources, API mappings, mutat
    exists; the CLI reference URL is derived from the resource path.
 10. Group property-sheet fields using the tab rules below. Do not invent a
    “tiny General / leftover Advanced” split.
+11. When moving a whole navigation group out of `LEGACY_RESOURCES`, follow
+    `.cursor/skills/feature-extraction/SKILL.md` (hybrid catalog, facades,
+    New/Status, Enabled inverted toggle). This skill stays the field-kind
+    and section vocabulary.
 
 ## Field kinds
 

@@ -630,10 +630,13 @@ impl FormSession {
                 if !field.kind.accepts_char(field.key, current, ch) {
                     return;
                 }
-                self.values
-                    .entry(field.key.to_string())
-                    .or_default()
-                    .push(ch);
+                let replace_placeholder =
+                    matches!(field.kind, FieldKind::Secret) && rows::is_secret_placeholder(current);
+                let entry = self.values.entry(field.key.to_string()).or_default();
+                if replace_placeholder {
+                    entry.clear();
+                }
+                entry.push(ch);
             }
             _ => {}
         }
@@ -675,7 +678,12 @@ impl FormSession {
                 if field.kind.optional().is_some() && !self.optional_active.contains(field.key) {
                     return;
                 }
-                self.values.entry(field.key.to_string()).or_default().pop();
+                let entry = self.values.entry(field.key.to_string()).or_default();
+                if matches!(field.kind, FieldKind::Secret) && rows::is_secret_placeholder(entry) {
+                    entry.clear();
+                } else {
+                    entry.pop();
+                }
             }
             _ => {}
         }
@@ -735,8 +743,11 @@ impl FormSession {
             }
             FieldKind::Enum { values } => {
                 let now = self.values.get(field.key).cloned().unwrap_or_default();
-                let options: Vec<String> =
+                let mut options: Vec<String> =
                     values.iter().map(|value| (*value).to_string()).collect();
+                if !now.is_empty() && !options.iter().any(|option| option == &now) {
+                    options.push(now.clone());
+                }
                 let focus = options
                     .iter()
                     .position(|option| option == &now)
@@ -1864,11 +1875,7 @@ mod retired_row_rendering {
                 )
             }
             FieldKind::Secret => {
-                let shown = if raw.is_empty() {
-                    String::new()
-                } else {
-                    "••••••••".into()
-                };
+                let shown = rows::secret_input_mask(raw);
                 slot_control(
                     &shown,
                     '[',
@@ -2442,6 +2449,34 @@ mod tests {
             session.values.get("speed").map(String::as_str),
             Some("1G-baseT-full")
         );
+    }
+
+    #[test]
+    fn enum_picker_keeps_printed_value_not_in_static_list() {
+        let schema = FormSchema {
+            title_key: "cpu-frequency",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "cpu-frequency",
+                    label: "CPU Frequency",
+                    kind: FieldKind::Enum {
+                        values: &["auto", "716MHz"],
+                    },
+                }],
+            }],
+            create_sections: &[],
+        };
+        let mut row = HashMap::new();
+        row.insert("cpu-frequency".into(), "500MHz".into());
+        let mut session = FormSession::edit("routerboard-settings", "*0", &row, &schema);
+        session.activate(&schema);
+        let picker = session.lookup.as_ref().expect("picker");
+        assert_eq!(picker.options, ["auto", "716MHz", "500MHz"]);
+        assert_eq!(picker.focus, 2);
     }
 
     #[test]
@@ -3374,6 +3409,66 @@ mod tests {
         assert!(rendered.contains("nightly"));
         assert!(rendered.contains("Password"));
         assert!(!rendered.contains("hidden"));
+        assert_eq!(
+            rendered.matches('\u{2022}').count(),
+            "hidden".chars().count()
+        );
+    }
+
+    #[test]
+    fn secret_field_shows_one_bullet_per_typed_character() {
+        let mut session = FormSession::create("files", &BACKUP_SAVE_FORM);
+        session.move_field(&BACKUP_SAVE_FORM, 1);
+        session.insert_char(&BACKUP_SAVE_FORM, 'a');
+        assert_eq!(
+            session.values.get("password").map(String::as_str),
+            Some("a")
+        );
+        let theme = DefaultTheme::new();
+        let styles = Styles::from_palette(theme.palette());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &BACKUP_SAVE_FORM, &styles);
+            })
+            .expect("draw");
+        let rendered = rendered_text(&terminal);
+        assert!(rendered.contains("Password"));
+        assert_eq!(rendered.matches('\u{2022}').count(), 1);
+        session.insert_char(&BACKUP_SAVE_FORM, 'b');
+        terminal
+            .draw(|frame| {
+                render_form_sheet(frame, frame.area(), &session, &BACKUP_SAVE_FORM, &styles);
+            })
+            .expect("draw");
+        assert_eq!(rendered_text(&terminal).matches('\u{2022}').count(), 2);
+    }
+
+    #[test]
+    fn typing_replaces_masked_secret_placeholder() {
+        let mut values = HashMap::new();
+        values.insert("name".into(), "nightly".into());
+        values.insert(
+            "password".into(),
+            "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}".into(),
+        );
+        let mut session =
+            FormSession::prompt_fields("files", "", "save", &BACKUP_SAVE_FORM, values);
+        session.move_field(&BACKUP_SAVE_FORM, 1);
+        session.insert_char(&BACKUP_SAVE_FORM, 'z');
+        assert_eq!(
+            session.values.get("password").map(String::as_str),
+            Some("z")
+        );
+        session.backspace(&BACKUP_SAVE_FORM);
+        assert_eq!(session.values.get("password").map(String::as_str), Some(""));
+        session.values.insert(
+            "password".into(),
+            "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}".into(),
+        );
+        session.backspace(&BACKUP_SAVE_FORM);
+        assert_eq!(session.values.get("password").map(String::as_str), Some(""));
     }
 
     #[test]

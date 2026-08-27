@@ -12,6 +12,23 @@ use super::{FormRow, FormSession, enum_display_value};
 
 const LABEL_COLS: usize = 22;
 const TAG_COLS: usize = 6;
+/// Same eight-bullet token `RouterOS` rows use in tables (`MASKED_VALUE`).
+const SECRET_PLACEHOLDER: &str = "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}";
+
+/// One bullet per input character so typing has a visible length.
+#[must_use]
+pub(super) fn secret_input_mask(raw: &str) -> String {
+    if raw.is_empty() {
+        String::new()
+    } else {
+        "\u{2022}".repeat(raw.chars().count())
+    }
+}
+
+#[must_use]
+pub(super) fn is_secret_placeholder(raw: &str) -> bool {
+    raw == SECRET_PLACEHOLDER
+}
 
 pub(super) fn row_line(
     session: &FormSession,
@@ -125,21 +142,20 @@ fn field_control(
         FieldKind::Enum { .. } | FieldKind::LabeledEnum { .. } | FieldKind::Lookup { .. } => {
             combo_control(field, raw, locked, focused, width, chrome, value_style)
         }
-        FieldKind::Secret => slot_control(
-            if raw.is_empty() {
-                ""
-            } else {
-                "••••••••"
-            },
-            '[',
-            ' ',
-            ']',
-            focused && !locked,
-            locked,
-            width,
-            chrome,
-            value_style,
-        ),
+        FieldKind::Secret => {
+            let shown = secret_input_mask(raw);
+            slot_control(
+                &shown,
+                '[',
+                ' ',
+                ']',
+                focused && !locked,
+                locked,
+                width,
+                chrome,
+                value_style,
+            )
+        }
         FieldKind::Readonly => vec![Span::styled(pad_visual(raw, width), styles.muted)],
         FieldKind::Text
         | FieldKind::Number
