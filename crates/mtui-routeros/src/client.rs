@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 use crate::mutate::is_command_name;
 use crate::resource::Resource;
 use crate::sentence::Sentence;
@@ -152,7 +152,63 @@ impl Client {
             .into_iter()
             .find(Sentence::is_re)
             .map(Sentence::into_resource)
-            .ok_or_else(|| Error::new(crate::error::ErrorKind::NotFound, "get", "no such item"))
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "get", "no such item"))
+    }
+
+    /// Downloads `/file` bytes via `/file/read` chunks. `/file/get` of a ~50 KiB
+    /// `contents` word often never completes as a tagged reply (request timeout).
+    pub async fn file_contents(&self, id: &str, name: &str) -> Result<String> {
+        if !name.trim().is_empty() {
+            match self.read_file_chunks(name).await {
+                Ok(contents) => return Ok(contents),
+                Err(err) if command_missing(&err) => {}
+                Err(err) => return Err(err),
+            }
+        }
+        if !id.trim().is_empty()
+            && let Some(contents) = self.contents_from_get(id).await?
+        {
+            return Ok(contents);
+        }
+        Err(Error::api("read", "RouterOS returned no file data"))
+    }
+
+    async fn contents_from_get(&self, id: &str) -> Result<Option<String>> {
+        let words = file_get_words(id)?;
+        let replies = self.inner.control.request("get", words).await?;
+        Ok(sentence_payload(
+            &replies,
+            &["contents", ".contents", "ret"],
+        ))
+    }
+
+    async fn read_file_chunks(&self, name: &str) -> Result<String> {
+        let mut offset: u64 = 0;
+        let mut out = String::new();
+        loop {
+            let words = file_read_words(name, offset, FILE_READ_CHUNK)?;
+            let replies = self.inner.control.request("command", words).await?;
+            let Some(chunk) = sentence_payload(&replies, &["data", ".data", "contents", "ret"])
+            else {
+                break;
+            };
+            if chunk.is_empty() {
+                break;
+            }
+            let added = u64::try_from(chunk.len()).unwrap_or(0);
+            if out.len().saturating_add(chunk.len()) > FILE_TRANSFER_MAX {
+                return Err(Error::api(
+                    "read",
+                    "file is larger than the in-app transfer limit",
+                ));
+            }
+            out.push_str(&chunk);
+            if added < u64::from(FILE_READ_CHUNK) {
+                break;
+            }
+            offset = offset.saturating_add(added);
+        }
+        Ok(out)
     }
 
     /// Fetches a singleton/system-scoped resource.
@@ -482,6 +538,55 @@ fn command_path(endpoint: &str, command: &str) -> Result<String> {
     }
 }
 
+fn file_get_words(id: &str) -> Result<Vec<String>> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err(Error::api("get", "record id is required"));
+    }
+    Ok(vec![
+        command_path("/file", "get")?,
+        format!("=.id={id}"),
+        "=.proplist=contents".into(),
+    ])
+}
+
+fn command_missing(err: &Error) -> bool {
+    let message = err.message().to_ascii_lowercase();
+    err.kind() == ErrorKind::NotFound
+        || message.contains("no such command")
+        || message.contains("unknown command")
+        || message.contains("bad command")
+}
+
+fn file_read_words(name: &str, offset: u64, chunk_size: u32) -> Result<Vec<String>> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(Error::api("read", "file name is required"));
+    }
+    Ok(vec![
+        command_path("/file", "read")?,
+        format!("=file={name}"),
+        format!("=offset={offset}"),
+        format!("=chunk-size={chunk_size}"),
+    ])
+}
+
+fn sentence_payload(replies: &[Sentence], keys: &[&str]) -> Option<String> {
+    for sentence in replies {
+        for key in keys {
+            if let Some(value) = sentence.attr(key) {
+                return Some(value.to_owned());
+            }
+        }
+    }
+    None
+}
+
+/// `RouterOS` `/file/read` max `chunk-size`.
+const FILE_READ_CHUNK: u32 = 32_768;
+/// Cap so one download cannot exceed an API-word-sized buffer in the UI.
+const FILE_TRANSFER_MAX: usize = 768 * 1024;
+
 fn print_item_words(endpoint: &str, id: &str) -> Result<Vec<String>> {
     Ok(vec![command_path(endpoint, "print")?, format!("?.id={id}")])
 }
@@ -574,6 +679,38 @@ mod tests {
         assert_eq!(
             print_item_words("/interface/vlan", "*3").unwrap(),
             vec!["/interface/vlan/print", "?.id=*3"]
+        );
+    }
+
+    #[test]
+    fn file_get_and_read_word_lists() {
+        assert_eq!(
+            file_get_words("*1").unwrap(),
+            vec!["/file/get", "=.id=*1", "=.proplist=contents"]
+        );
+        assert!(file_get_words("").is_err());
+        assert_eq!(
+            file_read_words("backup.rsc", 32_768, FILE_READ_CHUNK).unwrap(),
+            vec![
+                "/file/read",
+                "=file=backup.rsc",
+                "=offset=32768",
+                "=chunk-size=32768"
+            ]
+        );
+    }
+
+    #[test]
+    fn sentence_payload_reads_done_ret_and_re_data() {
+        let done = Sentence::new(vec!["!done".into(), "=ret=hello".into()]);
+        assert_eq!(
+            sentence_payload(&[done], &["contents", "ret"]).as_deref(),
+            Some("hello")
+        );
+        let reply = Sentence::new(vec!["!re".into(), "=data=chunk".into()]);
+        assert_eq!(
+            sentence_payload(&[reply], &["data", "contents", "ret"]).as_deref(),
+            Some("chunk")
         );
     }
 

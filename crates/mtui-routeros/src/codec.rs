@@ -124,9 +124,9 @@ impl SentenceDecoder {
                 let sentence = std::mem::take(&mut self.words);
                 return Ok(Some(sentence));
             }
-            let text = String::from_utf8(word)
-                .map_err(|_| Error::decode("decode_word", "API word is not UTF-8"))?;
-            self.words.push(text);
+            // Lossy: a binary `/file` word must not abort the read loop, or the
+            // tagged request waits until timeout with no `!done`.
+            self.words.push(String::from_utf8_lossy(&word).into_owned());
         }
     }
 }
@@ -193,6 +193,20 @@ mod tests {
             decoder.take_sentence().unwrap().unwrap(),
             vec!["!trap", "=message=failure: bad"]
         );
+    }
+
+    #[test]
+    fn keeps_non_utf8_words_so_the_sentence_can_finish() {
+        let payload = b"=data=\xff";
+        let mut encoded = vec![u8::try_from(payload.len()).expect("fits")];
+        encoded.extend_from_slice(payload);
+        encoded.push(0);
+        let mut decoder = SentenceDecoder::new();
+        decoder.push(&encoded);
+        let sentence = decoder.take_sentence().unwrap().unwrap();
+        assert_eq!(sentence.len(), 1);
+        assert!(sentence[0].starts_with("=data="));
+        assert!(decoder.take_sentence().unwrap().is_none());
     }
 
     #[test]

@@ -20,10 +20,10 @@ use mtui_routeros::{
     parse_connection_target,
 };
 use mtui_ui::{
-    ActionMenuState, Command, ConsoleEntry, ConsoleLevel, DashboardGeometry, FirewallHitChart,
-    FormSession, InspectorState, LayoutMetrics, LoginPane, ProbeState, Row, SavedProfileRow,
-    Signal, SignalLevel, TableState, ToggleHidden, TorchState, chrome_band_height,
-    console_pane_height, format_rate, tab_strip_height,
+    ActionMenuState, Command, ConsoleEntry, ConsoleLevel, DashboardGeometry, FilePickerKind,
+    FilePickerState, FirewallHitChart, FormSession, InspectorState, LayoutMetrics, LoginField,
+    LoginPane, ProbeState, Row, SavedProfileRow, Signal, SignalLevel, TableState, ToggleHidden,
+    TorchState, chrome_band_height, console_pane_height, format_rate, tab_strip_height,
 };
 
 use crate::demo::{DEMO_PROFILE_NAME, DEMO_URL, DemoStore, is_demo_target};
@@ -218,8 +218,8 @@ pub enum AppCommand {
         session: SessionId,
         request_id: u64,
         generation: u64,
-        endpoint: String,
         id: String,
+        name: String,
         local_path: String,
     },
     FetchLookup {
@@ -777,14 +777,100 @@ impl App {
     pub(crate) fn open_ca_file_picker(&mut self) -> Vec<AppCommand> {
         let path = crate::files_io::default_browse_dir(&self.login.ca_file);
         let generation = self.next_request();
-        self.overlay =
-            Overlay::FilePicker(mtui_ui::FilePickerState::loading(path.clone(), generation));
+        self.overlay = Overlay::FilePicker(FilePickerState::loading(path.clone(), generation));
         self.status = "Browse for a CA file".into();
         vec![AppCommand::ListLocalDir {
             session: SessionId::UNSTAMPED,
             generation,
             path,
         }]
+    }
+
+    pub(crate) fn open_transfer_file_picker(&mut self) -> Vec<AppCommand> {
+        let Overlay::Form(session) = &self.overlay else {
+            return Vec::new();
+        };
+        let kind = match session.prompt_command {
+            Some("upload") => FilePickerKind::Upload,
+            Some("download") => FilePickerKind::Download,
+            _ => return Vec::new(),
+        };
+        let local = session.values.get("local-path").map_or("", String::as_str);
+        let suggested = session
+            .values
+            .get("remote-name")
+            .cloned()
+            .filter(|name| !name.is_empty())
+            .or_else(|| {
+                self.table
+                    .selected_row()
+                    .and_then(|row| row.get("name").cloned())
+            })
+            .unwrap_or_default();
+        let path = crate::files_io::default_browse_dir(local);
+        let Overlay::Form(session) = std::mem::replace(&mut self.overlay, Overlay::None) else {
+            return Vec::new();
+        };
+        let generation = self.next_request();
+        self.overlay = Overlay::FilePicker(FilePickerState::open(
+            path.clone(),
+            generation,
+            kind,
+            suggested,
+            Some(Box::new(session)),
+        ));
+        self.status = match kind {
+            FilePickerKind::Upload => "Browse for a file to upload".into(),
+            FilePickerKind::Download => "Browse for a save location".into(),
+            FilePickerKind::LoginCa => "Browse for a CA file".into(),
+        };
+        vec![AppCommand::ListLocalDir {
+            session: SessionId::UNSTAMPED,
+            generation,
+            path,
+        }]
+    }
+
+    pub(crate) fn restore_file_picker_form(&mut self) {
+        if let Overlay::FilePicker(picker) = &mut self.overlay
+            && let Some(session) = picker.resume.take()
+        {
+            self.overlay = Overlay::Form(*session);
+            return;
+        }
+        self.overlay = Overlay::None;
+    }
+
+    pub(crate) fn apply_picked_local_path(&mut self, path: String) {
+        let Overlay::FilePicker(picker) = &mut self.overlay else {
+            return;
+        };
+        let kind = picker.kind;
+        let Some(mut session) = picker.resume.take() else {
+            self.login.ca_file = path;
+            self.login.focus = LoginField::CaFile;
+            self.overlay = Overlay::None;
+            self.status = "CA file selected".into();
+            return;
+        };
+        if kind == FilePickerKind::Upload {
+            let remote_empty = session
+                .values
+                .get("remote-name")
+                .is_none_or(|value| value.trim().is_empty());
+            if remote_empty
+                && let Some(name) = std::path::Path::new(&path)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+            {
+                session
+                    .values
+                    .insert("remote-name".into(), name.to_string());
+            }
+        }
+        session.values.insert("local-path".into(), path);
+        self.overlay = Overlay::Form(*session);
+        self.status = "Path selected".into();
     }
 
     pub(crate) fn list_picker_dir(&mut self, path: String) -> Vec<AppCommand> {
@@ -1844,6 +1930,9 @@ impl App {
         }
         if let Some(spec) = resource_by_id(id) {
             self.table = TableState::new(spec.columns);
+            if spec.id == "files" {
+                self.table.enable_path_tree();
+            }
         } else {
             self.table = TableState::new(&[]);
         }

@@ -1108,18 +1108,6 @@ pub const BACKUP_SAVE_FORM: FormSchema = FormSchema {
     create_sections: BACKUP_SAVE_SECTIONS,
 };
 
-const LOCAL_PATH: FieldSpec = FieldSpec {
-    key: "local-path",
-    label: "Local path",
-    kind: FieldKind::Text,
-};
-
-const REMOTE_NAME: FieldSpec = FieldSpec {
-    key: "remote-name",
-    label: "Remote name",
-    kind: FieldKind::Text,
-};
-
 const FETCH_URL: FieldSpec = FieldSpec {
     key: "url",
     label: "URL",
@@ -1144,40 +1132,12 @@ const FETCH_PASSWORD: FieldSpec = FieldSpec {
     kind: FieldKind::Secret,
 };
 
-const UPLOAD_SECTIONS: &[FormSection] = &[FormSection {
-    id: "upload",
-    label: "Upload",
-    read_only: false,
-    fields: &[LOCAL_PATH, REMOTE_NAME],
-}];
-
-const DOWNLOAD_SECTIONS: &[FormSection] = &[FormSection {
-    id: "download",
-    label: "Download",
-    read_only: false,
-    fields: &[LOCAL_PATH],
-}];
-
 const FETCH_SECTIONS: &[FormSection] = &[FormSection {
     id: "fetch",
     label: "Fetch URL",
     read_only: false,
     fields: &[FETCH_URL, DST_PATH, FETCH_USER, FETCH_PASSWORD],
 }];
-
-pub const UPLOAD_FORM: FormSchema = FormSchema {
-    title_key: "remote-name",
-    subtitle_keys: &[],
-    sections: UPLOAD_SECTIONS,
-    create_sections: UPLOAD_SECTIONS,
-};
-
-pub const DOWNLOAD_FORM: FormSchema = FormSchema {
-    title_key: "local-path",
-    subtitle_keys: &[],
-    sections: DOWNLOAD_SECTIONS,
-    create_sections: DOWNLOAD_SECTIONS,
-};
 
 pub const FETCH_FORM: FormSchema = FormSchema {
     title_key: "url",
@@ -1546,6 +1506,9 @@ fn sheet_hint(session: &FormSession, schema: &FormSchema) -> String {
                 match row {
                     FormRow::RepeatAdd { .. } => "enter add",
                     FormRow::RepeatItem { .. } => "type value   enter add   bksp empty removes",
+                    FormRow::Field { field, .. } if field.key == "local-path" => {
+                        "type path   enter browse"
+                    }
                     FormRow::Field { field, .. } => field.kind.edit_hint(),
                 }
             }

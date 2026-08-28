@@ -6,10 +6,53 @@ use mtui_config::expand_user_path;
 use mtui_ui::FilePickerEntry;
 
 const MAX_DIR_ENTRIES: usize = 2000;
+/// Stay under the API word cap (`mtui-routeros` codec) with room for `=contents=`.
+pub(crate) const MAX_TRANSFER_BYTES: usize = 768 * 1024;
 
-/// Contents upload is not supported on the classic API.
-pub fn read_utf8_upload(_path: &Path) -> Result<String, String> {
-    Err("Classic API cannot transfer file contents; use Fetch URL".into())
+/// `RouterOS` `size` is usually a decimal byte count. Unit suffixes are ignored.
+#[must_use]
+pub(crate) fn parse_file_size_bytes(value: &str) -> Option<usize> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || !trimmed.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    trimmed.parse().ok()
+}
+
+/// Reads a local UTF-8 file for `/file add contents=`. Expands `~/` on every OS.
+pub fn read_utf8_upload(path: &Path) -> Result<String, String> {
+    let path = expand_user_path(&path.to_string_lossy());
+    if path.as_os_str().is_empty() {
+        return Err("Local Path is required".into());
+    }
+    let bytes = std::fs::read(&path).map_err(|err| format!("{}: {err}", path.display()))?;
+    if bytes.len() > MAX_TRANSFER_BYTES {
+        return Err(format!(
+            "file is larger than {MAX_TRANSFER_BYTES} bytes; use Fetch URL for large or binary files"
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| {
+        "file is not UTF-8; the classic API can only transfer text (scripts, certs, exports)".into()
+    })
+}
+
+/// Default save location: home directory plus the router file's base name.
+#[must_use]
+pub fn default_download_path(remote_name: &str) -> String {
+    let file_name = Path::new(remote_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("download");
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(file_name)
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Starting folder for the CA file browser.
@@ -156,13 +199,17 @@ fn list_windows_drives() -> Vec<FilePickerEntry> {
 }
 
 pub fn write_download(path: &Path, contents: &str) -> Result<(), String> {
+    let path = expand_user_path(&path.to_string_lossy());
+    if path.as_os_str().is_empty() {
+        return Err("Local Path is required".into());
+    }
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
         && !parent.exists()
     {
         return Err(format!("directory does not exist: {}", parent.display()));
     }
-    std::fs::write(path, contents).map_err(|err| err.to_string())
+    std::fs::write(&path, contents).map_err(|err| err.to_string())
 }
 
 #[cfg(test)]
@@ -178,10 +225,33 @@ mod tests {
     }
 
     #[test]
-    fn contents_upload_is_rejected() {
-        let err = read_utf8_upload(Path::new("any.txt")).expect_err("unsupported");
-        assert!(err.contains("Fetch URL"));
+    fn contents_upload_reads_utf8_and_rejects_binary() {
+        let dir = temp_path("upload");
+        std::fs::create_dir_all(&dir).expect("dir");
+        let text = dir.join("note.rsc");
+        std::fs::write(&text, "/system identity\n").expect("write");
+        assert_eq!(read_utf8_upload(&text).expect("utf8"), "/system identity\n");
+        let binary = dir.join("blob.bin");
+        std::fs::write(&binary, [0xff, 0xfe, 0x00]).expect("bin");
+        let err = read_utf8_upload(&binary).expect_err("binary");
+        assert!(err.contains("UTF-8"), "{err}");
         assert!(!err.to_ascii_lowercase().contains("rest"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_download_path_uses_basename() {
+        let path = default_download_path("flash/backup.rsc");
+        assert!(path.ends_with("backup.rsc"), "{path}");
+        assert!(!path.contains("flash"));
+    }
+
+    #[test]
+    fn parse_file_size_accepts_decimal_bytes() {
+        assert_eq!(parse_file_size_bytes("50641"), Some(50641));
+        assert_eq!(parse_file_size_bytes(" 12 "), Some(12));
+        assert_eq!(parse_file_size_bytes("50.6KiB"), None);
+        assert_eq!(parse_file_size_bytes(""), None);
     }
 
     #[test]

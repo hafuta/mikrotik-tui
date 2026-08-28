@@ -577,8 +577,8 @@ fn dispatch_commands(
                 session,
                 request_id,
                 generation,
-                endpoint,
                 id,
+                name,
                 local_path,
             } => {
                 let Some(client) = client else {
@@ -587,7 +587,7 @@ fn dispatch_commands(
                 let tx = tx.clone();
                 rt.spawn(async move {
                     let msg = fetch_file_record(
-                        session, client, request_id, generation, endpoint, id, local_path,
+                        session, client, request_id, generation, id, name, local_path,
                     )
                     .await;
                     let _ = tx.send(msg);
@@ -1382,17 +1382,17 @@ async fn fetch_file_record(
     client: std::sync::Arc<Client>,
     request_id: u64,
     generation: u64,
-    endpoint: String,
     id: String,
+    name: String,
     local_path: String,
 ) -> WorkerMsg {
-    match client.get(&endpoint, &id).await {
-        Ok(resource) => WorkerMsg::RecordResult {
+    match client.file_contents(&id, &name).await {
+        Ok(contents) => WorkerMsg::RecordResult {
             session,
             request_id,
             generation,
             local_path,
-            contents: resource.fields.get("contents").cloned(),
+            contents: Some(contents),
             error: None,
         },
         Err(err) => WorkerMsg::RecordResult {

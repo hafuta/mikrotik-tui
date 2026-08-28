@@ -27,6 +27,8 @@ pub struct TableState {
     pub filter: String,
     pub sort_col: Option<usize>,
     pub sort_dir: SortDir,
+    /// When set, Name ascending with an empty filter uses a path tree.
+    path_tree: bool,
     pub selected: usize,
     pub row_offset: usize,
     pub col_offset: usize,
@@ -45,6 +47,7 @@ impl TableState {
             filter: String::new(),
             sort_col: None,
             sort_dir: SortDir::Asc,
+            path_tree: false,
             selected: 0,
             row_offset: 0,
             col_offset: 0,
@@ -63,6 +66,16 @@ impl TableState {
 
     pub fn set_filter(&mut self, filter: String) {
         self.filter = filter;
+        self.recompute();
+    }
+
+    /// Files: default to Name ascending so folders nest under their parents.
+    pub fn enable_path_tree(&mut self) {
+        self.path_tree = true;
+        if let Some(idx) = self.name_column() {
+            self.sort_col = Some(idx);
+            self.sort_dir = SortDir::Asc;
+        }
         self.recompute();
     }
 
@@ -296,8 +309,21 @@ impl TableState {
             self.effective_col_offset(width),
             width,
             |_, col| {
-                let text = row.get(col.key).cloned().unwrap_or_default();
-                let style = cell_style(col.key, &text, selected, styles);
+                let text = if col.key == "name" {
+                    crate::path_tree::visible_name(
+                        row.get("name").map_or("", String::as_str),
+                        row.get("type").map_or("", String::as_str),
+                        self.tree_layout_active(),
+                    )
+                } else {
+                    row.get(col.key).cloned().unwrap_or_default()
+                };
+                let style = cell_style(
+                    col.key,
+                    row.get(col.key).map_or("", String::as_str),
+                    selected,
+                    styles,
+                );
                 (text, style)
             },
         );
@@ -432,18 +458,33 @@ impl TableState {
         {
             let key = col.key;
             let dir = self.sort_dir;
-            indices.sort_by(|&a, &b| {
-                let av = self.rows[a].get(key).map_or("", String::as_str);
-                let bv = self.rows[b].get(key).map_or("", String::as_str);
-                match dir {
-                    SortDir::Asc => av.cmp(bv),
-                    SortDir::Desc => bv.cmp(av),
-                }
-            });
+            if self.tree_layout_active() {
+                indices.sort_by(|&a, &b| crate::path_tree::cmp_rows(&self.rows[a], &self.rows[b]));
+            } else {
+                indices.sort_by(|&a, &b| {
+                    let av = self.rows[a].get(key).map_or("", String::as_str);
+                    let bv = self.rows[b].get(key).map_or("", String::as_str);
+                    match dir {
+                        SortDir::Asc => av.cmp(bv),
+                        SortDir::Desc => bv.cmp(av),
+                    }
+                });
+            }
         }
 
         self.filtered = indices;
         self.reconcile_offsets();
+    }
+
+    fn name_column(&self) -> Option<usize> {
+        self.columns.iter().position(|col| col.key == "name")
+    }
+
+    fn tree_layout_active(&self) -> bool {
+        self.path_tree
+            && self.filter.is_empty()
+            && self.sort_dir == SortDir::Asc
+            && self.sort_col == self.name_column()
     }
 }
 
@@ -806,6 +847,80 @@ mod scroll_tests {
                 .iter()
                 .all(|span| span.style.bg == Some(styles.selection)),
             "selected row must be a bounded fill: {line:?}"
+        );
+    }
+
+    fn file_row(name: &str, kind: &str, size: &str) -> Row {
+        let mut row = HashMap::new();
+        row.insert("name".into(), name.into());
+        row.insert("type".into(), kind.into());
+        row.insert("size".into(), size.into());
+        row
+    }
+
+    #[test]
+    fn path_tree_nests_on_name_asc_and_flattens_otherwise() {
+        let cols = [
+            ColumnSpec {
+                key: "name",
+                title: "Name",
+                width: 32,
+            },
+            ColumnSpec {
+                key: "type",
+                title: "Type",
+                width: 10,
+            },
+            ColumnSpec {
+                key: "size",
+                title: "Size",
+                width: 8,
+            },
+        ];
+        let mut state = TableState::new(&cols);
+        state.enable_path_tree();
+        state.set_rows(vec![
+            file_row("flash/skins/newskin.json", ".json file", "12"),
+            file_row("export.rsc", "script", "9"),
+            file_row("flash", "disk", ""),
+            file_row("flash/skins", "directory", ""),
+        ]);
+        let names: Vec<_> = state
+            .filtered
+            .iter()
+            .map(|&i| state.rows[i]["name"].as_str())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "flash",
+                "flash/skins",
+                "flash/skins/newskin.json",
+                "export.rsc"
+            ]
+        );
+        let tree = lines_plain(&state.lines(&styles(), 64, 6, "empty"));
+        assert!(tree.contains("flash/"), "tree parent: {tree}");
+        assert!(tree.contains("  skins/"), "tree child: {tree}");
+        assert!(tree.contains("    newskin.json"), "tree grandchild: {tree}");
+        assert!(
+            !tree.contains("flash/skins/newskin.json"),
+            "tree should hide full path: {tree}"
+        );
+
+        state.cycle_sort();
+        let flat = lines_plain(&state.lines(&styles(), 64, 6, "empty"));
+        assert!(
+            flat.contains("flash/skins/newskin.json"),
+            "name desc should flatten: {flat}"
+        );
+
+        state.enable_path_tree();
+        state.set_filter("skins".into());
+        let filtered = lines_plain(&state.lines(&styles(), 64, 6, "empty"));
+        assert!(
+            filtered.contains("flash/skins"),
+            "filter should flatten: {filtered}"
         );
     }
 }

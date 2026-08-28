@@ -5,6 +5,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph};
 
+use crate::form::FormSession;
 use crate::layout::clip_line;
 use crate::overlay::{compact_modal_rect, dim_canvas};
 use crate::styles::Styles;
@@ -15,6 +16,17 @@ pub struct FilePickerEntry {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
+}
+
+/// Why the local directory browser is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilePickerKind {
+    /// Login TLS custom CA file.
+    LoginCa,
+    /// Files → Upload: pick a workstation file.
+    Upload,
+    /// Files → Download: pick a save path.
+    Download,
 }
 
 /// Keyboard-driven local file browser state.
@@ -28,11 +40,33 @@ pub struct FilePickerState {
     pub refreshing: bool,
     pub error: Option<String>,
     pub generation: u64,
+    pub kind: FilePickerKind,
+    /// Router file basename used when saving into a folder (Download).
+    pub suggested_name: String,
+    /// Prompt to restore after picking a path (Upload / Download).
+    pub resume: Option<Box<FormSession>>,
 }
 
 impl FilePickerState {
     #[must_use]
     pub fn loading(dir: impl Into<String>, generation: u64) -> Self {
+        Self::open(
+            dir,
+            generation,
+            FilePickerKind::LoginCa,
+            String::new(),
+            None,
+        )
+    }
+
+    #[must_use]
+    pub fn open(
+        dir: impl Into<String>,
+        generation: u64,
+        kind: FilePickerKind,
+        suggested_name: impl Into<String>,
+        resume: Option<Box<FormSession>>,
+    ) -> Self {
         Self {
             dir: dir.into(),
             entries: Vec::new(),
@@ -42,6 +76,44 @@ impl FilePickerState {
             refreshing: false,
             error: None,
             generation,
+            kind,
+            suggested_name: suggested_name.into(),
+            resume,
+        }
+    }
+
+    #[must_use]
+    pub fn title(&self) -> &'static str {
+        match self.kind {
+            FilePickerKind::LoginCa => {
+                if self.refreshing {
+                    " Browse CA file · listing… "
+                } else {
+                    " Browse CA file "
+                }
+            }
+            FilePickerKind::Upload => {
+                if self.refreshing {
+                    " Upload from workstation · listing… "
+                } else {
+                    " Upload from workstation "
+                }
+            }
+            FilePickerKind::Download => {
+                if self.refreshing {
+                    " Save on workstation · listing… "
+                } else {
+                    " Save on workstation "
+                }
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn hint(&self) -> &'static str {
+        match self.kind {
+            FilePickerKind::Download => "↑↓ move   enter open   space use folder   ← up   esc",
+            _ => "↑↓ move   enter open   ← up   esc",
         }
     }
 
@@ -128,11 +200,7 @@ pub fn render_file_picker(
     let rect = compact_modal_rect(area, width, height);
     frame.render_widget(Clear, rect);
 
-    let title = if picker.refreshing {
-        " Browse CA file · listing… "
-    } else {
-        " Browse CA file "
-    };
+    let title = picker.title();
     let block = Block::default()
         .title(Span::styled(title, styles.title))
         .borders(Borders::ALL)
@@ -175,10 +243,7 @@ pub fn render_file_picker(
     );
     if chunks[2].height > 0 {
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                "↑↓ move   enter open   ← up   esc",
-                styles.muted,
-            ))),
+            Paragraph::new(Line::from(Span::styled(picker.hint(), styles.muted))),
             chunks[2],
         );
     }

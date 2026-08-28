@@ -10,6 +10,7 @@ mod bridge_write;
 mod capabilities;
 mod container_write;
 mod features;
+mod files_write;
 mod forms;
 mod hotspot_write;
 mod interface_write;
@@ -51,6 +52,7 @@ pub use capabilities::{
 };
 pub use features::interfaces::actions::INTERFACE_CREATE_TARGETS;
 pub use features::interfaces::edit_resource_for_interface_type;
+pub use files_write::{DOWNLOAD_FORM, UPLOAD_FORM};
 pub use forms::{
     BoxedFieldPredicate, EnumChoice, FieldKind, FieldPredicate, FieldRule, FieldSpec, FormSchema,
     FormSection, LookupOption, ScalarKind, accepts_constrained_number_char, accepts_number_char,
