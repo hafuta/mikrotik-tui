@@ -6,12 +6,12 @@ use std::path::Path;
 
 use mtui_core::{
     ACTION_REBOOT, ACTION_SHUTDOWN, AT_CHAT_PROMPT, ActionCommand, ActionKind, ActionSpec,
-    CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT, CERT_SIGN_PROMPT, DASHBOARD_ID, EXPORT_CONFIG_PROMPT,
-    FORMAT_DISK_PROMPT, FetchKind, FormSchema, IMPORT_CONFIG_PROMPT, INSTALL_PACKAGE_PROMPT,
-    INTERFACE_CREATE_TARGETS, LICENSE_IMPORT_PROMPT, RESET_CONFIG_PROMPT, ResourceSpec, SMS_PROMPT,
-    USB_POWER_RESET_PROMPT, WOL_PROMPT, action_label, edit_resource_for_interface_type,
-    form_mutation_body, neighbor_connect_target, resource_by_id, supports_bulk_select, truthy,
-    validate_form_values,
+    CERT_EXPORT_PROMPT, CERT_IMPORT_PROMPT, CERT_SIGN_PROMPT, DASHBOARD_ID, DOWNLOAD_FORM,
+    EXPORT_CONFIG_PROMPT, FORMAT_DISK_PROMPT, FetchKind, FormSchema, IMPORT_CONFIG_PROMPT,
+    INSTALL_PACKAGE_PROMPT, INTERFACE_CREATE_TARGETS, LICENSE_IMPORT_PROMPT, RESET_CONFIG_PROMPT,
+    ResourceSpec, SMS_PROMPT, UPLOAD_FORM, USB_POWER_RESET_PROMPT, WOL_PROMPT, action_label,
+    edit_resource_for_interface_type, form_mutation_body, neighbor_connect_target, resource_by_id,
+    supports_bulk_select, truthy, validate_form_values,
 };
 use mtui_routeros::{MASKED_VALUE, is_secret_key};
 use mtui_ui::{
@@ -628,7 +628,7 @@ impl App {
             self.current_resource.clone(),
             String::new(),
             "upload",
-            &mtui_ui::UPLOAD_FORM,
+            &UPLOAD_FORM,
             values,
         ));
         Vec::new()
@@ -639,8 +639,19 @@ impl App {
             return Vec::new();
         };
         let id = row.get(".id").cloned().unwrap_or_default();
+        let remote = row.get("name").cloned().unwrap_or_default();
         let mut values = HashMap::new();
-        values.insert("local-path".into(), String::new());
+        values.insert(
+            "local-path".into(),
+            crate::files_io::default_download_path(&remote),
+        );
+        values.insert("remote-name".into(), remote);
+        if let Some(kind) = row.get("type") {
+            values.insert("type".into(), kind.clone());
+        }
+        if let Some(size) = row.get("size") {
+            values.insert("size".into(), size.clone());
+        }
         if let Some(contents) = row.get("contents").filter(|value| !value.is_empty()) {
             values.insert("contents".into(), contents.clone());
         }
@@ -648,7 +659,7 @@ impl App {
             self.current_resource.clone(),
             id,
             "download",
-            &mtui_ui::DOWNLOAD_FORM,
+            &DOWNLOAD_FORM,
             values,
         ));
         Vec::new()
@@ -1367,8 +1378,36 @@ impl App {
             .filter(|value| !value.is_empty())
             .cloned();
         let record_id = session.record_id.clone();
-        let endpoint = resource_by_id(&session.resource_id)
-            .map_or_else(|| "/file".into(), |spec| spec.endpoint().to_string());
+        let remote_name = session
+            .values
+            .get("remote-name")
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        let file_type = session
+            .values
+            .get("type")
+            .map(|value| value.trim().to_ascii_lowercase())
+            .unwrap_or_default();
+        let size_label = session.values.get("size").cloned().unwrap_or_default();
+        if file_type == "directory" {
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.error = Some("directories cannot be downloaded".into());
+            }
+            return Vec::new();
+        }
+        if let Some(size) = crate::files_io::parse_file_size_bytes(&size_label)
+            && size > crate::files_io::MAX_TRANSFER_BYTES
+        {
+            let message = format!(
+                "file is larger than {} bytes; use Fetch URL",
+                crate::files_io::MAX_TRANSFER_BYTES
+            );
+            if let Overlay::Form(session) = &mut self.overlay {
+                session.error = Some(message.clone());
+            }
+            self.status = message;
+            return Vec::new();
+        }
         if let Overlay::Form(session) = &mut self.overlay {
             session.saving = true;
             session.error = None;
@@ -1383,17 +1422,12 @@ impl App {
                 contents,
             }];
         }
-        if record_id.is_empty() {
+        if record_id.is_empty() && remote_name.is_empty() {
             if let Overlay::Form(session) = &mut self.overlay {
                 session.saving = false;
-                session.error = Some(
-                    "Classic API did not return file contents; use Fetch URL or copy another way."
-                        .into(),
-                );
+                session.error = Some("select a file row before downloading".into());
             }
-            self.status =
-                "Classic API did not return file contents; use Fetch URL or copy another way."
-                    .into();
+            self.status = "select a file row before downloading".into();
             return Vec::new();
         }
         self.status = "Fetching file…".into();
@@ -1401,8 +1435,8 @@ impl App {
             session: SessionId::UNSTAMPED,
             request_id: self.next_request(),
             generation: self.poll_generation,
-            endpoint,
             id: record_id,
+            name: remote_name,
             local_path: path,
         }]
     }
@@ -1685,7 +1719,7 @@ impl App {
         let Some(contents) = contents else {
             if let Overlay::Form(session) = &mut self.overlay {
                 session.saving = false;
-                session.error = Some("file was empty".into());
+                session.error = Some("could not read the local file".into());
             }
             return Vec::new();
         };
@@ -1745,9 +1779,8 @@ impl App {
             self.status = format!("Download failed: {err}");
             return Vec::new();
         }
-        let Some(contents) = contents.filter(|value| !value.is_empty()) else {
-            let message =
-                "Classic API did not return file contents; use Fetch URL or copy another way.";
+        let Some(contents) = contents else {
+            let message = "RouterOS returned no file data";
             if let Overlay::Form(session) = &mut self.overlay {
                 session.saving = false;
                 session.error = Some(message.into());
@@ -4112,18 +4145,23 @@ mod tests {
             .collect();
         assert!(ids.contains(&"remove"));
         assert!(ids.contains(&"fetch"));
-        assert!(!ids.contains(&"upload"));
-        assert!(!ids.contains(&"download"));
+        assert!(ids.contains(&"upload"));
+        assert!(ids.contains(&"download"));
         let hints = app.footer_action_hints();
         assert!(
             hints
                 .iter()
-                .any(|(key, label)| key == "f" && label == "Fetch URL")
+                .any(|(key, label)| key == "u" && label == "Upload")
         );
         assert!(
             hints
                 .iter()
-                .any(|(key, label)| key == "x" && label == "Remove")
+                .any(|(key, label)| key == "d" && label == "Download")
+        );
+        assert!(
+            hints
+                .iter()
+                .any(|(key, label)| key == "f" && label == "Fetch URL")
         );
     }
 
@@ -4141,6 +4179,122 @@ mod tests {
             panic!("expected fetch form");
         };
         assert_eq!(session.error.as_deref(), Some("URL is required"));
+    }
+
+    #[test]
+    fn upload_prompt_is_a_modal_over_the_files_table() {
+        let mut app = files_app(None);
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        assert!(cmds.is_empty());
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected upload form, got {:?}", app.overlay);
+        };
+        assert_eq!(session.prompt_command, Some("upload"));
+        assert!(session.values.contains_key("local-path"));
+        assert!(session.values.contains_key("remote-name"));
+        let cmds = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(
+            cmds.iter()
+                .any(|cmd| matches!(cmd, AppCommand::ListLocalDir { .. })),
+            "enter on Local Path should browse, got {cmds:?}"
+        );
+        assert!(matches!(app.overlay, Overlay::FilePicker(_)));
+    }
+
+    #[test]
+    fn download_prompt_prefills_a_workstation_basename() {
+        let mut app = files_app(None);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('d'))));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected download form, got {:?}", app.overlay);
+        };
+        assert_eq!(session.prompt_command, Some("download"));
+        let path = session.values.get("local-path").expect("local-path");
+        assert!(
+            path.ends_with("backup.rsc"),
+            "expected basename from the row, got {path}"
+        );
+        assert_eq!(
+            session.values.get("remote-name").map(String::as_str),
+            Some("backup.rsc")
+        );
+        let cmds = app.save_form();
+        assert!(cmds.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::FetchRecord { id, name, .. }
+                if id == "*1" && name == "backup.rsc"
+        )));
+    }
+
+    #[test]
+    fn download_prompt_rejects_directories() {
+        let mut app = App::new(false).expect("app");
+        app.screen = Screen::Main;
+        app.select_resource("files");
+        let mut fields = HashMap::new();
+        fields.insert("name".into(), "backup".into());
+        fields.insert("type".into(), "directory".into());
+        let _ = app.update(AppEvent::Worker(WorkerMsg::ResourceResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            resource_id: "files".into(),
+            rows: vec![Resource {
+                id: "*1".into(),
+                fields,
+            }],
+            error: None,
+        }));
+        app.pane = Pane::Content;
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('d'))));
+        let cmds = app.save_form();
+        assert!(cmds.is_empty());
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("expected download form, got {:?}", app.overlay);
+        };
+        assert_eq!(
+            session.error.as_deref(),
+            Some("directories cannot be downloaded")
+        );
+    }
+
+    #[test]
+    fn upload_save_puts_utf8_contents_on_file_add() {
+        let mut app = files_app(None);
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        if let Overlay::Form(session) = &mut app.overlay {
+            session
+                .values
+                .insert("local-path".into(), "/tmp/note.rsc".into());
+            session
+                .values
+                .insert("remote-name".into(), "note.rsc".into());
+        }
+        let cmds = app.save_form();
+        assert!(cmds.iter().any(|cmd| matches!(
+            cmd,
+            AppCommand::ReadLocalFile { remote_name, path, .. }
+                if remote_name == "note.rsc" && path == "/tmp/note.rsc"
+        )));
+        let cmds = app.apply_read_local_file(WorkerMsg::ReadLocalFileResult {
+            session: app.test_session(),
+            request_id: app.request_id,
+            generation: app.poll_generation,
+            remote_name: "note.rsc".into(),
+            contents: Some("/system identity\n".into()),
+            error: None,
+        });
+        match command_op(&cmds) {
+            MutationOp::Put { endpoint, fields } => {
+                assert_eq!(endpoint, "/file");
+                assert_eq!(fields.get("name").map(String::as_str), Some("note.rsc"));
+                assert_eq!(
+                    fields.get("contents").map(String::as_str),
+                    Some("/system identity\n")
+                );
+            }
+            other => panic!("unexpected op {other:?}"),
+        }
     }
 
     fn ping_screen() -> App {

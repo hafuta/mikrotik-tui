@@ -544,15 +544,19 @@ async fn read_loop(mut reader: ReadHalf<PinBox>, inner: Arc<SessionInner>) {
                             );
                         }
                     }
+                    let pending = inner.pending.lock().await;
                     if let Some(tag) = sentence.tag() {
-                        let pending = inner.pending.lock().await;
                         if let Some(tx) = pending.get(tag) {
                             let _ = tx.send(sentence);
                         }
                     } else if sentence.is_fatal() {
-                        let pending = inner.pending.lock().await;
                         for tx in pending.values() {
                             let _ = tx.send(sentence.clone());
+                        }
+                    } else if pending.len() == 1 {
+                        // `/file/get` on some builds omits `.tag=` on `!done`.
+                        if let Some(tx) = pending.values().next() {
+                            let _ = tx.send(sentence);
                         }
                     }
                 }
@@ -605,6 +609,43 @@ mod tests {
             .expect("print");
         assert!(replies.iter().any(Sentence::is_re));
         assert!(replies.iter().any(Sentence::is_done));
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn untagged_done_completes_when_only_one_request_is_pending() {
+        let (client, mut server) = tokio::io::duplex(64 * 1024);
+        let server_task = tokio::spawn(async move {
+            let mut buf = vec![0_u8; 4096];
+            let _ = server.read(&mut buf).await;
+            server
+                .write_all(&encode_sentence(&["!done", ".tag=1"]))
+                .await
+                .unwrap();
+            let _ = server.read(&mut buf).await;
+            server
+                .write_all(&encode_sentence(&["!done", "=ret=hello"]))
+                .await
+                .unwrap();
+        });
+
+        let session = Session::from_stream(
+            client,
+            "admin".into(),
+            String::new(),
+            Duration::from_secs(2),
+        )
+        .await
+        .expect("login");
+        let replies = session
+            .request("get", vec!["/file/get".into(), "=.id=*1".into()])
+            .await
+            .expect("untagged done");
+        assert!(replies.iter().any(Sentence::is_done));
+        assert_eq!(
+            replies.iter().find_map(|sentence| sentence.attr("ret")),
+            Some("hello")
+        );
         server_task.await.unwrap();
     }
 

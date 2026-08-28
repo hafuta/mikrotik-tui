@@ -576,10 +576,38 @@ pub const ACTION_FILE_FETCH: ActionSpec = ActionSpec {
     when: ActionWhen::Always,
 };
 
-/// Files: backup, fetch, and remove. File contents are not transferred over the API.
+pub const ACTION_FILE_UPLOAD: ActionSpec = ActionSpec {
+    id: "upload",
+    label: "Upload",
+    key: Some('u'),
+    enter: false,
+    needs_selection: false,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Upload,
+    },
+    when: ActionWhen::Always,
+};
+
+pub const ACTION_FILE_DOWNLOAD: ActionSpec = ActionSpec {
+    id: "download",
+    label: "Download",
+    key: Some('d'),
+    enter: false,
+    needs_selection: true,
+    danger: false,
+    kind: ActionKind::Prompt {
+        command: ActionCommand::Download,
+    },
+    when: ActionWhen::HasSelection,
+};
+
+/// Files: backup, workstation transfer, fetch URL, export/import, and remove.
 pub const FILE_ACTIONS: &[ActionSpec] = &[
     ACTION_BACKUP_SAVE,
     ACTION_BACKUP_LOAD,
+    ACTION_FILE_UPLOAD,
+    ACTION_FILE_DOWNLOAD,
     ACTION_FILE_FETCH,
     ACTION_EXPORT_CONFIG,
     ACTION_IMPORT_CONFIG,
@@ -1388,13 +1416,15 @@ mod tests {
             .iter()
             .filter_map(|action| action.key)
             .collect();
-        assert_eq!(keys, ['b', 'f', 'e', 'i', 'x']);
+        assert_eq!(keys, ['b', 'u', 'd', 'f', 'e', 'i', 'x']);
         let ids: Vec<_> = FILE_ACTIONS.iter().map(|action| action.id).collect();
         assert_eq!(
             ids,
             [
                 "backup-save",
                 "backup-load",
+                "upload",
+                "download",
                 "fetch",
                 "export-config",
                 "import-config",
@@ -1402,7 +1432,9 @@ mod tests {
             ]
         );
         assert!(!FILE_ACTIONS[2].needs_selection);
-        assert!(FILE_ACTIONS[5].needs_selection);
+        assert!(FILE_ACTIONS[3].needs_selection);
+        assert!(!FILE_ACTIONS[4].needs_selection);
+        assert!(FILE_ACTIONS[7].needs_selection);
     }
 
     #[test]

@@ -573,8 +573,17 @@ impl App {
     fn keys_file_picker(&mut self, key: KeyEvent) -> Vec<AppCommand> {
         match key.code {
             KeyCode::Esc => {
-                self.overlay = Overlay::None;
-                self.status = "CA file browse canceled".into();
+                let was_form = matches!(
+                    &self.overlay,
+                    Overlay::FilePicker(picker) if picker.resume.is_some()
+                );
+                if was_form {
+                    self.restore_file_picker_form();
+                    self.status = "Browse canceled".into();
+                } else {
+                    self.overlay = Overlay::None;
+                    self.status = "CA file browse canceled".into();
+                }
                 Vec::new()
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -613,6 +622,7 @@ impl App {
                 }
                 Vec::new()
             }
+            KeyCode::Char(' ') => self.file_picker_use_folder(),
             KeyCode::Left | KeyCode::Backspace | KeyCode::Char('h') => self.file_picker_parent(),
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.file_picker_open(),
             _ => Vec::new(),
@@ -639,10 +649,34 @@ impl App {
         if entry.is_dir {
             return self.list_picker_dir(entry.path);
         }
-        self.login.ca_file = entry.path;
-        self.login.focus = LoginField::CaFile;
-        self.overlay = Overlay::None;
-        self.status = "CA file selected".into();
+        self.apply_picked_local_path(entry.path);
+        Vec::new()
+    }
+
+    fn file_picker_use_folder(&mut self) -> Vec<AppCommand> {
+        let Overlay::FilePicker(picker) = &self.overlay else {
+            return Vec::new();
+        };
+        if picker.kind != mtui_ui::FilePickerKind::Download {
+            return Vec::new();
+        }
+        let folder = picker
+            .selected_entry()
+            .filter(|entry| entry.is_dir)
+            .map_or_else(|| picker.dir.clone(), |entry| entry.path.clone());
+        if folder.is_empty() {
+            return Vec::new();
+        }
+        let name = picker.suggested_name.clone();
+        let file_name = std::path::Path::new(&name)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("download");
+        let path = std::path::Path::new(&folder)
+            .join(file_name)
+            .to_string_lossy()
+            .into_owned();
+        self.apply_picked_local_path(path);
         Vec::new()
     }
 
@@ -967,6 +1001,18 @@ impl App {
 
         if self.form_session().is_some_and(FormSession::lookup_open) {
             return self.keys_lookup(key, schema);
+        }
+
+        if key.code == KeyCode::Enter
+            && key.modifiers.is_empty()
+            && self.form_session().is_some_and(|session| {
+                matches!(session.prompt_command, Some("upload" | "download"))
+                    && session
+                        .focused_spec(schema)
+                        .is_some_and(|field| field.key == "local-path")
+            })
+        {
+            return self.open_transfer_file_picker();
         }
 
         match key.code {
@@ -1732,6 +1778,27 @@ mod login_edit_tests {
         assert!(cmds.is_empty());
         assert_eq!(app.login.ca_file, "/certs/ca.pem");
         assert_eq!(app.overlay, crate::app::Overlay::None);
+    }
+
+    #[test]
+    fn file_picker_esc_restores_the_upload_form() {
+        let mut app = files_app_for_picker();
+        let _ = app.update(AppEvent::Input(press(KeyCode::Char('u'))));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
+        assert!(matches!(app.overlay, crate::app::Overlay::FilePicker(_)));
+        let _ = app.update(AppEvent::Input(press(KeyCode::Esc)));
+        let crate::app::Overlay::Form(session) = &app.overlay else {
+            panic!("expected upload form restored, got {:?}", app.overlay);
+        };
+        assert_eq!(session.prompt_command, Some("upload"));
+    }
+
+    fn files_app_for_picker() -> App {
+        let mut app = App::new(false).expect("app");
+        app.screen = crate::app::Screen::Main;
+        app.select_resource("files");
+        app.pane = crate::app::Pane::Content;
+        app
     }
 
     #[test]
