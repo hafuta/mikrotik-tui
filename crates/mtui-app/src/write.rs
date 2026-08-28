@@ -4166,6 +4166,13 @@ mod tests {
     }
 
     #[test]
+    fn files_defaults_to_name_ascending_tree() {
+        let app = files_app(None);
+        assert_eq!(app.table.sort_col, Some(0));
+        assert_eq!(app.table.sort_dir, mtui_ui::SortDir::Asc);
+    }
+
+    #[test]
     fn fetch_prompt_requires_url() {
         let mut app = files_app(None);
         let _ = app.update(AppEvent::Input(press(KeyCode::Char('f'))));

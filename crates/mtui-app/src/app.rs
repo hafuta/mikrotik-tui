@@ -1930,6 +1930,9 @@ impl App {
         }
         if let Some(spec) = resource_by_id(id) {
             self.table = TableState::new(spec.columns);
+            if spec.id == "files" {
+                self.table.enable_path_tree();
+            }
         } else {
             self.table = TableState::new(&[]);
         }

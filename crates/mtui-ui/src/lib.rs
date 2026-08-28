@@ -19,6 +19,7 @@ mod navigation;
 mod overlay;
 mod paint;
 mod palette;
+mod path_tree;
 mod probe;
 mod scroll;
 mod styles;

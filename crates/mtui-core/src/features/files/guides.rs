@@ -36,6 +36,7 @@ pub(crate) static GUIDES: &[(&str, ScreenGuide)] = &[guide!(
          Path browses Linux, macOS, and Windows folders (`~/` and `%USERPROFILE%` expand). \
          Directories cannot be downloaded. Download uses `/file/read` in 32 KiB chunks. \
          Binary packages that are not UTF-8 still need Fetch URL (`f`) or another \
-         client. Removing a file here deletes it on the router.",
+         client. Removing a file here deletes it on the router. Name ascending (the default) \
+         nests folders; other sorts and `/` filter show the full path.",
     "name, type, size, creation-time. Contents are fetched only when downloading."
 )];
