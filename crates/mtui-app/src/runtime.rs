@@ -9,8 +9,9 @@ use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use mtui_core::{FetchKind, routeros_meets_minimum};
+use mtui_core::{FetchKind, routeros_meets_minimum, truthy};
 use mtui_routeros::{Client, ClientOptions, ErrorKind, probe_certificate};
+use mtui_ssh::{SshConnectOptions, SshInput, SshPty};
 use mtui_ui::ColorDepth;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -29,6 +30,9 @@ struct SessionIo {
     probe_tx: watch::Sender<u64>,
     listen_gate: StreamGate,
     wan_gate: StreamGate,
+    ssh_tx: Option<mpsc::UnboundedSender<SshInput>>,
+    ssh_cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    ssh_gen: u64,
 }
 
 impl SessionIo {
@@ -42,6 +46,9 @@ impl SessionIo {
             probe_tx,
             listen_gate: StreamGate::default(),
             wan_gate: StreamGate::default(),
+            ssh_tx: None,
+            ssh_cancel: None,
+            ssh_gen: 0,
         }
     }
 }
@@ -88,6 +95,7 @@ async fn run_ui(
     demo: bool,
 ) -> anyhow::Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel::<WorkerMsg>();
+    let (ssh_tx, mut ssh_rx) = mpsc::unbounded_channel::<WorkerMsg>();
     let mut ios: HashMap<SessionId, SessionIo> = HashMap::new();
     let mut app = App::new(alt_screen)?;
     ensure_io(&mut ios, app.active);
@@ -103,7 +111,7 @@ async fn run_ui(
         let cmds = app.startup_commands();
         app.stamp(cmds)
     };
-    dispatch_commands(rt, &tx, &mut app, &mut ios, startup);
+    dispatch_commands(rt, &tx, &ssh_tx, &mut app, &mut ios, startup);
     let mut tick = tokio::time::interval(Duration::from_secs(2));
     loop {
         app.pull_console_logs();
@@ -112,18 +120,24 @@ async fn run_ui(
             break;
         }
         tokio::select! {
+            biased;
+            msg = ssh_rx.recv() => {
+                if let Some(msg) = msg {
+                    apply_worker_frame(rt, &tx, &ssh_tx, &mut app, &mut ios, &mut ssh_rx, msg);
+                }
+            }
             _ = tick.tick() => {
                 let cmds = app.update(AppEvent::Tick);
-                dispatch_commands(rt, &tx, &mut app, &mut ios, cmds);
+                dispatch_commands(rt, &tx, &ssh_tx, &mut app, &mut ios, cmds);
             }
             msg = rx.recv() => {
                 if let Some(msg) = msg {
-                    apply_worker_frame(rt, &tx, &mut app, &mut ios, &mut rx, msg);
+                    apply_worker_frame(rt, &tx, &ssh_tx, &mut app, &mut ios, &mut rx, msg);
                 }
             }
             () = tokio::time::sleep(Duration::from_millis(16)) => {}
         }
-        drain_input(rt, &tx, &mut app, &mut ios)?;
+        drain_input(rt, &tx, &ssh_tx, &mut app, &mut ios)?;
     }
     Ok(())
 }
@@ -134,6 +148,7 @@ const WORKER_MSGS_PER_FRAME: usize = 32;
 fn apply_worker_frame(
     rt: &tokio::runtime::Runtime,
     tx: &mpsc::UnboundedSender<WorkerMsg>,
+    ssh_tx: &mpsc::UnboundedSender<WorkerMsg>,
     app: &mut App,
     ios: &mut HashMap<SessionId, SessionIo>,
     rx: &mut mpsc::UnboundedReceiver<WorkerMsg>,
@@ -141,7 +156,7 @@ fn apply_worker_frame(
 ) {
     for msg in take_worker_batch(rx, first) {
         let cmds = app.update(AppEvent::Worker(msg));
-        dispatch_commands(rt, tx, app, ios, cmds);
+        dispatch_commands(rt, tx, ssh_tx, app, ios, cmds);
     }
 }
 
@@ -157,12 +172,81 @@ fn take_worker_batch(
             Err(_) => break,
         }
     }
+    let mut batch = coalesce_ssh_data(batch);
+    drain_follow_on_ssh_data(rx, &mut batch);
     batch
+}
+
+fn coalesce_ssh_data(batch: Vec<WorkerMsg>) -> Vec<WorkerMsg> {
+    let mut out = Vec::with_capacity(batch.len());
+    for msg in batch {
+        if let WorkerMsg::SshData {
+            session,
+            generation,
+            bytes,
+        } = msg
+        {
+            if let Some(WorkerMsg::SshData {
+                session: prev_session,
+                generation: prev_generation,
+                bytes: buf,
+            }) = out.last_mut()
+                && *prev_session == session
+                && *prev_generation == generation
+            {
+                buf.extend(bytes);
+                continue;
+            }
+            out.push(WorkerMsg::SshData {
+                session,
+                generation,
+                bytes,
+            });
+        } else {
+            out.push(msg);
+        }
+    }
+    out
+}
+
+fn drain_follow_on_ssh_data(
+    rx: &mut mpsc::UnboundedReceiver<WorkerMsg>,
+    batch: &mut Vec<WorkerMsg>,
+) {
+    let Some((session, generation)) = batch.last().and_then(|msg| match msg {
+        WorkerMsg::SshData {
+            session,
+            generation,
+            ..
+        } => Some((*session, *generation)),
+        _ => None,
+    }) else {
+        return;
+    };
+    loop {
+        match rx.try_recv() {
+            Ok(WorkerMsg::SshData {
+                session: next_session,
+                generation: next_generation,
+                bytes,
+            }) if next_session == session && next_generation == generation => {
+                if let Some(WorkerMsg::SshData { bytes: buf, .. }) = batch.last_mut() {
+                    buf.extend(bytes);
+                }
+            }
+            Ok(other) => {
+                batch.push(other);
+                break;
+            }
+            Err(_) => break,
+        }
+    }
 }
 
 fn drain_input(
     rt: &tokio::runtime::Runtime,
     tx: &mpsc::UnboundedSender<WorkerMsg>,
+    ssh_tx: &mpsc::UnboundedSender<WorkerMsg>,
     app: &mut App,
     ios: &mut HashMap<SessionId, SessionIo>,
 ) -> anyhow::Result<()> {
@@ -170,10 +254,11 @@ fn drain_input(
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
                 let cmds = app.update(AppEvent::Input(key));
-                dispatch_commands(rt, tx, app, ios, cmds);
+                dispatch_commands(rt, tx, ssh_tx, app, ios, cmds);
             }
             Event::Resize(width, height) => {
-                let _ = app.update(AppEvent::Resize { width, height });
+                let cmds = app.update(AppEvent::Resize { width, height });
+                dispatch_commands(rt, tx, ssh_tx, app, ios, cmds);
             }
             _ => {}
         }
@@ -185,6 +270,7 @@ fn drain_input(
 fn dispatch_commands(
     rt: &tokio::runtime::Runtime,
     tx: &mpsc::UnboundedSender<WorkerMsg>,
+    ssh_tx: &mpsc::UnboundedSender<WorkerMsg>,
     app: &mut App,
     ios: &mut HashMap<SessionId, SessionIo>,
     cmds: Vec<AppCommand>,
@@ -193,6 +279,15 @@ fn dispatch_commands(
     for cmd in cmds {
         if let AppCommand::CloseSession { session } = cmd {
             ios.remove(&session);
+            continue;
+        }
+        if let AppCommand::CloseSsh { session, .. } = cmd {
+            if let Some(io) = ios.get_mut(&session) {
+                io.ssh_tx = None;
+                if let Some(cancel) = io.ssh_cancel.take() {
+                    let _ = cancel.send(());
+                }
+            }
             continue;
         }
         if let AppCommand::Quit = cmd {
@@ -219,18 +314,44 @@ fn dispatch_commands(
         });
         if let Some(msgs) = demo_msgs {
             for msg in msgs {
-                let _ = tx.send(msg);
+                if matches!(
+                    msg,
+                    WorkerMsg::SshReady { .. }
+                        | WorkerMsg::SshData { .. }
+                        | WorkerMsg::SshClosed { .. }
+                        | WorkerMsg::SshService { .. }
+                ) {
+                    let _ = ssh_tx.send(msg);
+                } else {
+                    let _ = tx.send(msg);
+                }
             }
             continue;
         }
         let client = app
             .session(session)
             .and_then(|target| target.client.clone());
+        if matches!(
+            &cmd,
+            AppCommand::ProbeSshService { .. }
+                | AppCommand::OpenSsh { .. }
+                | AppCommand::SshWrite { .. }
+                | AppCommand::SshResize { .. }
+        ) {
+            dispatch_ssh(rt, ssh_tx, ios, client, cmd);
+            continue;
+        }
         let io = ios
             .get(&session)
             .expect("session I/O created before dispatch");
         match cmd {
-            AppCommand::Quit | AppCommand::CloseSession { .. } => {}
+            AppCommand::Quit
+            | AppCommand::CloseSession { .. }
+            | AppCommand::ProbeSshService { .. }
+            | AppCommand::OpenSsh { .. }
+            | AppCommand::SshWrite { .. }
+            | AppCommand::SshResize { .. }
+            | AppCommand::CloseSsh { .. } => {}
             AppCommand::Connect {
                 session,
                 url,
@@ -688,6 +809,211 @@ fn dispatch_commands(
             }
         }
     }
+}
+
+fn dispatch_ssh(
+    rt: &tokio::runtime::Runtime,
+    tx: &mpsc::UnboundedSender<WorkerMsg>,
+    ios: &mut HashMap<SessionId, SessionIo>,
+    client: Option<Arc<Client>>,
+    cmd: AppCommand,
+) {
+    match cmd {
+        AppCommand::ProbeSshService {
+            session,
+            generation,
+        } => {
+            let Some(client) = client else {
+                let _ = tx.send(WorkerMsg::SshService {
+                    session,
+                    generation,
+                    port: mtui_ssh::DEFAULT_SSH_PORT,
+                    disabled: true,
+                    id: String::new(),
+                    error: Some("Connect to the router first".into()),
+                });
+                return;
+            };
+            let tx = tx.clone();
+            rt.spawn(async move {
+                let msg = probe_ssh_service(session, generation, client).await;
+                let _ = tx.send(msg);
+            });
+        }
+        AppCommand::OpenSsh {
+            session,
+            generation,
+            host,
+            port,
+            username,
+            password,
+            expected_fingerprint,
+            cols,
+            rows,
+        } => {
+            let (stdin_tx, stdin_rx) = mpsc::unbounded_channel();
+            let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+            if let Some(io) = ios.get_mut(&session) {
+                if let Some(prev) = io.ssh_cancel.take() {
+                    let _ = prev.send(());
+                }
+                io.ssh_tx = Some(stdin_tx);
+                io.ssh_cancel = Some(cancel_tx);
+                io.ssh_gen = generation;
+            }
+            let tx = tx.clone();
+            rt.spawn(async move {
+                run_ssh_session(
+                    session,
+                    generation,
+                    SshConnectOptions {
+                        host,
+                        port,
+                        username,
+                        password,
+                        expected_fingerprint,
+                        cols,
+                        rows,
+                    },
+                    stdin_rx,
+                    cancel_rx,
+                    tx,
+                )
+                .await;
+            });
+        }
+        AppCommand::SshWrite {
+            session,
+            generation,
+            bytes,
+        } => {
+            if let Some(io) = ios.get(&session)
+                && io.ssh_gen == generation
+                && let Some(stdin) = &io.ssh_tx
+            {
+                let _ = stdin.send(SshInput::Data(bytes));
+            }
+        }
+        AppCommand::SshResize {
+            session,
+            generation,
+            cols,
+            rows,
+        } => {
+            if let Some(io) = ios.get(&session)
+                && io.ssh_gen == generation
+                && let Some(stdin) = &io.ssh_tx
+            {
+                let _ = stdin.send(SshInput::Resize { cols, rows });
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn probe_ssh_service(session: SessionId, generation: u64, client: Arc<Client>) -> WorkerMsg {
+    match client.list("/ip/service").await {
+        Ok(rows) => {
+            let Some(row) = rows.iter().find(|row| {
+                row.field("name")
+                    .is_some_and(|name| name.eq_ignore_ascii_case("ssh"))
+            }) else {
+                return WorkerMsg::SshService {
+                    session,
+                    generation,
+                    port: mtui_ssh::DEFAULT_SSH_PORT,
+                    disabled: true,
+                    id: String::new(),
+                    error: Some("SSH service is not present on this router".into()),
+                };
+            };
+            let port = row
+                .field("port")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(mtui_ssh::DEFAULT_SSH_PORT);
+            WorkerMsg::SshService {
+                session,
+                generation,
+                port,
+                disabled: truthy(row.field("disabled")),
+                id: row.id.clone(),
+                error: None,
+            }
+        }
+        Err(err) => WorkerMsg::SshService {
+            session,
+            generation,
+            port: mtui_ssh::DEFAULT_SSH_PORT,
+            disabled: true,
+            id: String::new(),
+            error: Some(err.to_string()),
+        },
+    }
+}
+
+async fn run_ssh_session(
+    session: SessionId,
+    generation: u64,
+    options: SshConnectOptions,
+    stdin: mpsc::UnboundedReceiver<SshInput>,
+    mut cancel: tokio::sync::oneshot::Receiver<()>,
+    tx: mpsc::UnboundedSender<WorkerMsg>,
+) {
+    let pty = tokio::select! {
+        biased;
+        _ = &mut cancel => return,
+        result = SshPty::connect(options) => match result {
+            Ok(pty) => pty,
+            Err(err) => {
+                let _ = tx.send(WorkerMsg::SshClosed {
+                    session,
+                    generation,
+                    error: Some(err.to_string()),
+                });
+                return;
+            }
+        }
+    };
+    let fingerprint = pty.fingerprint.clone();
+    let stages_ms = pty.stages_ms.clone();
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+    let runner = tokio::spawn(async move {
+        pty.run(stdin, out_tx).await;
+    });
+    let _ = tx.send(WorkerMsg::SshReady {
+        session,
+        generation,
+        fingerprint,
+        stages_ms,
+    });
+    loop {
+        tokio::select! {
+            biased;
+            _ = &mut cancel => break,
+            bytes = out_rx.recv() => {
+                let Some(bytes) = bytes else {
+                    break;
+                };
+                if tx
+                    .send(WorkerMsg::SshData {
+                        session,
+                        generation,
+                        bytes,
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    }
+    drop(out_rx);
+    let _ = runner.await;
+    let _ = tx.send(WorkerMsg::SshClosed {
+        session,
+        generation,
+        error: None,
+    });
 }
 
 fn copy_to_clipboard(text: &str) -> Result<(), String> {
@@ -1476,7 +1802,7 @@ async fn stream_probe(
 
 #[cfg(test)]
 mod tests {
-    use super::{WORKER_MSGS_PER_FRAME, lookup_options, take_worker_batch};
+    use super::{WORKER_MSGS_PER_FRAME, coalesce_ssh_data, lookup_options, take_worker_batch};
     use crate::event::WorkerMsg;
     use crate::session::SessionId;
     use mtui_routeros::Resource;
@@ -1498,6 +1824,69 @@ mod tests {
         let batch = take_worker_batch(&mut rx, first);
         assert_eq!(batch.len(), WORKER_MSGS_PER_FRAME);
         assert!(rx.try_recv().is_ok());
+    }
+
+    #[test]
+    fn adjacent_ssh_data_is_merged_in_order() {
+        let session = SessionId::raw(1);
+        let batch = vec![
+            WorkerMsg::SshReady {
+                session,
+                generation: 3,
+                fingerprint: String::new(),
+                stages_ms: String::new(),
+            },
+            WorkerMsg::SshData {
+                session,
+                generation: 3,
+                bytes: b"he".to_vec(),
+            },
+            WorkerMsg::SshData {
+                session,
+                generation: 3,
+                bytes: b"llo".to_vec(),
+            },
+            WorkerMsg::SshClosed {
+                session,
+                generation: 3,
+                error: None,
+            },
+        ];
+        let merged = coalesce_ssh_data(batch);
+        assert_eq!(merged.len(), 3);
+        match &merged[1] {
+            WorkerMsg::SshData { bytes, .. } => assert_eq!(bytes, b"hello"),
+            _ => panic!("expected merged PTY bytes"),
+        }
+    }
+
+    #[test]
+    fn ssh_ready_and_banner_share_a_batch_without_listen_deltas() {
+        let session = SessionId::raw(1);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(WorkerMsg::SshReady {
+            session,
+            generation: 1,
+            fingerprint: String::new(),
+            stages_ms: String::new(),
+        })
+        .expect("send");
+        tx.send(WorkerMsg::SshData {
+            session,
+            generation: 1,
+            bytes: b"[admin@MikroTik] > ".to_vec(),
+        })
+        .expect("send");
+        let first = rx.try_recv().expect("first");
+        let batch = take_worker_batch(&mut rx, first);
+        assert!(matches!(batch[0], WorkerMsg::SshReady { .. }));
+        match &batch[1] {
+            WorkerMsg::SshData { bytes, .. } => {
+                assert_eq!(bytes.as_slice(), b"[admin@MikroTik] > ");
+            }
+            _ => panic!("expected PTY bytes after SshReady"),
+        }
+        assert_eq!(batch.len(), 2);
     }
 
     #[test]

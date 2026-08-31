@@ -256,7 +256,7 @@ impl App {
             }
             SafeModeAfter::Logout => {
                 self.disconnect_to_profiles();
-                Vec::new()
+                vec![self.close_ssh_command()]
             }
         }
     }

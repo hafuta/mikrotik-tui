@@ -80,6 +80,7 @@ fn push_main_help(out: &mut String, app: &App) {
                 },
             ),
             ("`", "toggle log console"),
+            ("F12", "New Terminal (RouterOS CLI over SSH)"),
             (
                 "r",
                 if app.session_ready() {
@@ -115,6 +116,22 @@ fn push_main_help(out: &mut String, app: &App) {
                 ("h / l", "inspect JSON"),
                 ("c", "copy focused log"),
                 ("`", "hide"),
+            ],
+        );
+    }
+    if app.terminal.visible || app.pane == Pane::Terminal {
+        push_section(
+            out,
+            "Terminal",
+            &[
+                ("F12", "hide (SSH stays up)"),
+                ("F11", "fullscreen"),
+                ("`", "show log console"),
+                ("shift+tab", "leave focus; dock stays"),
+                ("ctrl+v", "paste"),
+                ("Shift+PgUp / PgDn", "scroll local history"),
+                ("Shift+↑ / ↓", "scroll one line"),
+                ("Tab / Ctrl+C / F4", "go to the RouterOS PTY"),
             ],
         );
     }

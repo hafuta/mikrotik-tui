@@ -12,6 +12,7 @@ mod render;
 mod runtime;
 mod safe_mode;
 mod session;
+mod ssh_term;
 mod telemetry;
 mod write;
 

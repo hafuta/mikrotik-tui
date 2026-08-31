@@ -24,6 +24,7 @@ mod probe;
 mod scroll;
 mod styles;
 mod table;
+mod terminal;
 mod torch;
 
 pub use action_menu::{ActionMenuItem, ActionMenuState, render_action_menu};
@@ -63,4 +64,5 @@ pub use palette::{Command, CommandPalette, PALETTE_VISIBLE_ROWS, highlight_match
 pub use probe::{ProbeField, ProbeKind, ProbeState, render_probe};
 pub use styles::{Styles, rgb_color};
 pub use table::{Row, SortDir, TableState};
+pub use terminal::{TerminalCell, TerminalLink, TerminalState, render_terminal};
 pub use torch::{TorchField, TorchState, render_torch};

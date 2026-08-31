@@ -1,0 +1,18 @@
+[package]
+name = "mtui-ssh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Interactive SSH client for a RouterOS PTY"
+
+[dependencies]
+hex = { workspace = true }
+russh = { version = "0.54", default-features = false, features = ["ring", "flate2", "rsa"] }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

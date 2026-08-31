@@ -11,6 +11,12 @@ use crate::session::SessionId;
 impl App {
     pub(crate) fn on_key(&mut self, key: KeyEvent) -> Vec<AppCommand> {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            if self.screen == Screen::Main
+                && self.pane == Pane::Terminal
+                && self.overlay == Overlay::None
+            {
+                return self.keys_terminal(key);
+            }
             if self.screen == Screen::Login {
                 self.persist_login_draft();
             }
@@ -308,6 +314,14 @@ impl App {
             return self.keys_form(key);
         }
 
+        if key.code == KeyCode::F(12) {
+            return self.toggle_terminal();
+        }
+
+        if self.pane == Pane::Terminal {
+            return self.keys_terminal(key);
+        }
+
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {
                 KeyCode::Char('k') => {
@@ -323,8 +337,7 @@ impl App {
                         return cmds;
                     }
                     tracing::info!("logout");
-                    self.disconnect_to_profiles();
-                    return Vec::new();
+                    return self.logout();
                 }
                 KeyCode::Char('u') => {
                     if self.pane == Pane::Console {
@@ -877,6 +890,11 @@ impl App {
                     self.overlay = Overlay::None;
                     self.forget_profile(&name);
                     Vec::new()
+                } else if matches!(
+                    &self.overlay,
+                    Overlay::Confirm(session) if session.action_id == "enable-ssh"
+                ) {
+                    self.confirm_enable_ssh()
                 } else {
                     self.confirm_pending()
                 }
@@ -1495,9 +1513,10 @@ impl App {
         }
     }
 
-    fn logout(&mut self) {
+    fn logout(&mut self) -> Vec<AppCommand> {
         tracing::info!("logout");
         self.disconnect_to_profiles();
+        vec![self.close_ssh_command()]
     }
 
     pub(crate) fn open_resource(&mut self, id: &str) -> Vec<AppCommand> {
@@ -1540,6 +1559,7 @@ impl App {
                 self.sync_console_viewport();
                 Vec::new()
             }
+            Pane::Terminal => Vec::new(),
         }
     }
 
@@ -1563,8 +1583,7 @@ impl App {
                 {
                     return cmds;
                 }
-                self.logout();
-                Vec::new()
+                self.logout()
             }
             "forget-device" => {
                 let name = if self.current_profile.is_empty() {
@@ -1592,6 +1611,7 @@ impl App {
                 self.toggle_console();
                 Vec::new()
             }
+            "terminal" => self.toggle_terminal(),
             "show-hidden-menus" => {
                 self.toggle_show_hidden_menus();
                 Vec::new()
@@ -1985,7 +2005,16 @@ mod login_edit_tests {
             KeyCode::Char('l'),
             KeyModifiers::CONTROL,
         )));
-        assert!(cmds.is_empty());
+        assert!(
+            cmds.iter()
+                .all(|cmd| !matches!(cmd, crate::app::AppCommand::ForgetProfile { .. })),
+            "logout must not forget the profile, got {cmds:?}"
+        );
+        assert!(
+            cmds.iter()
+                .any(|cmd| matches!(cmd, crate::app::AppCommand::CloseSsh { .. })),
+            "logout should drop SSH, got {cmds:?}"
+        );
         assert_eq!(app.screen, crate::app::Screen::Login);
         assert!(app.status.contains("profiles kept"));
     }
