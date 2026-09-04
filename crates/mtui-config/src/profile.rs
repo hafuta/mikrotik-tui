@@ -60,6 +60,9 @@ pub struct Profile {
     pub username: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub certificate_fingerprint: String,
+    /// SHA-256 of the SSH host key (lowercase hex). Empty until first TOFU.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ssh_host_key_fingerprint: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub custom_ca: String,
     /// Path to a PEM or DER CA file. Read at connect time. Prefer this over
@@ -152,6 +155,7 @@ impl Default for Profile {
             url: String::new(),
             username: String::new(),
             certificate_fingerprint: String::new(),
+            ssh_host_key_fingerprint: String::new(),
             custom_ca: String::new(),
             ca_file: String::new(),
             use_tls: true,

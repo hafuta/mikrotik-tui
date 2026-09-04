@@ -164,6 +164,30 @@ pub enum WorkerMsg {
         row: Option<Resource>,
         error: Option<String>,
     },
+    SshService {
+        session: SessionId,
+        generation: u64,
+        port: u16,
+        disabled: bool,
+        id: String,
+        error: Option<String>,
+    },
+    SshReady {
+        session: SessionId,
+        generation: u64,
+        fingerprint: String,
+        stages_ms: String,
+    },
+    SshData {
+        session: SessionId,
+        generation: u64,
+        bytes: Vec<u8>,
+    },
+    SshClosed {
+        session: SessionId,
+        generation: u64,
+        error: Option<String>,
+    },
 }
 
 impl WorkerMsg {
@@ -190,7 +214,11 @@ impl WorkerMsg {
             | Self::ListLocalDirResult { session, .. }
             | Self::ListenDelta { session, .. }
             | Self::WanSample { session, .. }
-            | Self::SafeModeResult { session, .. } => *session,
+            | Self::SafeModeResult { session, .. }
+            | Self::SshService { session, .. }
+            | Self::SshReady { session, .. }
+            | Self::SshData { session, .. }
+            | Self::SshClosed { session, .. } => *session,
         }
     }
 }

@@ -5,6 +5,7 @@ members = [
     "crates/mtui-routeros",
     "crates/mtui-config",
     "crates/mtui-ui",
+    "crates/mtui-ssh",
     "crates/mtui-app",
     "crates/routeros-tui",
 ]
@@ -22,6 +23,7 @@ mtui-core = { path = "crates/mtui-core" }
 mtui-routeros = { path = "crates/mtui-routeros" }
 mtui-config = { path = "crates/mtui-config" }
 mtui-ui = { path = "crates/mtui-ui" }
+mtui-ssh = { path = "crates/mtui-ssh" }
 mtui-app = { path = "crates/mtui-app" }
 
 anyhow = "1"

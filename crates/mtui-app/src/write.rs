@@ -283,6 +283,15 @@ impl App {
     }
 
     pub(crate) fn footer_action_hints(&self) -> Vec<(String, String)> {
+        if self.pane == Pane::Terminal {
+            return vec![
+                ("F12".into(), "hide".into()),
+                ("F11".into(), "fullscreen".into()),
+                ("shift+tab".into(), "panes".into()),
+                ("S-pgup".into(), "scroll".into()),
+                ("ctrl+v".into(), "paste".into()),
+            ];
+        }
         if self.pane == Pane::Console {
             return vec![
                 ("f".into(), "fullscreen".into()),
@@ -351,6 +360,7 @@ impl App {
             hints.push(("space".into(), "check".into()));
             hints.push(("*".into(), "all".into()));
         }
+        hints.push(("F12".into(), "terminal".into()));
         hints.push(("r".into(), "refresh".into()));
         hints.push(("ctrl+t".into(), "tab".into()));
         hints.push(("q".into(), "quit".into()));
@@ -366,7 +376,7 @@ impl App {
     }
 
     pub(crate) fn action_offered_in_pane(&self, action: &ActionSpec) -> bool {
-        if !self.resource_actions_allowed() || self.pane == Pane::Console {
+        if !self.resource_actions_allowed() || matches!(self.pane, Pane::Console | Pane::Terminal) {
             return false;
         }
         if action.needs_selection {

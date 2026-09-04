@@ -8,7 +8,7 @@ use mtui_core::{DASHBOARD_ID, SafeModeStatus, SessionAccess, navigation_tree};
 use mtui_routeros::{Client, Resource};
 use mtui_ui::{
     CommandPalette, ConsoleEntry, ConsoleState, FormSession, InspectorState, LoginForm, NavState,
-    TableState,
+    TableState, TerminalState,
 };
 
 use crate::app::{
@@ -95,6 +95,11 @@ pub struct Session {
     pub console_entries: Vec<ConsoleEntry>,
     pub(crate) console_log_seq: u64,
     pub(crate) pane_before_console: Pane,
+    pub terminal: TerminalState,
+    pub(crate) terminal_generation: u64,
+    pub(crate) pane_before_terminal: Pane,
+    pub(crate) vt_parser: Option<vt100::Parser>,
+    pub(crate) ssh_enable_pending: bool,
     pub(crate) demo: Option<DemoStore>,
     pub(crate) link: LinkState,
     pub(crate) last_ok_at: Option<Instant>,
@@ -158,6 +163,11 @@ impl Session {
             console_entries: Vec::new(),
             console_log_seq: 0,
             pane_before_console: Pane::Content,
+            terminal: TerminalState::default(),
+            terminal_generation: 0,
+            pane_before_terminal: Pane::Content,
+            vt_parser: None,
+            ssh_enable_pending: false,
             demo: None,
             link: LinkState::Idle,
             last_ok_at: None,

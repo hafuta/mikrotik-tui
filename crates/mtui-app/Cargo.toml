@@ -11,8 +11,10 @@ anyhow = { workspace = true }
 mtui-config = { workspace = true }
 mtui-core = { workspace = true }
 mtui-routeros = { workspace = true }
+mtui-ssh = { workspace = true }
 mtui-ui = { workspace = true }
 crossterm = { workspace = true }
+vt100 = "0.15"
 chrono = { workspace = true }
 ratatui = { workspace = true }
 serde_json = { workspace = true }

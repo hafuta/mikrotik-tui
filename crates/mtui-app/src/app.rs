@@ -78,6 +78,7 @@ pub enum Pane {
     Content,
     Inspector,
     Console,
+    Terminal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,6 +247,36 @@ pub enum AppCommand {
         session: SessionId,
         generation: u64,
     },
+    ProbeSshService {
+        session: SessionId,
+        generation: u64,
+    },
+    OpenSsh {
+        session: SessionId,
+        generation: u64,
+        host: String,
+        port: u16,
+        username: String,
+        password: String,
+        expected_fingerprint: Option<String>,
+        cols: u32,
+        rows: u32,
+    },
+    SshWrite {
+        session: SessionId,
+        generation: u64,
+        bytes: Vec<u8>,
+    },
+    SshResize {
+        session: SessionId,
+        generation: u64,
+        cols: u32,
+        rows: u32,
+    },
+    CloseSsh {
+        session: SessionId,
+        generation: u64,
+    },
 }
 
 impl AppCommand {
@@ -273,7 +304,12 @@ impl AppCommand {
             | Self::FetchLookup { session, .. }
             | Self::FetchFormRecord { session, .. }
             | Self::ListLocalDir { session, .. }
-            | Self::FetchSafeMode { session, .. } => Some(*session),
+            | Self::FetchSafeMode { session, .. }
+            | Self::ProbeSshService { session, .. }
+            | Self::OpenSsh { session, .. }
+            | Self::SshWrite { session, .. }
+            | Self::SshResize { session, .. }
+            | Self::CloseSsh { session, .. } => Some(*session),
         }
     }
 
@@ -300,7 +336,12 @@ impl AppCommand {
             | Self::FetchLookup { session, .. }
             | Self::FetchFormRecord { session, .. }
             | Self::ListLocalDir { session, .. }
-            | Self::FetchSafeMode { session, .. } => *session = id,
+            | Self::FetchSafeMode { session, .. }
+            | Self::ProbeSshService { session, .. }
+            | Self::OpenSsh { session, .. }
+            | Self::SshWrite { session, .. }
+            | Self::SshResize { session, .. }
+            | Self::CloseSsh { session, .. } => *session = id,
         }
     }
 }
@@ -442,6 +483,7 @@ impl App {
             session.poll_generation = session.poll_generation.wrapping_add(1);
             session.torch_generation = session.torch_generation.wrapping_add(1);
             session.probe_generation = session.probe_generation.wrapping_add(1);
+            session.terminal_generation = session.terminal_generation.wrapping_add(1);
         }
         let closing_active = self.active == id;
         let idx = self.sessions.iter().position(|session| session.id == id);
@@ -1125,6 +1167,7 @@ impl App {
         self.torch_generation = self.torch_generation.wrapping_add(1);
         self.probe_generation = self.probe_generation.wrapping_add(1);
         self.menu_paths_generation = self.menu_paths_generation.wrapping_add(1);
+        self.terminal_generation = self.terminal_generation.wrapping_add(1);
     }
 
     pub(crate) fn disconnect_to_profiles(&mut self) {
@@ -1157,6 +1200,9 @@ impl App {
             self.login.pane = LoginPane::List;
         }
         self.reset_link();
+        self.terminal = mtui_ui::TerminalState::default();
+        self.vt_parser = None;
+        self.ssh_enable_pending = false;
         self.screen = Screen::Login;
         self.status = "Disconnected · profiles kept".into();
     }
@@ -1211,16 +1257,17 @@ impl App {
                 self.terminal_width = width.max(1);
                 self.terminal_height = height.max(1);
                 let ids: Vec<SessionId> = self.sessions.iter().map(|session| session.id).collect();
+                let mut out = Vec::new();
                 for id in ids {
-                    let _ = self.apply_to(id, |app| {
+                    out.extend(self.apply_to(id, |app| {
                         app.palette.width = width.saturating_sub(4).min(64);
                         app.sync_table_viewport();
                         app.sync_console_viewport();
                         app.clamp_overlay_scroll();
-                        Vec::new()
-                    });
+                        app.resize_terminal_pty()
+                    }));
                 }
-                Vec::new()
+                out
             }
         };
         self.sync_activity();
@@ -1530,7 +1577,20 @@ impl App {
                 self.apply_header_telemetry(system, &interfaces, interface_error.as_deref());
                 Vec::new()
             }
-            WorkerMsg::MutateResult { .. } => self.apply_mutate_result(msg),
+            WorkerMsg::MutateResult { .. } => {
+                let enable_ssh = self.ssh_enable_pending
+                    && matches!(
+                        &msg,
+                        WorkerMsg::MutateResult { generation, .. }
+                            if *generation == self.poll_generation
+                    );
+                let failed = matches!(&msg, WorkerMsg::MutateResult { error: Some(_), .. });
+                let mut cmds = self.apply_mutate_result(msg);
+                if enable_ssh {
+                    cmds.extend(self.finish_enable_ssh(failed));
+                }
+                cmds
+            }
             WorkerMsg::SafeModeResult { .. } => self.apply_safe_mode_result(msg),
             WorkerMsg::TorchResult {
                 generation,
@@ -1637,6 +1697,31 @@ impl App {
                 self.dash.update_wan_monitor(&interface, &sample);
                 Vec::new()
             }
+            WorkerMsg::SshService {
+                generation,
+                port,
+                disabled,
+                id,
+                error,
+                ..
+            } => self.on_ssh_service(generation, port, disabled, id, error),
+            WorkerMsg::SshReady {
+                generation,
+                fingerprint,
+                stages_ms,
+                ..
+            } => self.on_ssh_ready(generation, &fingerprint, &stages_ms),
+            WorkerMsg::SshData {
+                generation, bytes, ..
+            } => {
+                if generation == self.terminal_generation {
+                    self.apply_ssh_bytes(&bytes);
+                }
+                Vec::new()
+            }
+            WorkerMsg::SshClosed {
+                generation, error, ..
+            } => self.on_ssh_closed(generation, error),
         }
     }
 
@@ -1766,7 +1851,7 @@ impl App {
                     text,
                 }]
             }
-            _ => Vec::new(),
+            Pane::Nav | Pane::Console | Pane::Terminal => Vec::new(),
         }
     }
 
@@ -1997,8 +2082,8 @@ impl App {
     pub(crate) fn console_layout_height(&self) -> u16 {
         console_pane_height(
             self.terminal_height,
-            self.console.visible,
-            self.console.fullscreen,
+            self.dock_occupied(),
+            self.dock_fullscreen(),
         )
     }
 
@@ -2046,16 +2131,19 @@ impl App {
         self.pull_console_logs();
         let showing = self.console.toggle_visible();
         if showing {
-            if self.pane != Pane::Console {
+            if self.terminal.visible {
+                self.terminal.visible = false;
+                self.terminal.fullscreen = false;
+            }
+            if self.pane == Pane::Terminal {
+                self.pane_before_console = self.pane_before_terminal;
+            } else if self.pane != Pane::Console {
                 self.pane_before_console = self.pane;
             }
             self.pane = Pane::Console;
             tracing::trace!(fullscreen = self.console.fullscreen, "opened pane");
         } else {
-            self.pane = match self.pane_before_console {
-                Pane::Console => Pane::Content,
-                other => other,
-            };
+            self.pane = self.restore_after_dock(self.pane_before_console);
             tracing::trace!("closed console pane");
         }
         self.status = if showing {
@@ -2067,33 +2155,39 @@ impl App {
     }
 
     pub(crate) fn cycle_pane(&mut self, forward: bool) {
-        if self.console.fullscreen {
+        if self.dock_fullscreen() {
             return;
         }
-        let console = self.console.visible;
+        let dock = if self.terminal.visible {
+            Some(Pane::Terminal)
+        } else if self.console.visible {
+            Some(Pane::Console)
+        } else {
+            None
+        };
         self.pane = if forward {
             match self.pane {
                 Pane::Nav => Pane::Content,
                 Pane::Content => Pane::Inspector,
-                Pane::Inspector if console => Pane::Console,
-                Pane::Inspector | Pane::Console => Pane::Nav,
+                Pane::Inspector => dock.unwrap_or(Pane::Nav),
+                Pane::Console | Pane::Terminal => Pane::Nav,
             }
         } else {
             match self.pane {
-                Pane::Nav if console => Pane::Console,
-                Pane::Nav | Pane::Console => Pane::Inspector,
+                Pane::Nav => dock.unwrap_or(Pane::Inspector),
+                Pane::Console | Pane::Terminal => Pane::Inspector,
                 Pane::Content => Pane::Nav,
                 Pane::Inspector => Pane::Content,
             }
         };
-        if self.pane == Pane::Console {
-            tracing::trace!(pane = "console", "focused pane");
+        if matches!(self.pane, Pane::Console | Pane::Terminal) {
+            tracing::trace!(pane = ?self.pane, "focused pane");
         }
     }
 
     /// Move among the visible nav / content / inspector panes, clamping at the ends.
     pub(crate) fn shift_main_pane(&mut self, forward: bool) {
-        if self.console.fullscreen {
+        if self.dock_fullscreen() {
             return;
         }
         let panes = self.visible_main_panes();
@@ -2398,7 +2492,7 @@ impl App {
         }
     }
 
-    fn named_profile(&self) -> Option<Profile> {
+    pub(crate) fn named_profile(&self) -> Option<Profile> {
         let name = self.current_profile.as_str();
         if name.is_empty() {
             return None;
@@ -2548,6 +2642,8 @@ fn palette_commands_filtered(
             .with_description("RouterOS summary for the open menu"),
         Command::new("console", "Toggle console")
             .with_description("show or hide the application log console"),
+        Command::new("terminal", "New Terminal")
+            .with_description("open a RouterOS CLI over SSH in the dock"),
         Command::new("show-hidden-menus", show_title)
             .with_description("reveal tucked-away sidebar items so they can be restored"),
         Command::new("reset-hidden-menus", "Restore all menus")

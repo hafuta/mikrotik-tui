@@ -1428,6 +1428,44 @@ pub fn handle(store: &mut DemoStore, cmd: &AppCommand) -> Option<Vec<WorkerMsg>>
             row: store.rows("safe-mode").into_iter().next(),
             error: None,
         }]),
+        AppCommand::ProbeSshService {
+            session,
+            generation,
+        } => Some(vec![WorkerMsg::SshService {
+            session: *session,
+            generation: *generation,
+            port: 22,
+            disabled: false,
+            id: "*ssh".into(),
+            error: None,
+        }]),
+        AppCommand::OpenSsh {
+            session,
+            generation,
+            ..
+        } => Some(vec![
+            WorkerMsg::SshReady {
+                session: *session,
+                generation: *generation,
+                fingerprint: String::new(),
+                stages_ms: String::new(),
+            },
+            WorkerMsg::SshData {
+                session: *session,
+                generation: *generation,
+                bytes: b"\r\n[demo@MikroTik] > ".to_vec(),
+            },
+        ]),
+        AppCommand::SshWrite {
+            session,
+            generation,
+            bytes,
+        } => Some(vec![WorkerMsg::SshData {
+            session: *session,
+            generation: *generation,
+            bytes: bytes.clone(),
+        }]),
+        AppCommand::SshResize { .. } | AppCommand::CloseSsh { .. } => Some(Vec::new()),
         AppCommand::FetchTorch {
             session,
             generation,

@@ -7,7 +7,7 @@ use mtui_ui::{
     dashboard_content, fill_rect, footer_bar, format_fingerprint, modal_max_scroll,
     render_action_menu, render_file_picker, render_form_nested, render_form_page,
     render_form_sheet, render_login, render_modal, render_probe, render_reauth, render_tab_bar,
-    render_torch, session_header, tab_strip_height,
+    render_terminal, render_torch, session_header, tab_strip_height,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -337,13 +337,9 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let console_h = app.console_layout_height();
     let band = chrome_band_height(app.terminal_height);
     let mut vertical = vec![Constraint::Length(band)];
-    if app.console.fullscreen && app.console.visible {
-        vertical.push(Constraint::Min(3));
-    } else {
-        vertical.push(Constraint::Min(3));
-        if console_h > 0 {
-            vertical.push(Constraint::Length(console_h));
-        }
+    vertical.push(Constraint::Min(3));
+    if !app.dock_fullscreen() && console_h > 0 {
+        vertical.push(Constraint::Length(console_h));
     }
     vertical.push(Constraint::Length(band));
     let chunks = Layout::default()
@@ -371,7 +367,7 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
     );
 
     let mut chunk_idx = 1;
-    if !(app.console.fullscreen && app.console.visible) {
+    if !app.dock_fullscreen() {
         let body = chunks[chunk_idx];
         chunk_idx += 1;
         let mut constraints = Vec::new();
@@ -408,7 +404,7 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
 
     if console_h > 0 {
-        draw_console(frame, chunks[chunk_idx], app);
+        draw_dock(frame, chunks[chunk_idx], app);
         chunk_idx += 1;
     }
 
@@ -434,6 +430,20 @@ fn draw_main(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 fn pane_block() -> Block<'static> {
     Block::default().padding(Padding::new(2, 2, 1, 1))
+}
+
+fn draw_dock(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    if app.terminal.visible {
+        render_terminal(
+            frame,
+            area,
+            &app.terminal,
+            app.pane == Pane::Terminal,
+            &app.styles(),
+        );
+    } else {
+        draw_console(frame, area, app);
+    }
 }
 
 fn draw_console(frame: &mut Frame<'_>, area: Rect, app: &App) {
