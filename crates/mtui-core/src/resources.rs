@@ -533,6 +533,50 @@ mod tests {
     }
 
     #[test]
+    fn bgp_sessions_are_live_not_connections() {
+        let sessions = resource_by_id("bgp-sessions").expect("bgp-sessions");
+        let connections = resource_by_id("bgp-connections").expect("bgp-connections");
+        assert_eq!(sessions.endpoint(), "/routing/bgp/session");
+        assert_eq!(sessions.cli_path(), "/routing/bgp/session");
+        assert_eq!(sessions.group, "routing-group");
+        assert_eq!(sessions.label, "BGP Sessions");
+        assert_eq!(connections.endpoint(), "/routing/bgp/connection");
+        assert_ne!(sessions.endpoint(), connections.endpoint());
+        assert_eq!(
+            sessions
+                .actions
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>(),
+            ["edit"]
+        );
+        assert!(
+            sessions
+                .form
+                .is_some_and(|form| form.writable_keys().is_empty())
+        );
+        assert!(
+            connections
+                .form
+                .is_some_and(|form| !form.writable_keys().is_empty())
+        );
+        assert_eq!(
+            column_keys("bgp-sessions"),
+            [
+                "name",
+                "remote.address",
+                "remote.as",
+                "established",
+                "uptime",
+                "prefix-count",
+                "ebgp",
+            ]
+        );
+        assert!(!column_keys("bgp-sessions").contains(&"disabled"));
+        assert!(!column_keys("bgp-connections").contains(&"established"));
+    }
+
+    #[test]
     fn traffic_flow_and_igmp_proxy_are_ip_group_screens() {
         let flow = resource_by_id("traffic-flow").expect("traffic-flow");
         assert!(flow.is_singleton());
@@ -739,6 +783,7 @@ mod tests {
                 "wifi-provisioning",
                 "wifi-cap",
                 "wifi-capsman",
+                "wifi-registration-table",
                 "wireless",
                 "wireless-security-profiles",
                 "wireless-access-list",
@@ -760,6 +805,17 @@ mod tests {
         unique.sort_unstable();
         unique.dedup();
         assert_eq!(unique.len(), endpoints.len());
+        let wifi_reg = resource_by_id("wifi-registration-table").expect("wifi-registration-table");
+        assert_eq!(wifi_reg.endpoint(), "/interface/wifi/registration-table");
+        assert!(wifi_reg.form.is_none());
+        assert_eq!(
+            wifi_reg
+                .actions
+                .iter()
+                .map(|action| action.id)
+                .collect::<Vec<_>>(),
+            ["remove"]
+        );
         assert!(resource_by_id("detect-internet").is_some_and(ResourceSpec::is_singleton));
         assert!(!resource_by_id("vlan").is_some_and(ResourceSpec::is_singleton));
         assert_eq!(
@@ -1193,6 +1249,7 @@ mod tests {
                 "hotspot",
                 "hotspot-profiles",
                 "hotspot-users",
+                "hotspot-user-profiles",
                 "hotspot-cookies",
                 "hotspot-hosts",
                 "hotspot-ip-bindings",
@@ -1283,6 +1340,7 @@ mod tests {
                 "ospf-interface-templates",
                 "ospf-interfaces",
                 "bgp-connections",
+                "bgp-sessions",
                 "bgp-templates",
                 "rip-instances",
                 "rip-interface-templates",

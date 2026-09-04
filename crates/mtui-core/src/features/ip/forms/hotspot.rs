@@ -27,11 +27,28 @@ const LOOKUP_PROFILE: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_USER_PROFILE: FieldKind = FieldKind::Lookup {
+    resource_id: "hotspot-user-profiles",
+    value_key: "name",
+    multiple: false,
+};
 const LOOKUP_SERVER: FieldKind = FieldKind::Lookup {
     resource_id: "hotspot",
     value_key: "name",
     multiple: false,
 };
+const LOOKUP_ADDRESS_LIST: FieldKind = FieldKind::Lookup {
+    resource_id: "address-list",
+    value_key: "list",
+    multiple: false,
+};
+const LOOKUP_SCRIPT: FieldKind = FieldKind::Lookup {
+    resource_id: "scripts",
+    value_key: "name",
+    multiple: false,
+};
+
+const OPEN_STATUS_PAGE: &[&str] = &["always", "http-login"];
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
@@ -89,12 +106,75 @@ pub static HOTSPOT_USER_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             f!("password", "Password", FieldKind::Secret),
-            f!("profile", "Profile", LOOKUP_PROFILE),
+            f!("profile", "Profile", LOOKUP_USER_PROFILE),
             f!("server", "Server", LOOKUP_SERVER),
             COMMENT,
             ENABLED,
         ],
     }],
+    create_sections: &[],
+};
+
+pub static HOTSPOT_USER_PROFILE_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["rate-limit", "shared-users"],
+    sections: &[
+        FormSection {
+            id: "general",
+            label: "General",
+            read_only: false,
+            fields: &[
+                NAME,
+                f!("session-timeout", "Session Timeout", FieldKind::Time),
+                f!("idle-timeout", "Idle Timeout", FieldKind::Text),
+                f!("keepalive-timeout", "Keepalive Timeout", FieldKind::Text),
+                f!("status-autorefresh", "Status Autorefresh", FieldKind::Text),
+                f!("shared-users", "Shared Users", FieldKind::Text),
+                f!("rate-limit", "Rate Limit", FieldKind::Text),
+                f!("address-pool", "Address Pool", LOOKUP_POOL),
+                f!("address-list", "Address List", LOOKUP_ADDRESS_LIST),
+                f!("incoming-filter", "Incoming Filter", FieldKind::Text),
+                f!("outgoing-filter", "Outgoing Filter", FieldKind::Text),
+                f!(
+                    "incoming-packet-mark",
+                    "Incoming Packet Mark",
+                    FieldKind::Text
+                ),
+                f!(
+                    "outgoing-packet-mark",
+                    "Outgoing Packet Mark",
+                    FieldKind::Text
+                ),
+                f!("add-mac-cookie", "Add MAC Cookie", FieldKind::Toggle),
+                f!("mac-cookie-timeout", "MAC Cookie Timeout", FieldKind::Time),
+                f!(
+                    "open-status-page",
+                    "Open Status Page",
+                    FieldKind::Enum {
+                        values: OPEN_STATUS_PAGE,
+                    }
+                ),
+                f!("transparent-proxy", "Transparent Proxy", FieldKind::Toggle),
+                f!("on-login", "On Login", LOOKUP_SCRIPT),
+                f!("on-logout", "On Logout", LOOKUP_SCRIPT),
+            ],
+        },
+        FormSection {
+            id: "advertise",
+            label: "Advertisement",
+            read_only: false,
+            fields: &[
+                f!("advertise", "Advertise", FieldKind::Toggle),
+                f!("advertise-url", "Advertise URL", FieldKind::Repeat),
+                f!(
+                    "advertise-interval",
+                    "Advertise Interval",
+                    FieldKind::Repeat
+                ),
+                f!("advertise-timeout", "Advertise Timeout", FieldKind::Text),
+            ],
+        },
+    ],
     create_sections: &[],
 };
 

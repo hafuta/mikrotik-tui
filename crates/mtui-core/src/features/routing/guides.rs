@@ -71,9 +71,18 @@ pub(crate) static GUIDES: &[(&str, ScreenGuide)] = &[
     guide!(
         "bgp-connections",
         "BGP connections (RouterOS v7 style): remote address/AS and local role.",
-        "Peering with ISPs or other ASes. Templates and address-families may exist beyond \
+        "Peering with ISPs or other ASes. Live established state is on BGP Sessions, not \
          this table.",
         "name, remote.address, remote.as, local.role, disabled."
+    ),
+    guide!(
+        "bgp-sessions",
+        "Live BGP sessions: established flag, uptime, prefix-count, and last notification.",
+        "Incident view for a peer that will not come up. Configure remote address and role \
+         on BGP connections. Monitor-only; there is no Add.",
+        "name, remote.address, remote.as, established, uptime, prefix-count, ebgp, \
+         last-started, last-stopped.",
+        "https://manual.mikrotik.com/docs/cli-reference/routing/bgp/session/"
     ),
     guide!(
         "bgp-templates",

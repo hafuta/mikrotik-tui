@@ -465,15 +465,27 @@ pub(crate) static GUIDES: &[(&str, ScreenGuide)] = &[
     ),
     guide!(
         "hotspot-profiles",
-        "Hotspot profiles: portal address, DNS name, HTML, login methods.",
-        "Point servers at a profile. RADIUS is optional.",
+        "Hotspot server profiles: portal address, DNS name, HTML, login methods.",
+        "Point servers at a profile. RADIUS is optional. Rate limits live on User Profiles, \
+         not here.",
         "name, hotspot-address, dns-name, html-directory, login-by, use-radius."
     ),
     guide!(
         "hotspot-users",
         "Hotspot user accounts (local, not RADIUS users).",
-        "Create trial/staff logins. Passwords are secrets. Look up profile and server.",
+        "Create trial/staff logins. Passwords are secrets. Profile looks up User Profiles. \
+         Server looks up Hotspot servers.",
         "name, password, profile, server, disabled."
+    ),
+    guide!(
+        "hotspot-user-profiles",
+        "Shared Hotspot user policy: session/idle timeouts, rate-limit, shared-users, and \
+         MAC cookie behaviour (`/ip hotspot user profile`).",
+        "Assign these names on Hotspot Users. Server Profiles are a different menu (portal \
+         HTML and login-by).",
+        "name, session-timeout, idle-timeout, keepalive-timeout, rate-limit, shared-users, \
+         address-pool, add-mac-cookie, advertise, on-login, on-logout.",
+        "https://manual.mikrotik.com/docs/authentication-authorization-accounting/hotspot-captive-portal/"
     ),
     guide!(
         "hotspot-cookies",

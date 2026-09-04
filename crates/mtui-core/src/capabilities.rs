@@ -268,6 +268,10 @@ mod tests {
     fn wifi_needs_qcom_package() {
         assert_eq!(required_packages("wifi"), Some(WIFI_PACKAGES));
         assert_eq!(required_packages("wifi-cap"), Some(WIFI_PACKAGES));
+        assert_eq!(
+            required_packages("wifi-registration-table"),
+            Some(WIFI_PACKAGES)
+        );
         assert_eq!(required_packages("wireless"), Some(WIRELESS_PACKAGES));
         assert_eq!(required_packages("containers"), Some(CONTAINER_PACKAGES));
         assert_eq!(required_packages("veth"), Some(CONTAINER_PACKAGES));
@@ -322,6 +326,10 @@ mod tests {
         let missing = unavailable_menus(&installed);
         assert_eq!(missing.get("wifi").map(String::as_str), Some("wifi-qcom"));
         assert_eq!(
+            missing.get("wifi-registration-table").map(String::as_str),
+            Some("wifi-qcom")
+        );
+        assert_eq!(
             missing.get("wireless").map(String::as_str),
             Some("wireless")
         );
@@ -333,6 +341,7 @@ mod tests {
         installed.insert("wifi-qcom".into());
         let missing = unavailable_menus(&installed);
         assert!(!missing.contains_key("wifi"));
+        assert!(!missing.contains_key("wifi-registration-table"));
         assert!(missing.contains_key("wireless"));
     }
 

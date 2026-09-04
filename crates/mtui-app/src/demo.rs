@@ -661,6 +661,99 @@ impl DemoStore {
             ],
         );
         self.rows.insert(
+            "wifi-registration-table".into(),
+            vec![
+                resource(
+                    "*wr1",
+                    &[
+                        ("mac-address", "AA:BB:CC:00:00:01"),
+                        ("interface", "wifi1"),
+                        ("ssid", "office"),
+                        ("signal", "-52"),
+                        ("uptime", "2h14m"),
+                        ("rx-rate", "240Mbps"),
+                        ("tx-rate", "240Mbps"),
+                        ("authorized", "true"),
+                    ],
+                ),
+                resource(
+                    "*wr2",
+                    &[
+                        ("mac-address", "AA:BB:CC:00:00:02"),
+                        ("interface", "wifi2"),
+                        ("ssid", "guest"),
+                        ("signal", "-71"),
+                        ("uptime", "8m"),
+                        ("rx-rate", "86Mbps"),
+                        ("tx-rate", "86Mbps"),
+                        ("authorized", "true"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "hotspot-user-profiles".into(),
+            vec![
+                resource(
+                    "*hup1",
+                    &[
+                        ("name", "default"),
+                        ("session-timeout", "0s"),
+                        ("idle-timeout", "none"),
+                        ("keepalive-timeout", "2m"),
+                        ("rate-limit", ""),
+                        ("shared-users", "1"),
+                        ("add-mac-cookie", "true"),
+                        ("advertise", "false"),
+                    ],
+                ),
+                resource(
+                    "*hup2",
+                    &[
+                        ("name", "guest"),
+                        ("session-timeout", "1h"),
+                        ("idle-timeout", "5m"),
+                        ("keepalive-timeout", "2m"),
+                        ("rate-limit", "2M/2M"),
+                        ("shared-users", "1"),
+                        ("add-mac-cookie", "true"),
+                        ("advertise", "false"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
+            "bgp-sessions".into(),
+            vec![
+                resource(
+                    "*bs1",
+                    &[
+                        ("name", "isp-1"),
+                        ("remote.address", "192.0.2.1"),
+                        ("remote.as", "65001"),
+                        ("established", "true"),
+                        ("uptime", "4d2h"),
+                        ("prefix-count", "812"),
+                        ("ebgp", "true"),
+                        ("local.role", "ebgp-customer"),
+                    ],
+                ),
+                resource(
+                    "*bs2",
+                    &[
+                        ("name", "campus-1"),
+                        ("remote.address", "198.51.100.2"),
+                        ("remote.as", "65002"),
+                        ("established", "false"),
+                        ("uptime", "0s"),
+                        ("prefix-count", "0"),
+                        ("ebgp", "true"),
+                        ("stopped", "false"),
+                    ],
+                ),
+            ],
+        );
+        self.rows.insert(
             "logs".into(),
             vec![
                 resource(
@@ -1576,6 +1669,17 @@ mod tests {
         assert_eq!(
             store.rows("ospf-interface-templates")[0].field("interfaces"),
             Some("ether2")
+        );
+        assert_eq!(store.rows("wifi-registration-table").len(), 2);
+        assert_eq!(store.rows("hotspot-user-profiles").len(), 2);
+        assert_eq!(
+            store.rows("hotspot-user-profiles")[1].field("name"),
+            Some("guest")
+        );
+        assert_eq!(store.rows("bgp-sessions").len(), 2);
+        assert_eq!(
+            store.rows("bgp-sessions")[0].field("established"),
+            Some("true")
         );
         assert_eq!(store.rows("smb-users").len(), 2);
         assert_eq!(store.rows("smb-shares").len(), 2);

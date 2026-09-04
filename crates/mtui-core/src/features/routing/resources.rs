@@ -22,6 +22,7 @@ pub(crate) static RESOURCES: &[ResourceSpec] = &[
     OSPF_INTERFACE_TEMPLATES,
     OSPF_INTERFACES,
     BGP_CONNECTIONS,
+    BGP_SESSIONS,
     BGP_TEMPLATES,
     RIP_INSTANCES,
     RIP_INTERFACE_TEMPLATES,
@@ -178,6 +179,28 @@ const BGP_CONNECTIONS: ResourceSpec = ResourceSpec {
     refresh: Duration::from_secs(10),
     actions: crate::actions::MEMBER_ACTIONS,
     form: Some(&crate::features::routing::forms::BGP_CONNECTION_FORM),
+};
+
+const BGP_SESSIONS: ResourceSpec = ResourceSpec {
+    id: "bgp-sessions",
+    group: "routing-group",
+    cli_path: None,
+    label: "BGP Sessions",
+    fetch: FetchKind::List {
+        endpoint: "/routing/bgp/session",
+    },
+    columns: &[
+        col!("name", "Name", 18),
+        col!("remote.address", "Remote", 18),
+        col!("remote.as", "Remote AS", 10),
+        col!("established", "Est", 5),
+        col!("uptime", "Uptime", 12),
+        col!("prefix-count", "Prefixes", 10),
+        col!("ebgp", "eBGP", 6),
+    ],
+    refresh: Duration::from_secs(5),
+    actions: crate::actions::SINGLETON_EDIT_ACTIONS,
+    form: Some(&crate::features::routing::forms::BGP_SESSION_FORM),
 };
 
 const BGP_TEMPLATES: ResourceSpec = ResourceSpec {
