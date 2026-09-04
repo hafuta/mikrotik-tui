@@ -1,5 +1,9 @@
 //! Feature-owned form schemas for the complete Interfaces navigation group.
 
+use crate::form_fields::{
+    LOOKUP_INTERFACE_LISTS, LOOKUP_INTERFACE_LISTS_MULTI, LOOKUP_INTERFACES,
+    LOOKUP_INTERFACES_MULTI,
+};
 use crate::forms::{EnumChoice, FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -50,31 +54,11 @@ const ARP: FieldSpec = f!(
     }
 );
 
-const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_IFACES: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: true,
-};
-const LOOKUP_IFACE_LIST: FieldKind = FieldKind::Lookup {
-    resource_id: "interface-lists",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_IFACE_LISTS: FieldKind = FieldKind::Lookup {
-    resource_id: "interface-lists",
-    value_key: "name",
-    multiple: true,
-};
-const LOOKUP_VRF: FieldKind = FieldKind::Lookup {
-    resource_id: "vrf",
-    value_key: "name",
-    multiple: false,
-};
+const LOOKUP_IFACE: FieldKind = LOOKUP_INTERFACES;
+const LOOKUP_IFACES: FieldKind = LOOKUP_INTERFACES_MULTI;
+const LOOKUP_IFACE_LIST: FieldKind = LOOKUP_INTERFACE_LISTS;
+const LOOKUP_IFACE_LISTS: FieldKind = LOOKUP_INTERFACE_LISTS_MULTI;
+const LOOKUP_VRF: FieldKind = crate::form_fields::LOOKUP_VRF;
 const LOOKUP_MACSEC_PROFILE: FieldKind = FieldKind::Lookup {
     resource_id: "macsec-profiles",
     value_key: "name",

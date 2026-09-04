@@ -542,6 +542,12 @@ pub fn prepare_lookup_options(
     {
         return with_leading_none(options);
     }
+    if sheet_resource_id == "vrrp" && lookup_resource_id == "vrrp" {
+        return prepend_unique("none", prepend_unique("self", options));
+    }
+    if sheet_resource_id == "ipsec-mode-config" && lookup_resource_id == "pools" {
+        return with_leading_none(options);
+    }
     options
 }
 
@@ -1355,6 +1361,14 @@ mod tests {
         assert_eq!(
             prepare_lookup_options("sniffer", "interfaces", vec!["ether1".into()]),
             vec!["ether1".to_string()]
+        );
+        assert_eq!(
+            prepare_lookup_options("vrrp", "vrrp", vec!["vrrp1".into()]),
+            vec!["none".to_string(), "self".into(), "vrrp1".into()]
+        );
+        assert_eq!(
+            prepare_lookup_options("ipsec-mode-config", "pools", vec!["dhcp".into()]),
+            vec!["none".to_string(), "dhcp".into()]
         );
         assert_eq!(
             default_writable_value(FieldKind::Lookup {

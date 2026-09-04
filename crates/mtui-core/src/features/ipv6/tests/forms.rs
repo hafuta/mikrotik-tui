@@ -1,4 +1,9 @@
 use crate::features::ipv6::forms::*;
+use crate::form_fields::{
+    KIND_ADVERTISE_DNS, KIND_FILTER_ACTION, KIND_FILTER_CHAIN, KIND_IP_PROTOCOL,
+    KIND_IPV6_ACCEPT_REDIRECTS, KIND_MANGLE_ACTION, KIND_MANGLE_CHAIN, KIND_NAT_ACTION,
+    KIND_NAT_CHAIN, KIND_RAW_ACTION, KIND_RAW_CHAIN,
+};
 use crate::forms::{FieldKind, FormSchema, extra_status_fields, patch_body};
 use std::collections::HashMap;
 
@@ -133,6 +138,10 @@ fn ipv6_nd_create_is_full_writable_sheet() {
     assert_eq!(create_keys(&IPV6_ND_FORM), IPV6_ND_FORM.writable_keys());
     assert!(IPV6_ND_FORM.writable_keys().contains(&"advertise-dns"));
     assert!(IPV6_ND_FORM.writable_keys().contains(&"ra-interval"));
+    assert_eq!(
+        IPV6_ND_FORM.field("advertise-dns").map(|field| field.kind),
+        Some(KIND_ADVERTISE_DNS)
+    );
 }
 
 #[test]
@@ -154,6 +163,12 @@ fn ipv6_pool_and_settings() {
     assert_eq!(
         IPV6_SETTINGS_FORM.writable_keys(),
         ["forward", "accept-redirects", "max-neighbor-entries"]
+    );
+    assert_eq!(
+        IPV6_SETTINGS_FORM
+            .field("accept-redirects")
+            .map(|field| field.kind),
+        Some(KIND_IPV6_ACCEPT_REDIRECTS)
     );
 }
 
@@ -202,6 +217,24 @@ fn ipv6_firewall_filter_like_ipv4() {
         "out-interface-list",
         "interface-lists",
         "name",
+    );
+    assert_eq!(
+        IPV6_FIREWALL_FILTER_FORM
+            .field("chain")
+            .map(|field| field.kind),
+        Some(KIND_FILTER_CHAIN)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_FILTER_FORM
+            .field("action")
+            .map(|field| field.kind),
+        Some(KIND_FILTER_ACTION)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_FILTER_FORM
+            .field("protocol")
+            .map(|field| field.kind),
+        Some(KIND_IP_PROTOCOL)
     );
     let general = IPV6_FIREWALL_FILTER_FORM
         .sections
@@ -292,13 +325,17 @@ fn ipv6_operator_create_keys_and_lookups() {
         "list",
     );
     assert_lookup(&IPV6_ADDRESS_LIST_FORM, "list", "ipv6-address-list", "list");
+    assert_lookup(
+        &IPV6_DHCP_BINDING_FORM,
+        "server",
+        "ipv6-dhcp-server",
+        "name",
+    );
     assert_eq!(
-        IPV6_FIREWALL_NAT_FORM
-            .field("chain")
+        IPV6_DHCP_RELAY_FORM
+            .field("dhcp-server")
             .map(|field| field.kind),
-        Some(FieldKind::Enum {
-            values: &["srcnat", "dstnat"],
-        })
+        Some(FieldKind::Text)
     );
     assert!(
         IPV6_FIREWALL_NAT_FORM
@@ -313,6 +350,58 @@ fn ipv6_operator_create_keys_and_lookups() {
             .contains(&"expires-after")
     );
     assert!(!IPV6_ADDRESS_LIST_FORM.writable_keys().contains(&"dynamic"));
+}
+
+#[test]
+fn ipv6_firewall_uses_shared_chain_action_kinds() {
+    assert_eq!(
+        IPV6_FIREWALL_NAT_FORM
+            .field("chain")
+            .map(|field| field.kind),
+        Some(KIND_NAT_CHAIN)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_NAT_FORM
+            .field("action")
+            .map(|field| field.kind),
+        Some(KIND_NAT_ACTION)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_NAT_FORM
+            .field("protocol")
+            .map(|field| field.kind),
+        Some(KIND_IP_PROTOCOL)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_MANGLE_FORM
+            .field("chain")
+            .map(|field| field.kind),
+        Some(KIND_MANGLE_CHAIN)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_MANGLE_FORM
+            .field("action")
+            .map(|field| field.kind),
+        Some(KIND_MANGLE_ACTION)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_MANGLE_FORM
+            .field("protocol")
+            .map(|field| field.kind),
+        Some(KIND_IP_PROTOCOL)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_RAW_FORM
+            .field("chain")
+            .map(|field| field.kind),
+        Some(KIND_RAW_CHAIN)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_RAW_FORM
+            .field("action")
+            .map(|field| field.kind),
+        Some(KIND_RAW_ACTION)
+    );
 }
 
 #[test]

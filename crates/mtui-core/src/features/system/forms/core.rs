@@ -4,6 +4,9 @@ use super::common::{
     COMMENT, ENABLED, FILE_NAME, GROUP, LOOKUP_FILE, LOOKUP_NTP_KEY, LOOKUP_PORT, LOOKUP_SCRIPT,
     LOOKUP_USER, LOOKUP_VRF, NAME, ON_EVENT, OWNER, PASSWORD, POLICY, SOURCE,
 };
+use crate::form_fields::{
+    KIND_NTP_CLIENT_MODE, KIND_PACKAGE_CHANNEL, KIND_SNMP_SECURITY, KIND_TIME_ZONE_NAME,
+};
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -181,7 +184,7 @@ pub static NTP_CLIENT_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 f!("enabled", "Enabled", FieldKind::Toggle),
-                f!("mode", "Mode", FieldKind::Text),
+                f!("mode", "Mode", KIND_NTP_CLIENT_MODE),
                 f!("servers", "Servers", FieldKind::Repeat),
             ],
         },
@@ -249,7 +252,7 @@ pub static CLOCK_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                f!("time-zone-name", "Time Zone", FieldKind::Text),
+                f!("time-zone-name", "Time Zone", KIND_TIME_ZONE_NAME),
                 f!(
                     "time-zone-autodetect",
                     "Time Zone Autodetect",
@@ -415,7 +418,7 @@ pub static SNMP_COMMUNITY_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             f!("addresses", "Addresses", FieldKind::Repeat),
-            f!("security", "Security", FieldKind::Text),
+            f!("security", "Security", KIND_SNMP_SECURITY),
             f!("read-access", "Read Access", FieldKind::Toggle),
             f!("write-access", "Write Access", FieldKind::Toggle),
             f!(
@@ -599,7 +602,7 @@ pub static PACKAGE_UPDATE_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[f!("channel", "Channel", FieldKind::Text)],
+            fields: &[f!("channel", "Channel", KIND_PACKAGE_CHANNEL)],
         },
         FormSection {
             id: "status",
@@ -659,7 +662,7 @@ pub static INSTALL_PACKAGE_PROMPT: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[f!("file-name", "File Name", FieldKind::Text)],
+        fields: &[FILE_NAME],
     }],
 };
 
@@ -682,7 +685,7 @@ pub static EXPORT_CONFIG_PROMPT: FormSchema = FormSchema {
 };
 
 const IMPORT_CONFIG_FIELDS: &[FieldSpec] = &[
-    f!("file-name", "File Name", FieldKind::Text),
+    FILE_NAME,
     f!("from-line", "From Line", FieldKind::Text),
     f!("verbose", "Verbose", FieldKind::Toggle),
 ];

@@ -2,6 +2,11 @@
 
 use crate::forms::{FieldKind, FieldSpec};
 
+pub(crate) use crate::form_fields::{
+    LOOKUP_CERTIFICATES as LOOKUP_CERTIFICATE, LOOKUP_FILES as LOOKUP_FILE,
+    LOOKUP_INTERFACES as LOOKUP_IFACE, LOOKUP_PORTS as LOOKUP_PORT, LOOKUP_VRF,
+};
+
 pub(crate) const LOOKUP_USER_GROUP: FieldKind = FieldKind::Lookup {
     resource_id: "user-groups",
     value_key: "name",
@@ -17,21 +22,6 @@ pub(crate) const LOOKUP_SCRIPT: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
-pub(crate) const LOOKUP_CERTIFICATE: FieldKind = FieldKind::Lookup {
-    resource_id: "certificates",
-    value_key: "name",
-    multiple: false,
-};
-pub(crate) const LOOKUP_FILE: FieldKind = FieldKind::Lookup {
-    resource_id: "files",
-    value_key: "name",
-    multiple: false,
-};
-pub(crate) const LOOKUP_VRF: FieldKind = FieldKind::Lookup {
-    resource_id: "vrf",
-    value_key: "name",
-    multiple: false,
-};
 pub(crate) const LOOKUP_NTP_KEY: FieldKind = FieldKind::Lookup {
     resource_id: "ntp-keys",
     value_key: "key-id",
@@ -40,16 +30,6 @@ pub(crate) const LOOKUP_NTP_KEY: FieldKind = FieldKind::Lookup {
 pub(crate) const LOOKUP_DISK: FieldKind = FieldKind::Lookup {
     resource_id: "disks",
     value_key: "slot",
-    multiple: false,
-};
-pub(crate) const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: false,
-};
-pub(crate) const LOOKUP_PORT: FieldKind = FieldKind::Lookup {
-    resource_id: "ports",
-    value_key: "name",
     multiple: false,
 };
 

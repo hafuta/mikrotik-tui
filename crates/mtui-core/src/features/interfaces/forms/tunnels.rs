@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)]
 
 use super::*;
+use crate::form_fields::LOOKUP_VRRP;
 use crate::forms::{EnumChoice, FieldPredicate, FieldRule, ScalarKind};
 
 const ARP_CHOICES: &[EnumChoice] = &[
@@ -893,7 +894,7 @@ pub static VRRP_FORM: FormSchema = FormSchema {
                     }
                 ),
                 f!("preemption-mode", "Preemption Mode", FieldKind::Toggle),
-                f!("group-authority", "Group Authority", FieldKind::Text),
+                f!("group-authority", "Group Authority", LOOKUP_VRRP),
                 f!(
                     "sync-connection-tracking",
                     "Sync Connection Tracking",

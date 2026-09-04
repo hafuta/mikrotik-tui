@@ -1,5 +1,6 @@
 //! Feature-owned form schemas for the `Container` navigation group.
 
+use crate::form_fields::{KIND_STOP_SIGNAL, LOOKUP_FILES};
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -17,11 +18,6 @@ const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 
 const LOOKUP_VETH: FieldKind = FieldKind::Lookup {
     resource_id: "veth",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_FILE: FieldKind = FieldKind::Lookup {
-    resource_id: "files",
     value_key: "name",
     multiple: false,
 };
@@ -122,7 +118,7 @@ pub static CONTAINER_FORM: FormSchema = FormSchema {
                 COMMENT,
                 f!("interface", "Interface", LOOKUP_VETH),
                 f!("remote-image", "Remote Image", FieldKind::Text),
-                f!("file", "File", LOOKUP_FILE),
+                f!("file", "File", LOOKUP_FILES),
                 f!("root-dir", "Root Dir", FieldKind::Text),
                 f!("layer-dir", "Layer Dir", FieldKind::Text),
                 f!("envlist", "Env List", LOOKUP_ENV_LIST),
@@ -151,7 +147,7 @@ pub static CONTAINER_FORM: FormSchema = FormSchema {
                 ),
                 f!("restart-interval", "Restart Interval", FieldKind::Time),
                 f!("restart-max-count", "Restart Max Count", FieldKind::Number),
-                f!("stop-signal", "Stop Signal", FieldKind::Text),
+                f!("stop-signal", "Stop Signal", KIND_STOP_SIGNAL),
                 f!("stop-time", "Stop Time", FieldKind::Time),
                 f!("user", "User", FieldKind::Text),
                 f!("devices", "Devices", FieldKind::Text),

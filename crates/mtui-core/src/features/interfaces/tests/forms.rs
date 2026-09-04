@@ -81,10 +81,8 @@ fn interface_lookups_use_catalog_resources() {
     }
     assert_lookup(&WIFI_FORM, "master-interface", "wifi", false);
     assert_lookup(&BONDING_FORM, "slaves", "interfaces", true);
-    assert_eq!(
-        VRF_FORM.field("interfaces").map(|field| field.kind),
-        Some(FieldKind::Repeat)
-    );
+    assert_lookup(&VRF_FORM, "interfaces", "interfaces", true);
+    assert_lookup(&VRRP_FORM, "group-authority", "vrrp", false);
     assert!(matches!(
         VXLAN_FORM.field("group").map(|field| field.kind),
         Some(FieldKind::Optional { .. })
@@ -231,4 +229,70 @@ fn vlan_and_ethernet_drop_legacy_tabs() {
     assert_eq!(VLAN_FORM.field("l2mtu").unwrap().kind, FieldKind::Readonly);
     assert!(!ETHERNET_FORM.field("full-duplex").unwrap().kind.writable());
     assert!(INTERFACES_FORM.field("mac-address").is_none());
+}
+
+#[test]
+fn wifi_and_wireless_use_shared_field_kinds() {
+    use crate::form_fields::{
+        KIND_NV2_TDMA_PERIOD, KIND_TLS_MODE, KIND_WDS_MODE, KIND_WIFI_COUNTRY,
+        KIND_WIFI_COUNTRY_OPTIONAL, KIND_WIRELESS_BAND, KIND_WIRELESS_CHANNEL_WIDTH,
+        KIND_WIRELESS_VLAN_MODE,
+    };
+
+    assert_eq!(
+        WIFI_FORM
+            .field("configuration.country")
+            .map(|field| field.kind),
+        Some(KIND_WIFI_COUNTRY_OPTIONAL)
+    );
+    assert_eq!(
+        WIFI_CONFIGURATION_FORM
+            .field("country")
+            .map(|field| field.kind),
+        Some(KIND_WIFI_COUNTRY)
+    );
+    assert_lookup(&WIFI_FORM, "aaa", "wifi-aaa", false);
+    assert_lookup(&WIFI_FORM, "interworking", "wifi-interworking", false);
+    assert_lookup(&WIFI_FORM, "steering", "wifi-steering", false);
+    assert_eq!(
+        WIFI_FORM
+            .field("aaa.nas-identifier")
+            .map(|field| field.kind),
+        Some(FieldKind::Optional {
+            kind: crate::forms::ScalarKind::Text,
+            unset: "",
+            unset_label: "none",
+        })
+    );
+
+    assert_eq!(
+        WIRELESS_FORM.field("band").map(|field| field.kind),
+        Some(KIND_WIRELESS_BAND)
+    );
+    assert_eq!(
+        WIRELESS_FORM.field("channel-width").map(|field| field.kind),
+        Some(KIND_WIRELESS_CHANNEL_WIDTH)
+    );
+    assert_eq!(
+        WIRELESS_FORM.field("wds-mode").map(|field| field.kind),
+        Some(KIND_WDS_MODE)
+    );
+    assert_eq!(
+        WIRELESS_FORM
+            .field("nv2-tdma-period-size")
+            .map(|field| field.kind),
+        Some(KIND_NV2_TDMA_PERIOD)
+    );
+    assert_eq!(
+        WIRELESS_SECURITY_FORM
+            .field("tls-mode")
+            .map(|field| field.kind),
+        Some(KIND_TLS_MODE)
+    );
+    assert_eq!(
+        WIRELESS_ACCESS_LIST_FORM
+            .field("vlan-mode")
+            .map(|field| field.kind),
+        Some(KIND_WIRELESS_VLAN_MODE)
+    );
 }

@@ -11,6 +11,7 @@ mod capabilities;
 mod container_write;
 mod features;
 mod files_write;
+mod form_fields;
 mod forms;
 mod hotspot_write;
 mod interface_write;

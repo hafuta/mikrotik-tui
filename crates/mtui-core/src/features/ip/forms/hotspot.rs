@@ -1,5 +1,9 @@
 //! Form schemas for `/ip/hotspot` and `/ip/proxy`.
 
+use crate::form_fields::{
+    FIELD_ALLOW_DENY, FIELD_PROXY_ACCESS_ACTION, KIND_HOTSPOT_BINDING_TYPE, KIND_HTTP_METHOD,
+    LOOKUP_ADDRESS_LIST, LOOKUP_INTERFACES, LOOKUP_POOLS,
+};
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -12,16 +16,6 @@ macro_rules! f {
     };
 }
 
-const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_POOL: FieldKind = FieldKind::Lookup {
-    resource_id: "pools",
-    value_key: "name",
-    multiple: false,
-};
 const LOOKUP_PROFILE: FieldKind = FieldKind::Lookup {
     resource_id: "hotspot-profiles",
     value_key: "name",
@@ -37,11 +31,6 @@ const LOOKUP_SERVER: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
-const LOOKUP_ADDRESS_LIST: FieldKind = FieldKind::Lookup {
-    resource_id: "address-list",
-    value_key: "list",
-    multiple: false,
-};
 const LOOKUP_SCRIPT: FieldKind = FieldKind::Lookup {
     resource_id: "scripts",
     value_key: "name",
@@ -53,7 +42,7 @@ const OPEN_STATUS_PAGE: &[&str] = &["always", "http-login"];
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const ENABLED: FieldSpec = f!("disabled", "Enabled", FieldKind::InvertedToggle);
-const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
+const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_INTERFACES);
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ip);
 const MAC: FieldSpec = f!("mac-address", "MAC address", FieldKind::Mac);
 
@@ -67,7 +56,7 @@ pub static HOTSPOT_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             INTERFACE,
-            f!("address-pool", "Address pool", LOOKUP_POOL),
+            f!("address-pool", "Address pool", LOOKUP_POOLS),
             f!("profile", "Profile", LOOKUP_PROFILE),
             COMMENT,
             ENABLED,
@@ -131,7 +120,7 @@ pub static HOTSPOT_USER_PROFILE_FORM: FormSchema = FormSchema {
                 f!("status-autorefresh", "Status Autorefresh", FieldKind::Text),
                 f!("shared-users", "Shared Users", FieldKind::Text),
                 f!("rate-limit", "Rate Limit", FieldKind::Text),
-                f!("address-pool", "Address Pool", LOOKUP_POOL),
+                f!("address-pool", "Address Pool", LOOKUP_POOLS),
                 f!("address-list", "Address List", LOOKUP_ADDRESS_LIST),
                 f!("incoming-filter", "Incoming Filter", FieldKind::Text),
                 f!("outgoing-filter", "Outgoing Filter", FieldKind::Text),
@@ -220,7 +209,7 @@ pub static HOTSPOT_IP_BINDING_FORM: FormSchema = FormSchema {
             ADDRESS,
             f!("to-address", "To address", FieldKind::Ip),
             f!("server", "Server", LOOKUP_SERVER),
-            f!("type", "Type", FieldKind::Text),
+            f!("type", "Type", KIND_HOTSPOT_BINDING_TYPE),
             COMMENT,
             ENABLED,
         ],
@@ -238,7 +227,7 @@ pub static HOTSPOT_WALLED_GARDEN_FORM: FormSchema = FormSchema {
         fields: &[
             f!("dst-host", "Dst host", FieldKind::Text),
             f!("dst-port", "Dst port", FieldKind::Text),
-            f!("action", "Action", FieldKind::Text),
+            FIELD_ALLOW_DENY,
             f!("server", "Server", LOOKUP_SERVER),
             COMMENT,
             ENABLED,
@@ -256,7 +245,7 @@ pub static HOTSPOT_WALLED_GARDEN_IP_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("dst-address", "Dst address", FieldKind::Ip),
-            f!("action", "Action", FieldKind::Text),
+            FIELD_ALLOW_DENY,
             f!("server", "Server", LOOKUP_SERVER),
             COMMENT,
             ENABLED,
@@ -295,7 +284,7 @@ pub static PROXY_ACCESS_FORM: FormSchema = FormSchema {
             f!("src-address", "Src address", FieldKind::Ip),
             f!("dst-address", "Dst address", FieldKind::Ip),
             f!("dst-host", "Dst host", FieldKind::Text),
-            f!("action", "Action", FieldKind::Text),
+            FIELD_PROXY_ACCESS_ACTION,
             COMMENT,
             ENABLED,
         ],
@@ -312,8 +301,8 @@ pub static PROXY_CACHE_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("dst-host", "Dst host", FieldKind::Text),
-            f!("method", "Method", FieldKind::Text),
-            f!("action", "Action", FieldKind::Text),
+            f!("method", "Method", KIND_HTTP_METHOD),
+            FIELD_ALLOW_DENY,
             COMMENT,
             ENABLED,
         ],
@@ -331,7 +320,7 @@ pub static PROXY_DIRECT_FORM: FormSchema = FormSchema {
         fields: &[
             f!("dst-host", "Dst host", FieldKind::Text),
             f!("dst-address", "Dst address", FieldKind::Ip),
-            f!("action", "Action", FieldKind::Text),
+            FIELD_ALLOW_DENY,
             COMMENT,
             ENABLED,
         ],

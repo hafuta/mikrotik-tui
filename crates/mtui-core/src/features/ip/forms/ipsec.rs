@@ -1,5 +1,11 @@
 //! Form schemas for `/ip/ipsec` (`IPsec`) menus.
 
+use crate::form_fields::{
+    FIELD_PROTOCOL, KIND_IPSEC_AUTH_METHOD, KIND_IPSEC_EXCHANGE_MODE, KIND_IPSEC_GENERATE_POLICY,
+    KIND_IPSEC_HASH, KIND_IPSEC_IDENTITIES_MATCHING, KIND_IPSEC_PFS_GROUP,
+    KIND_IPSEC_POLICY_ACTION, KIND_IPSEC_POLICY_LEVEL, KIND_IPSEC_PROPOSAL_CHECK,
+    KIND_IPSEC_PROTOCOLS, LOOKUP_CERTIFICATES, LOOKUP_IPSEC_POLICY_GROUPS, LOOKUP_POOLS,
+};
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -27,11 +33,6 @@ const LOOKUP_PROPOSAL: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
-const LOOKUP_CERT: FieldKind = FieldKind::Lookup {
-    resource_id: "certificates",
-    value_key: "name",
-    multiple: false,
-};
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ip);
@@ -54,7 +55,7 @@ pub static IPSEC_PEER_FORM: FormSchema = FormSchema {
                 NAME,
                 ADDRESS,
                 PROFILE,
-                f!("exchange-mode", "Exchange mode", FieldKind::Text),
+                f!("exchange-mode", "Exchange mode", KIND_IPSEC_EXCHANGE_MODE),
                 f!("port", "Port", FieldKind::Number),
                 f!("passive", "Passive", FieldKind::Toggle),
                 f!(
@@ -102,17 +103,25 @@ pub static IPSEC_IDENTITY_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 PEER,
-                f!("auth-method", "Auth method", FieldKind::Text),
+                f!("auth-method", "Auth method", KIND_IPSEC_AUTH_METHOD),
                 f!("secret", "Secret", FieldKind::Secret),
                 f!("my-id", "My ID", FieldKind::Text),
                 f!("remote-id", "Remote ID", FieldKind::Text),
-                f!("certificate", "Certificate", LOOKUP_CERT),
-                f!("remote-certificate", "Remote certificate", LOOKUP_CERT),
-                f!("generate-policy", "Generate policy", FieldKind::Text),
+                f!("certificate", "Certificate", LOOKUP_CERTIFICATES),
+                f!(
+                    "remote-certificate",
+                    "Remote certificate",
+                    LOOKUP_CERTIFICATES
+                ),
+                f!(
+                    "generate-policy",
+                    "Generate policy",
+                    KIND_IPSEC_GENERATE_POLICY
+                ),
                 f!(
                     "policy-template-group",
                     "Policy template group",
-                    FieldKind::Text
+                    LOOKUP_IPSEC_POLICY_GROUPS
                 ),
                 COMMENT,
                 ENABLED,
@@ -137,9 +146,9 @@ pub static IPSEC_POLICY_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                f!("action", "Action", FieldKind::Text),
-                f!("level", "Level", FieldKind::Text),
-                f!("ipsec-protocols", "IPsec protocols", FieldKind::Text),
+                f!("action", "Action", KIND_IPSEC_POLICY_ACTION),
+                f!("level", "Level", KIND_IPSEC_POLICY_LEVEL),
+                f!("ipsec-protocols", "IPsec protocols", KIND_IPSEC_PROTOCOLS),
                 PROPOSAL,
                 PEER,
                 f!("tunnel", "Tunnel", FieldKind::Toggle),
@@ -158,7 +167,7 @@ pub static IPSEC_POLICY_FORM: FormSchema = FormSchema {
                 f!("dst-address", "Dst address", FieldKind::Ip),
                 f!("src-port", "Src port", FieldKind::Text),
                 f!("dst-port", "Dst port", FieldKind::Text),
-                f!("protocol", "Protocol", FieldKind::Text),
+                FIELD_PROTOCOL,
             ],
         },
         FormSection {
@@ -186,7 +195,7 @@ pub static IPSEC_PROPOSAL_FORM: FormSchema = FormSchema {
             NAME,
             f!("auth-algorithms", "Auth algorithms", FieldKind::Text),
             f!("enc-algorithms", "Enc algorithms", FieldKind::Text),
-            f!("pfs-group", "PFS group", FieldKind::Text),
+            f!("pfs-group", "PFS group", KIND_IPSEC_PFS_GROUP),
             f!("lifetime", "Lifetime", FieldKind::Text),
             ENABLED,
         ],
@@ -203,10 +212,14 @@ pub static IPSEC_PROFILE_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("hash-algorithm", "Hash algorithm", FieldKind::Text),
+            f!("hash-algorithm", "Hash algorithm", KIND_IPSEC_HASH),
             f!("enc-algorithm", "Enc algorithm", FieldKind::Text),
             f!("dh-group", "DH group", FieldKind::Text),
-            f!("proposal-check", "Proposal check", FieldKind::Text),
+            f!(
+                "proposal-check",
+                "Proposal check",
+                KIND_IPSEC_PROPOSAL_CHECK
+            ),
             f!("lifetime", "Lifetime", FieldKind::Text),
             f!("nat-traversal", "NAT traversal", FieldKind::Toggle),
             f!("dpd-interval", "DPD interval", FieldKind::Text),
@@ -239,7 +252,7 @@ pub static IPSEC_SETTINGS_FORM: FormSchema = FormSchema {
             f!(
                 "identities-matching",
                 "Identities matching",
-                FieldKind::Text
+                KIND_IPSEC_IDENTITIES_MATCHING
             ),
         ],
     }],
@@ -255,7 +268,7 @@ pub static IPSEC_MODE_CONFIG_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("address-pool", "Address pool", FieldKind::Text),
+            f!("address-pool", "Address pool", LOOKUP_POOLS),
             f!("address-prefix-length", "Prefix length", FieldKind::Number),
             f!("split-include", "Split include", FieldKind::Text),
             f!("system-dns", "System DNS", FieldKind::Toggle),
@@ -313,7 +326,7 @@ pub static IPSEC_KEY_QKD_FORM: FormSchema = FormSchema {
             fields: &[
                 ADDRESS,
                 f!("cache-size", "Cache size", FieldKind::Number),
-                f!("certificate", "Certificate", LOOKUP_CERT),
+                f!("certificate", "Certificate", LOOKUP_CERTIFICATES),
                 f!("key-size", "Key size", FieldKind::Number),
                 f!("kme-id", "KME ID", FieldKind::Text),
                 f!("peer-sae-id", "Peer SAE ID", FieldKind::Text),
