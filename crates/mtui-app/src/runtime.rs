@@ -1427,6 +1427,7 @@ fn lookup_options(
         }
         out.push(mtui_core::LookupOption::from_fields(value, &row.fields));
     }
+    mtui_core::sort_lookup_options(&mut out);
     out
 }
 

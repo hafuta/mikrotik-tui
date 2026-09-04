@@ -1,5 +1,11 @@
 //! Feature-owned form schemas for the Bridge navigation group.
 
+use crate::form_fields::{
+    FIELD_BRIDGE_FILTER_ACTION, FIELD_BRIDGE_FILTER_CHAIN, FIELD_BRIDGE_NAT_ACTION,
+    FIELD_BRIDGE_NAT_CHAIN, FIELD_IP_PROTOCOL, FIELD_MAC_PROTOCOL, KIND_BRIDGE_PORT_PRIORITY,
+    KIND_BRIDGE_PRIORITY, LOOKUP_INTERFACES as LOOKUP_IFACE,
+    LOOKUP_INTERFACES_MULTI as LOOKUP_IFACES,
+};
 use crate::forms::{EnumChoice, FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -12,16 +18,6 @@ macro_rules! f {
     };
 }
 
-const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_IFACES: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: true,
-};
 const LOOKUP_BRIDGE: FieldKind = FieldKind::Lookup {
     resource_id: "bridges",
     value_key: "name",
@@ -137,10 +133,8 @@ const FRAME_TYPES: FieldSpec = f!(
     }
 );
 const INGRESS: FieldSpec = f!("ingress-filtering", "Ingress filtering", FieldKind::Toggle);
-const PRIORITY: FieldSpec = f!("priority", "Priority", FieldKind::Text);
-const CHAIN: FieldSpec = f!("chain", "Chain", FieldKind::Text);
-const ACTION: FieldSpec = f!("action", "Action", FieldKind::Text);
-const MAC_PROTOCOL: FieldSpec = f!("mac-protocol", "MAC protocol", FieldKind::Text);
+const BRIDGE_PRIORITY: FieldSpec = f!("priority", "Priority", KIND_BRIDGE_PRIORITY);
+const PORT_PRIORITY: FieldSpec = f!("priority", "Priority", KIND_BRIDGE_PORT_PRIORITY);
 const SRC_MAC: FieldSpec = f!("src-mac-address", "Src MAC", FieldKind::Text);
 const DST_MAC: FieldSpec = f!("dst-mac-address", "Dst MAC", FieldKind::Text);
 const IN_IFACE: FieldSpec = f!("in-interface", "In interface", LOOKUP_IFACE);
@@ -148,7 +142,7 @@ const OUT_IFACE: FieldSpec = f!("out-interface", "Out interface", LOOKUP_IFACE);
 const PACKETS: FieldSpec = f!("packets", "Packets", FieldKind::Readonly);
 const BYTES: FieldSpec = f!("bytes", "Bytes", FieldKind::Readonly);
 const SWITCH: FieldSpec = f!("switch", "Switch", LOOKUP_SWITCH);
-const CONTROL_PORTS: FieldSpec = f!("control-ports", "Control ports", FieldKind::Text);
+const CONTROL_PORTS: FieldSpec = f!("control-ports", "Control ports", LOOKUP_IFACES);
 const STATUS: FieldSpec = f!("status", "Status", FieldKind::Readonly);
 const DYNAMIC: FieldSpec = f!("dynamic", "Dynamic", FieldKind::Readonly);
 const VLAN_IDS: FieldSpec = f!("vlan-ids", "VLAN IDs", FieldKind::Repeat);
@@ -199,7 +193,7 @@ pub static BRIDGE_FORM: FormSchema = FormSchema {
                         choices: PROTOCOL_MODE_CHOICES
                     }
                 ),
-                PRIORITY,
+                BRIDGE_PRIORITY,
                 f!("region-name", "Region Name", FieldKind::Text),
             ],
         },
@@ -263,7 +257,7 @@ pub static BRIDGE_PORT_FORM: FormSchema = FormSchema {
                 ),
                 f!("horizon", "Horizon", FieldKind::Text),
                 f!("path-cost", "Path Cost", FieldKind::Text),
-                PRIORITY,
+                PORT_PRIORITY,
                 f!("bpdu-guard", "BPDU Guard", FieldKind::Toggle),
                 f!("restricted-role", "Restricted Role", FieldKind::Toggle),
                 f!(
@@ -331,7 +325,7 @@ pub static BRIDGE_MDB_FORM: FormSchema = FormSchema {
             fields: &[
                 f!("group", "Group", FieldKind::Text),
                 f!("vid", "VID", FieldKind::Text),
-                f!("on-ports", "On ports", FieldKind::Text),
+                f!("on-ports", "On ports", LOOKUP_IFACES),
                 BRIDGE,
                 ENABLED,
             ],
@@ -362,7 +356,7 @@ pub static BRIDGE_MSTI_FORM: FormSchema = FormSchema {
             BRIDGE,
             f!("identifier", "Identifier", FieldKind::Text),
             f!("vlan-mapping", "VLAN mapping", FieldKind::Text),
-            PRIORITY,
+            BRIDGE_PRIORITY,
             COMMENT,
         ],
     }],
@@ -382,19 +376,24 @@ pub static BRIDGE_FILTER_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[CHAIN, ACTION, COMMENT, ENABLED],
+            fields: &[
+                FIELD_BRIDGE_FILTER_CHAIN,
+                FIELD_BRIDGE_FILTER_ACTION,
+                COMMENT,
+                ENABLED,
+            ],
         },
         FormSection {
             id: "match",
             label: "Match",
             read_only: false,
             fields: &[
-                MAC_PROTOCOL,
+                FIELD_MAC_PROTOCOL,
                 SRC_MAC,
                 DST_MAC,
                 IN_IFACE,
                 OUT_IFACE,
-                f!("ip-protocol", "IP protocol", FieldKind::Text),
+                FIELD_IP_PROTOCOL,
                 f!("src-address", "Source", FieldKind::Text),
                 f!("dst-address", "Destination", FieldKind::Text),
                 f!("src-port", "Src port", FieldKind::Text),
@@ -412,7 +411,7 @@ pub static BRIDGE_FILTER_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[CHAIN, ACTION],
+        fields: &[FIELD_BRIDGE_FILTER_CHAIN, FIELD_BRIDGE_FILTER_ACTION],
     }],
 };
 
@@ -424,14 +423,19 @@ pub static BRIDGE_NAT_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[CHAIN, ACTION, COMMENT, ENABLED],
+            fields: &[
+                FIELD_BRIDGE_NAT_CHAIN,
+                FIELD_BRIDGE_NAT_ACTION,
+                COMMENT,
+                ENABLED,
+            ],
         },
         FormSection {
             id: "match",
             label: "Match",
             read_only: false,
             fields: &[
-                MAC_PROTOCOL,
+                FIELD_MAC_PROTOCOL,
                 SRC_MAC,
                 DST_MAC,
                 IN_IFACE,
@@ -451,7 +455,7 @@ pub static BRIDGE_NAT_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[CHAIN, ACTION],
+        fields: &[FIELD_BRIDGE_NAT_CHAIN, FIELD_BRIDGE_NAT_ACTION],
     }],
 };
 
@@ -524,7 +528,7 @@ pub static BRIDGE_PORT_CONTROLLER_FORM: FormSchema = FormSchema {
         fields: &[
             BRIDGE,
             SWITCH,
-            f!("cascade-ports", "Cascade", FieldKind::Text),
+            f!("cascade-ports", "Cascade", LOOKUP_IFACES),
         ],
     }],
     create_sections: &[],
@@ -605,7 +609,7 @@ pub static BRIDGE_PORT_EXTENDER_FORM: FormSchema = FormSchema {
         fields: &[
             SWITCH,
             CONTROL_PORTS,
-            f!("excluded-ports", "Excluded", FieldKind::Text),
+            f!("excluded-ports", "Excluded", LOOKUP_IFACES),
         ],
     }],
     create_sections: &[],

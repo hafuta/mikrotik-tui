@@ -3035,7 +3035,13 @@ mod lookup_picker_tests {
             options: vec!["ether1".into(), "bridge".into()],
             error: None,
         }));
-        let _ = app.update(AppEvent::Input(press(KeyCode::Down)));
+        let Overlay::Form(session) = &app.overlay else {
+            panic!("form closed");
+        };
+        assert_eq!(
+            session.lookup.as_ref().unwrap().options,
+            ["bridge", "ether1"]
+        );
         let _ = app.update(AppEvent::Input(press(KeyCode::Enter)));
         let Overlay::Form(session) = &app.overlay else {
             panic!("form closed");

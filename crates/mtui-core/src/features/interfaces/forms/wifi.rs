@@ -3,6 +3,11 @@
 #![allow(clippy::wildcard_imports)]
 
 use super::*;
+use crate::form_fields::{
+    KIND_NV2_TDMA_PERIOD, KIND_TLS_MODE, KIND_WDS_MODE, KIND_WIFI_COUNTRY,
+    KIND_WIFI_COUNTRY_OPTIONAL, KIND_WIRELESS_BAND, KIND_WIRELESS_CHANNEL_WIDTH,
+    KIND_WIRELESS_VLAN_MODE, LOOKUP_WIFI_AAA, LOOKUP_WIFI_INTERWORKING, LOOKUP_WIFI_STEERING,
+};
 use crate::forms::{EnumChoice, FieldRule, ScalarKind};
 
 const LOOKUP_WIFI: FieldKind = FieldKind::Lookup {
@@ -426,7 +431,11 @@ const WIFI_GENERAL: &[FieldSpec] = &[
 const WIFI_CONFIGURATION_FIELDS: &[FieldSpec] = &[
     f!("configuration", "Configuration", LOOKUP_WIFI_CONFIG),
     f!("configuration.ssid", "SSID", OPTIONAL_TEXT),
-    f!("configuration.country", "Country", OPTIONAL_TEXT),
+    f!(
+        "configuration.country",
+        "Country",
+        KIND_WIFI_COUNTRY_OPTIONAL
+    ),
     f!("configuration.chains", "Chains", FieldKind::Repeat),
     f!("configuration.tx-chains", "Tx Chains", FieldKind::Repeat),
     f!("configuration.tx-power", "Max Tx Power", OPTIONAL_NUM),
@@ -572,7 +581,7 @@ const WIFI_FT_FIELDS: &[FieldSpec] = &[
 ];
 
 const WIFI_AAA_FIELDS: &[FieldSpec] = &[
-    f!("aaa", "AAA", OPTIONAL_TEXT),
+    f!("aaa", "AAA", LOOKUP_WIFI_AAA),
     f!("aaa.nas-identifier", "NAS Identifier", OPTIONAL_TEXT),
 ];
 
@@ -600,14 +609,14 @@ const WIFI_DATAPATH_FIELDS: &[FieldSpec] = &[
 ];
 
 const WIFI_INTERWORKING_FIELDS: &[FieldSpec] = &[
-    f!("interworking", "Interworking", OPTIONAL_TEXT),
+    f!("interworking", "Interworking", LOOKUP_WIFI_INTERWORKING),
     f!("interworking.internet", "Internet", FieldKind::Toggle),
     f!("interworking.hessid", "HESSID", FieldKind::Mac),
     f!("interworking.hotspot20", "Hotspot 2.0", FieldKind::Toggle),
 ];
 
 const WIFI_STEERING_FIELDS: &[FieldSpec] = &[
-    f!("steering", "Steering", OPTIONAL_TEXT),
+    f!("steering", "Steering", LOOKUP_WIFI_STEERING),
     f!("steering.rrm", "RRM", FieldKind::Toggle),
     f!("steering.wnm", "WNM", FieldKind::Toggle),
 ];
@@ -863,7 +872,7 @@ const CONFIG_SECTIONS: &[FormSection] = &[
         fields: &[
             NAME,
             f!("ssid", "SSID", FieldKind::Text),
-            f!("country", "Country", FieldKind::Text),
+            f!("country", "Country", KIND_WIFI_COUNTRY),
             f!("hide-ssid", "Hide SSID", FieldKind::Toggle),
             f!(
                 "mode",
@@ -1137,8 +1146,12 @@ const WIRELESS_SECTIONS: &[FormSection] = &[
                     choices: WIRELESS_MODE_CHOICES
                 }
             ),
-            f!("band", "Band", FieldKind::Text),
-            f!("channel-width", "Channel Width", FieldKind::Text),
+            f!("band", "Band", KIND_WIRELESS_BAND),
+            f!(
+                "channel-width",
+                "Channel Width",
+                KIND_WIRELESS_CHANNEL_WIDTH
+            ),
             f!("frequency", "Frequency", FieldKind::Text),
             f!("ssid", "SSID", FieldKind::Text),
             f!("radio-name", "Radio Name", FieldKind::Text),
@@ -1166,7 +1179,7 @@ const WIRELESS_SECTIONS: &[FormSection] = &[
         label: "WDS",
         read_only: false,
         fields: &[
-            f!("wds-mode", "WDS Mode", FieldKind::Text),
+            f!("wds-mode", "WDS Mode", KIND_WDS_MODE),
             f!("wds-default-bridge", "WDS Default Bridge", LOOKUP_BRIDGE),
         ],
     },
@@ -1184,7 +1197,7 @@ const WIRELESS_SECTIONS: &[FormSection] = &[
             f!(
                 "nv2-tdma-period-size",
                 "TDMA Period Size",
-                FieldKind::Number
+                KIND_NV2_TDMA_PERIOD
             ),
             f!("nv2-preshared-key", "Preshared Key", FieldKind::Secret),
         ],
@@ -1296,7 +1309,7 @@ const WIRELESS_SECURITY_SECTIONS: &[FormSection] = &[
         read_only: false,
         fields: &[
             f!("eap-methods", "Methods", FieldKind::Repeat),
-            f!("tls-mode", "TLS Mode", FieldKind::Text),
+            f!("tls-mode", "TLS Mode", KIND_TLS_MODE),
             f!("tls-certificate", "TLS Certificate", LOOKUP_CERT),
         ],
     },
@@ -1339,7 +1352,7 @@ const ACCESS_LIST_FIELDS: &[FieldSpec] = &[
     f!("signal-range", "Signal Strength Range", FieldKind::Text),
     f!("authentication", "Authentication", FieldKind::Toggle),
     f!("forwarding", "Forwarding", FieldKind::Toggle),
-    f!("vlan-mode", "VLAN Mode", FieldKind::Text),
+    f!("vlan-mode", "VLAN Mode", KIND_WIRELESS_VLAN_MODE),
     f!(
         "vlan-id",
         "VLAN ID",

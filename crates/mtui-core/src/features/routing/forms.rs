@@ -4,6 +4,10 @@
 //! `/routing/ospf/interface` is the matched live object (cost, state, DR/BDR).
 //! `/routing/bgp/session` is the live peer cache; connections and templates stay writable.
 
+use crate::form_fields::{
+    KIND_ORIGINATE_DEFAULT, LOOKUP_ADDRESS_LIST, LOOKUP_INTERFACES_MULTI, LOOKUP_ROUTING_TABLES,
+    LOOKUP_VRF,
+};
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -16,11 +20,6 @@ macro_rules! f {
     };
 }
 
-const LOOKUP_ROUTING_TABLE: FieldKind = FieldKind::Lookup {
-    resource_id: "routing-tables",
-    value_key: "name",
-    multiple: false,
-};
 const LOOKUP_OSPF_INSTANCE: FieldKind = FieldKind::Lookup {
     resource_id: "ospf-instances",
     value_key: "name",
@@ -36,16 +35,6 @@ const LOOKUP_RIP_INSTANCE: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
-const LOOKUP_IFACES: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: true,
-};
-const LOOKUP_VRF: FieldKind = FieldKind::Lookup {
-    resource_id: "vrf",
-    value_key: "name",
-    multiple: false,
-};
 
 const OSPF_AREA_TYPE_VALUES: &[&str] = &["backbone", "standard", "stub", "nssa"];
 const OSPF_NETWORK_TYPE_VALUES: &[&str] = &[
@@ -57,7 +46,6 @@ const OSPF_NETWORK_TYPE_VALUES: &[&str] = &[
     "virtual-link",
 ];
 const OSPF_VERSION_VALUES: &[&str] = &["2", "3"];
-const OSPF_ORIGINATE_DEFAULT_VALUES: &[&str] = &["never", "if-installed", "always"];
 const ROUTING_RULE_ACTION_VALUES: &[&str] = &[
     "lookup",
     "lookup-only",
@@ -81,7 +69,7 @@ const ROUTING_ID_SELECT_VALUES: &[&str] = &["any", "only-dynamic", "only-static"
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const ENABLED: FieldSpec = f!("disabled", "Enabled", FieldKind::InvertedToggle);
-const TABLE: FieldSpec = f!("table", "Table", LOOKUP_ROUTING_TABLE);
+const TABLE: FieldSpec = f!("table", "Table", LOOKUP_ROUTING_TABLES);
 const OSPF_INSTANCE: FieldSpec = f!("instance", "Instance", LOOKUP_OSPF_INSTANCE);
 const OSPF_AREA: FieldSpec = f!("area", "Area", LOOKUP_OSPF_AREA);
 const OSPF_NETWORK_TYPE: FieldSpec = f!(
@@ -150,9 +138,7 @@ pub static OSPF_INSTANCE_FORM: FormSchema = FormSchema {
             f!(
                 "originate-default",
                 "Originate Default",
-                FieldKind::Enum {
-                    values: OSPF_ORIGINATE_DEFAULT_VALUES,
-                }
+                KIND_ORIGINATE_DEFAULT
             ),
             COMMENT,
             ENABLED,
@@ -196,7 +182,7 @@ pub static OSPF_INTERFACE_TEMPLATE_FORM: FormSchema = FormSchema {
         fields: &[
             OSPF_INSTANCE,
             OSPF_AREA,
-            f!("interfaces", "Interfaces", LOOKUP_IFACES),
+            f!("interfaces", "Interfaces", LOOKUP_INTERFACES_MULTI),
             OSPF_NETWORK_TYPE,
             COMMENT,
             ENABLED,
@@ -323,7 +309,7 @@ pub static BGP_TEMPLATE_FORM: FormSchema = FormSchema {
             f!("as", "AS", FieldKind::Text),
             f!("router-id", "Router ID", FieldKind::Ip),
             f!("address-families", "Address Families", FieldKind::Repeat),
-            f!("output.network", "Output Network", FieldKind::Text),
+            f!("output.network", "Output Network", LOOKUP_ADDRESS_LIST),
             COMMENT,
             ENABLED,
         ],
@@ -341,7 +327,11 @@ pub static RIP_INSTANCE_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             f!("vrf", "VRF", LOOKUP_VRF),
-            f!("originate-default", "Originate Default", FieldKind::Toggle),
+            f!(
+                "originate-default",
+                "Originate Default",
+                KIND_ORIGINATE_DEFAULT
+            ),
             COMMENT,
             ENABLED,
         ],
@@ -358,7 +348,7 @@ pub static RIP_INTERFACE_TEMPLATE_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("instance", "Instance", LOOKUP_RIP_INSTANCE),
-            f!("interfaces", "Interfaces", LOOKUP_IFACES),
+            f!("interfaces", "Interfaces", LOOKUP_INTERFACES_MULTI),
             COMMENT,
             ENABLED,
         ],
@@ -374,7 +364,7 @@ pub static BFD_CONFIGURATION_FORM: FormSchema = FormSchema {
         label: "General",
         read_only: false,
         fields: &[
-            f!("interfaces", "Interfaces", LOOKUP_IFACES),
+            f!("interfaces", "Interfaces", LOOKUP_INTERFACES_MULTI),
             f!("addresses", "Addresses", FieldKind::Repeat),
             f!("min-tx-interval", "Min TX Interval", FieldKind::Time),
             f!("min-rx-interval", "Min RX Interval", FieldKind::Time),

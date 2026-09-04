@@ -356,6 +356,10 @@ fn ntp_client_is_singleton_with_status() {
         NTP_CLIENT_FORM.field("servers").map(|field| field.kind),
         Some(FieldKind::Repeat)
     );
+    assert_eq!(
+        NTP_CLIENT_FORM.field("mode").map(|field| field.kind),
+        Some(crate::form_fields::KIND_NTP_CLIENT_MODE)
+    );
     assert!(!NTP_CLIENT_FORM.writable_keys().contains(&"status"));
     assert!(
         NTP_CLIENT_FORM
@@ -432,6 +436,10 @@ fn clock_keeps_timezone_writable() {
     assert!(!CLOCK_FORM.writable_keys().contains(&"time"));
     assert!(!CLOCK_FORM.writable_keys().contains(&"date"));
     assert!(!CLOCK_FORM.writable_keys().contains(&"gmt-offset"));
+    assert_eq!(
+        CLOCK_FORM.field("time-zone-name").map(|field| field.kind),
+        Some(crate::form_fields::KIND_TIME_ZONE_NAME)
+    );
 }
 
 #[test]
@@ -568,6 +576,12 @@ fn snmp_singleton_and_community_secrets() {
             .map(|field| field.kind),
         Some(FieldKind::Repeat)
     );
+    assert_eq!(
+        SNMP_COMMUNITY_FORM
+            .field("security")
+            .map(|field| field.kind),
+        Some(crate::form_fields::KIND_SNMP_SECURITY)
+    );
 
     let mut original = HashMap::new();
     original.insert("name".into(), "public".into());
@@ -693,6 +707,20 @@ fn package_name_is_readonly_disabled_toggle() {
     assert!(!PACKAGE_FORM.writable_keys().contains(&"version"));
     assert!(!PACKAGE_FORM.writable_keys().contains(&"build-time"));
     assert!(!PACKAGE_FORM.writable_keys().contains(&"scheduled"));
+}
+
+#[test]
+fn package_update_channel_and_file_prompts() {
+    assert_eq!(
+        PACKAGE_UPDATE_FORM.field("channel").map(|field| field.kind),
+        Some(crate::form_fields::KIND_PACKAGE_CHANNEL)
+    );
+    assert_lookup(&INSTALL_PACKAGE_PROMPT, "file-name", "files", "name");
+    assert_lookup(&IMPORT_CONFIG_PROMPT, "file-name", "files", "name");
+    assert_eq!(
+        EXPORT_CONFIG_PROMPT.field("file").map(|field| field.kind),
+        Some(FieldKind::Text)
+    );
 }
 
 #[test]

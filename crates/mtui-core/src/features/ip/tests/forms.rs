@@ -2,6 +2,14 @@ use crate::features::ip::forms::*;
 use crate::features::ip::guides::GUIDES;
 use crate::features::ip::resources::RESOURCES;
 use crate::features::ip::rules::form_field_state;
+use crate::form_fields::{
+    ALLOW_DENY, CONNTRACK_ENABLED, DNS_STATIC_TYPE, FILTER_ACTIONS, FILTER_CHAINS,
+    HOTSPOT_BINDING_TYPE, HTTP_METHODS, IP_PROTOCOLS, IPSEC_AUTH_METHOD, IPSEC_EXCHANGE_MODE,
+    IPSEC_GENERATE_POLICY, IPSEC_HASH, IPSEC_IDENTITIES_MATCHING, IPSEC_PFS_GROUP,
+    IPSEC_POLICY_ACTION, IPSEC_POLICY_LEVEL, IPSEC_PROPOSAL_CHECK, IPSEC_PROTOCOLS, MANGLE_ACTIONS,
+    MANGLE_CHAINS, NAT_ACTIONS, NAT_CHAINS, NEIGHBOR_MODE, PROXY_ACCESS_ACTION, RAW_ACTIONS,
+    RAW_CHAINS, RP_FILTER, SSH_FORWARDING, SSH_HOST_KEY_SIZE, UPNP_INTERFACE_TYPE,
+};
 use crate::forms::{FieldKind, FormSchema};
 use std::collections::HashMap;
 
@@ -73,6 +81,35 @@ const FORMS: &[&FormSchema] = &[
 
 fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
     schema.create_keys()
+}
+
+fn field_kind(schema: &FormSchema, key: &str) -> FieldKind {
+    schema
+        .sections
+        .iter()
+        .flat_map(|section| section.fields)
+        .find(|field| field.key == key)
+        .unwrap_or_else(|| panic!("missing field {key}"))
+        .kind
+}
+
+fn assert_enum(schema: &FormSchema, key: &str, values: &'static [&'static str]) {
+    assert_eq!(
+        schema.field(key).map(|field| field.kind),
+        Some(FieldKind::Enum { values })
+    );
+}
+
+fn assert_lookup(form: &FormSchema, key: &str, resource_id: &'static str) {
+    assert_eq!(
+        form.field(key).map(|field| field.kind),
+        Some(FieldKind::Lookup {
+            resource_id,
+            value_key: "name",
+            multiple: false,
+        }),
+        "{key}"
+    );
 }
 
 #[test]
@@ -155,6 +192,75 @@ fn smb_user_password_stays_secret() {
         SMB_USER_FORM.field("password").map(|field| field.kind),
         Some(FieldKind::Secret)
     );
+}
+
+#[test]
+fn shared_enum_and_lookup_kinds() {
+    assert_enum(&FIREWALL_FILTER_FORM, "action", FILTER_ACTIONS);
+    assert_enum(&FIREWALL_FILTER_FORM, "protocol", IP_PROTOCOLS);
+    assert_enum(&FIREWALL_FILTER_FORM, "chain", FILTER_CHAINS);
+    assert_enum(&FIREWALL_NAT_FORM, "chain", NAT_CHAINS);
+    assert_enum(&FIREWALL_NAT_FORM, "action", NAT_ACTIONS);
+    assert_enum(&FIREWALL_MANGLE_FORM, "chain", MANGLE_CHAINS);
+    assert_enum(&FIREWALL_MANGLE_FORM, "action", MANGLE_ACTIONS);
+    assert_lookup(&FIREWALL_MANGLE_FORM, "new-routing-mark", "routing-tables");
+    assert_enum(&FIREWALL_RAW_FORM, "chain", RAW_CHAINS);
+    assert_enum(&FIREWALL_RAW_FORM, "action", RAW_ACTIONS);
+    assert_eq!(
+        field_kind(&CONNECTION_TRACKING_FORM, "enabled"),
+        FieldKind::LabeledEnum {
+            choices: CONNTRACK_ENABLED,
+        }
+    );
+    assert_enum(&DNS_STATIC_FORM, "type", DNS_STATIC_TYPE);
+    assert_enum(&IP_SSH_FORM, "host-key-size", SSH_HOST_KEY_SIZE);
+    assert_enum(&IP_SSH_FORM, "forwarding-enabled", SSH_FORWARDING);
+    assert_enum(&IP_SETTINGS_FORM, "rp-filter", RP_FILTER);
+    assert_enum(&NEIGHBOR_DISCOVERY_FORM, "mode", NEIGHBOR_MODE);
+    assert_enum(&UPNP_INTERFACE_FORM, "type", UPNP_INTERFACE_TYPE);
+    assert_eq!(
+        field_kind(&TRAFFIC_FLOW_FORM, "interfaces"),
+        FieldKind::Lookup {
+            resource_id: "interfaces",
+            value_key: "name",
+            multiple: true,
+        }
+    );
+    assert_lookup(&KID_CONTROL_DEVICE_FORM, "user", "kid-control");
+
+    assert_enum(&IPSEC_PEER_FORM, "exchange-mode", IPSEC_EXCHANGE_MODE);
+    assert_enum(&IPSEC_IDENTITY_FORM, "auth-method", IPSEC_AUTH_METHOD);
+    assert_enum(
+        &IPSEC_IDENTITY_FORM,
+        "generate-policy",
+        IPSEC_GENERATE_POLICY,
+    );
+    assert_lookup(
+        &IPSEC_IDENTITY_FORM,
+        "policy-template-group",
+        "ipsec-policy-groups",
+    );
+    assert_lookup(&IPSEC_MODE_CONFIG_FORM, "address-pool", "pools");
+    assert_enum(&IPSEC_POLICY_FORM, "action", IPSEC_POLICY_ACTION);
+    assert_enum(&IPSEC_POLICY_FORM, "level", IPSEC_POLICY_LEVEL);
+    assert_enum(&IPSEC_POLICY_FORM, "ipsec-protocols", IPSEC_PROTOCOLS);
+    assert_enum(&IPSEC_POLICY_FORM, "protocol", IP_PROTOCOLS);
+    assert_enum(&IPSEC_PROPOSAL_FORM, "pfs-group", IPSEC_PFS_GROUP);
+    assert_enum(&IPSEC_PROFILE_FORM, "hash-algorithm", IPSEC_HASH);
+    assert_enum(&IPSEC_PROFILE_FORM, "proposal-check", IPSEC_PROPOSAL_CHECK);
+    assert_enum(
+        &IPSEC_SETTINGS_FORM,
+        "identities-matching",
+        IPSEC_IDENTITIES_MATCHING,
+    );
+
+    assert_enum(&HOTSPOT_IP_BINDING_FORM, "type", HOTSPOT_BINDING_TYPE);
+    assert_enum(&HOTSPOT_WALLED_GARDEN_FORM, "action", ALLOW_DENY);
+    assert_enum(&HOTSPOT_WALLED_GARDEN_IP_FORM, "action", ALLOW_DENY);
+    assert_enum(&PROXY_ACCESS_FORM, "action", PROXY_ACCESS_ACTION);
+    assert_enum(&PROXY_CACHE_FORM, "method", HTTP_METHODS);
+    assert_enum(&PROXY_CACHE_FORM, "action", ALLOW_DENY);
+    assert_enum(&PROXY_DIRECT_FORM, "action", ALLOW_DENY);
 }
 
 mod core {
@@ -444,7 +550,11 @@ mod core {
         assert_eq!(field_kind(&TRAFFIC_FLOW_FORM, "enabled"), FieldKind::Toggle);
         assert_eq!(
             field_kind(&TRAFFIC_FLOW_FORM, "interfaces"),
-            FieldKind::Repeat
+            FieldKind::Lookup {
+                resource_id: "interfaces",
+                value_key: "name",
+                multiple: true,
+            }
         );
         assert_enum(&TRAFFIC_FLOW_FORM, "cache-entries", CACHE_ENTRIES);
         assert_eq!(
@@ -995,12 +1105,6 @@ mod ipsec {
         );
         assert_eq!(
             IPSEC_IDENTITY_FORM.field("my-id").map(|field| field.kind),
-            Some(FieldKind::Text)
-        );
-        assert_eq!(
-            IPSEC_IDENTITY_FORM
-                .field("auth-method")
-                .map(|field| field.kind),
             Some(FieldKind::Text)
         );
         assert_eq!(

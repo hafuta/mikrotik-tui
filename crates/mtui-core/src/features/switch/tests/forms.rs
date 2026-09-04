@@ -358,6 +358,16 @@ fn switch_lookups_target_catalog_resources() {
         Some(FieldKind::Text)
     );
     assert_eq!(
+        SWITCH_RULE_FORM
+            .field("mac-protocol")
+            .map(|field| field.kind),
+        Some(crate::form_fields::KIND_MAC_PROTOCOL)
+    );
+    assert_eq!(
+        SWITCH_RULE_FORM.field("protocol").map(|field| field.kind),
+        Some(crate::form_fields::KIND_IP_PROTOCOL)
+    );
+    assert_eq!(
         SWITCH_RULE_FORM.field("comment").map(|field| field.kind),
         Some(FieldKind::Text)
     );

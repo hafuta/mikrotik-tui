@@ -17,6 +17,12 @@
 //!
 //! Group id: `ipv6-group`.
 
+use crate::form_fields::{
+    FIELD_FILTER_ACTION, FIELD_FILTER_CHAIN, FIELD_MANGLE_ACTION, FIELD_MANGLE_CHAIN,
+    FIELD_NAT_ACTION, FIELD_NAT_CHAIN, FIELD_PROTOCOL, FIELD_RAW_ACTION, FIELD_RAW_CHAIN,
+    KIND_ADVERTISE_DNS, KIND_IPV6_ACCEPT_REDIRECTS, LOOKUP_INTERFACE_LISTS, LOOKUP_INTERFACES,
+    LOOKUP_IPV6_DHCP_SERVER, LOOKUP_ROUTING_TABLES,
+};
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -29,21 +35,6 @@ macro_rules! f {
     };
 }
 
-const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_IFACE_LIST: FieldKind = FieldKind::Lookup {
-    resource_id: "interface-lists",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_ROUTING_TABLE: FieldKind = FieldKind::Lookup {
-    resource_id: "routing-tables",
-    value_key: "name",
-    multiple: false,
-};
 const LOOKUP_IPV6_POOL: FieldKind = FieldKind::Lookup {
     resource_id: "ipv6-pool",
     value_key: "name",
@@ -56,29 +47,32 @@ const LOOKUP_IPV6_ADDRESS_LIST: FieldKind = FieldKind::Lookup {
 };
 
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ipv6);
-const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
+const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_INTERFACES);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const ENABLED: FieldSpec = f!("disabled", "Enabled", FieldKind::InvertedToggle);
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
-const CHAIN: FieldSpec = f!("chain", "Chain", FieldKind::Text);
-const ACTION: FieldSpec = f!("action", "Action", FieldKind::Text);
-const IN_INTERFACE: FieldSpec = f!("in-interface", "In interface", LOOKUP_IFACE);
-const OUT_INTERFACE: FieldSpec = f!("out-interface", "Out interface", LOOKUP_IFACE);
-const IN_INTERFACE_LIST: FieldSpec =
-    f!("in-interface-list", "In interface list", LOOKUP_IFACE_LIST);
+const FILTER_CHAIN: FieldSpec = FIELD_FILTER_CHAIN;
+const FILTER_ACTION: FieldSpec = FIELD_FILTER_ACTION;
+const MANGLE_CHAIN: FieldSpec = FIELD_MANGLE_CHAIN;
+const MANGLE_ACTION: FieldSpec = FIELD_MANGLE_ACTION;
+const RAW_CHAIN: FieldSpec = FIELD_RAW_CHAIN;
+const RAW_ACTION: FieldSpec = FIELD_RAW_ACTION;
+const NAT_CHAIN: FieldSpec = FIELD_NAT_CHAIN;
+const NAT_ACTION: FieldSpec = FIELD_NAT_ACTION;
+const PROTOCOL: FieldSpec = FIELD_PROTOCOL;
+const IN_INTERFACE: FieldSpec = f!("in-interface", "In interface", LOOKUP_INTERFACES);
+const OUT_INTERFACE: FieldSpec = f!("out-interface", "Out interface", LOOKUP_INTERFACES);
+const IN_INTERFACE_LIST: FieldSpec = f!(
+    "in-interface-list",
+    "In interface list",
+    LOOKUP_INTERFACE_LISTS
+);
 const OUT_INTERFACE_LIST: FieldSpec = f!(
     "out-interface-list",
     "Out interface list",
-    LOOKUP_IFACE_LIST
+    LOOKUP_INTERFACE_LISTS
 );
-const ROUTING_TABLE: FieldSpec = f!("routing-table", "Routing table", LOOKUP_ROUTING_TABLE);
-const NAT_CHAIN: FieldSpec = f!(
-    "chain",
-    "Chain",
-    FieldKind::Enum {
-        values: &["srcnat", "dstnat"],
-    }
-);
+const ROUTING_TABLE: FieldSpec = f!("routing-table", "Routing table", LOOKUP_ROUTING_TABLES);
 const ADDRESS_POOL: FieldSpec = f!("address-pool", "Address pool", LOOKUP_IPV6_POOL);
 const SRC_ADDRESS: FieldSpec = f!("src-address", "Src address", FieldKind::Ipv6);
 const DST_ADDRESS: FieldSpec = f!("dst-address", "Dst address", FieldKind::Ipv6);
@@ -170,7 +164,7 @@ pub static IPV6_ND_FORM: FormSchema = FormSchema {
             f!("ra-delay", "RA delay", FieldKind::Time),
             f!("mtu", "MTU", FieldKind::Number),
             f!("advertise-mac-address", "Advertise MAC", FieldKind::Toggle),
-            f!("advertise-dns", "Advertise DNS", FieldKind::Toggle),
+            f!("advertise-dns", "Advertise DNS", KIND_ADVERTISE_DNS),
             COMMENT,
             ENABLED,
         ],
@@ -236,7 +230,11 @@ pub static IPV6_SETTINGS_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("forward", "Forward", FieldKind::Toggle),
-            f!("accept-redirects", "Accept redirects", FieldKind::Text),
+            f!(
+                "accept-redirects",
+                "Accept redirects",
+                KIND_IPV6_ACCEPT_REDIRECTS
+            ),
             f!("max-neighbor-entries", "Max neighbors", FieldKind::Number),
         ],
     }],
@@ -252,11 +250,11 @@ pub static IPV6_FIREWALL_FILTER_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                CHAIN,
-                ACTION,
+                FILTER_CHAIN,
+                FILTER_ACTION,
                 f!("src-address", "Src address", FieldKind::Text),
                 f!("dst-address", "Dst address", FieldKind::Text),
-                f!("protocol", "Protocol", FieldKind::Text),
+                PROTOCOL,
                 IN_INTERFACE,
                 OUT_INTERFACE,
                 IN_INTERFACE_LIST,
@@ -358,8 +356,8 @@ pub static IPV6_FIREWALL_NAT_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 NAT_CHAIN,
-                ACTION,
-                f!("protocol", "Protocol", FieldKind::Text),
+                NAT_ACTION,
+                PROTOCOL,
                 SRC_ADDRESS,
                 SRC_ADDRESS_LIST,
                 DST_ADDRESS,
@@ -447,7 +445,7 @@ pub static IPV6_DHCP_BINDING_FORM: FormSchema = FormSchema {
         fields: &[
             ADDRESS,
             f!("duid", "DUID", FieldKind::Text),
-            f!("server", "Server", FieldKind::Text),
+            f!("server", "Server", LOOKUP_IPV6_DHCP_SERVER),
             COMMENT,
             ENABLED,
         ],
@@ -464,11 +462,11 @@ pub static IPV6_FIREWALL_MANGLE_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                CHAIN,
-                ACTION,
+                MANGLE_CHAIN,
+                MANGLE_ACTION,
                 f!("src-address", "Src address", FieldKind::Text),
                 f!("dst-address", "Dst address", FieldKind::Text),
-                f!("protocol", "Protocol", FieldKind::Text),
+                PROTOCOL,
                 IN_INTERFACE,
                 OUT_INTERFACE,
                 COMMENT,
@@ -497,8 +495,8 @@ pub static IPV6_FIREWALL_RAW_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                CHAIN,
-                ACTION,
+                RAW_CHAIN,
+                RAW_ACTION,
                 f!("src-address", "Src address", FieldKind::Text),
                 f!("dst-address", "Dst address", FieldKind::Text),
                 IN_INTERFACE,

@@ -1,5 +1,6 @@
 //! Feature-owned form schemas for the Switch navigation group.
 
+use crate::form_fields::{KIND_IP_PROTOCOL, KIND_MAC_PROTOCOL};
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -154,10 +155,10 @@ pub static SWITCH_RULE_FORM: FormSchema = FormSchema {
             label: "Match",
             read_only: false,
             fields: &[
-                f!("mac-protocol", "MAC Protocol", FieldKind::Text),
+                f!("mac-protocol", "MAC Protocol", KIND_MAC_PROTOCOL),
                 f!("src-mac-address", "Src. MAC Address", FieldKind::Mac),
                 f!("dst-mac-address", "Dst. MAC Address", FieldKind::Mac),
-                f!("protocol", "Protocol", FieldKind::Text),
+                f!("protocol", "Protocol", KIND_IP_PROTOCOL),
                 f!("src-address", "Src. Address", FieldKind::Ip),
                 f!("dst-address", "Dst. Address", FieldKind::Ip),
                 f!("src-port", "Src. Port", FieldKind::Text),

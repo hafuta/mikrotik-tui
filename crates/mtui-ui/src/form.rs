@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use mtui_core::{
-    FieldKind, FieldSpec, FormSchema, FormSection, LookupOption, ScalarKind,
+    FieldKind, FieldSpec, FormSchema, FormSection, LookupOption, ScalarKind, cmp_alphanumeric,
     default_writable_value, extra_status_fields, field_enabled, field_visible, join_ros_list,
     prepare_lookup_options, split_ros_list, with_leading_none,
 };
@@ -749,6 +749,7 @@ impl FormSession {
                 if !now.is_empty() && !options.iter().any(|option| option == &now) {
                     options.push(now.clone());
                 }
+                sort_picker_options(field.key, &mut options, &HashMap::new());
                 let focus = options
                     .iter()
                     .position(|option| option == &now)
@@ -820,6 +821,7 @@ impl FormSession {
             .iter()
             .map(|choice| (choice.value.to_string(), choice.label.to_string()))
             .collect();
+        sort_picker_options(field_key, &mut options, &labels);
         let focus = options
             .iter()
             .position(|option| option == &now)
@@ -982,6 +984,7 @@ impl FormSession {
         if !current.is_empty() && !picker.options.iter().any(|option| option == &current) {
             picker.options.push(current.clone());
         }
+        sort_picker_options(&picker.field_key, &mut picker.options, &picker.labels);
         let filtered = filtered_picker_options(picker);
         if picker.focus >= filtered.len() {
             picker.focus = filtered.len().saturating_sub(1);
@@ -1180,6 +1183,27 @@ pub const LOOKUP_TEST_FORM: FormSchema = FormSchema {
     sections: LOOKUP_TEST_SECTIONS,
     create_sections: LOOKUP_TEST_SECTIONS,
 };
+
+fn sort_picker_options(field_key: &str, options: &mut [String], labels: &HashMap<String, String>) {
+    options.sort_by(|left, right| {
+        cmp_alphanumeric(
+            &presented_option_text(field_key, labels, left),
+            &presented_option_text(field_key, labels, right),
+        )
+        .then_with(|| cmp_alphanumeric(left, right))
+    });
+}
+
+fn presented_option_text(
+    field_key: &str,
+    labels: &HashMap<String, String>,
+    option: &str,
+) -> String {
+    labels
+        .get(option)
+        .cloned()
+        .unwrap_or_else(|| enum_display_value(field_key, option))
+}
 
 fn filtered_picker_options(picker: &LookupPicker) -> Vec<String> {
     let q = picker.filter.to_ascii_lowercase();
@@ -2460,8 +2484,33 @@ mod tests {
         let mut session = FormSession::edit("routerboard-settings", "*0", &row, &schema);
         session.activate(&schema);
         let picker = session.lookup.as_ref().expect("picker");
-        assert_eq!(picker.options, ["auto", "716MHz", "500MHz"]);
-        assert_eq!(picker.focus, 2);
+        assert_eq!(picker.options, ["500MHz", "716MHz", "auto"]);
+        assert_eq!(picker.focus, 0);
+    }
+
+    #[test]
+    fn enum_picker_sorts_values_alphanumerically() {
+        let schema = FormSchema {
+            title_key: "iface",
+            subtitle_keys: &[],
+            sections: &[FormSection {
+                id: "general",
+                label: "General",
+                read_only: false,
+                fields: &[FieldSpec {
+                    key: "iface",
+                    label: "Interface",
+                    kind: FieldKind::Enum {
+                        values: &["ether10", "ether2", "bridge"],
+                    },
+                }],
+            }],
+            create_sections: &[],
+        };
+        let mut session = FormSession::create("interfaces", &schema);
+        session.activate(&schema);
+        let picker = session.lookup.as_ref().expect("picker");
+        assert_eq!(picker.options, ["bridge", "ether2", "ether10"]);
     }
 
     #[test]
@@ -2576,8 +2625,8 @@ mod tests {
         let picker = session.lookup.as_ref().expect("select");
         assert_eq!(picker.resource_id, "");
         assert!(!picker.loading);
-        assert_eq!(picker.options, ["none", "pap", "chap"]);
-        session.lookup_move(2);
+        assert_eq!(picker.options, ["chap", "none", "pap"]);
+        session.lookup_move(-1);
         session.lookup_confirm();
         assert_eq!(
             session.values.get("authentication").map(String::as_str),
@@ -2768,7 +2817,7 @@ mod tests {
         assert!(session.apply_lookup_result(request_id, generation, vec!["1".into()], None));
         assert_eq!(
             session.lookup.as_ref().unwrap().options,
-            vec!["none".to_string(), "1".into()]
+            vec!["1".to_string(), "none".into()]
         );
     }
 
@@ -3087,8 +3136,8 @@ mod tests {
         let picker = session.lookup.as_ref().expect("picker");
         assert!(!picker.loading);
         assert!(picker.resource_id.is_empty());
-        assert_eq!(picker.options, ["default", "syslog", "cef"]);
-        assert_eq!(picker.focus, 0);
+        assert_eq!(picker.options, ["syslog", "cef", "default"]);
+        assert_eq!(picker.focus, 2);
 
         session.lookup_insert_char('b');
         session.lookup_insert_char('s');
@@ -3748,7 +3797,10 @@ mod tests {
         picker.request_id = 1;
         let generation = picker.generation;
         session.apply_lookup_result(1, generation, vec!["ether1".into(), "bridge".into()], None);
-        session.lookup_move(1);
+        assert_eq!(
+            session.lookup.as_ref().unwrap().options,
+            ["bridge", "ether1"]
+        );
         session.lookup_confirm();
         assert!(session.lookup.is_none());
         assert_eq!(

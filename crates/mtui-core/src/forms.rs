@@ -1,7 +1,9 @@
 //! Sectioned property-sheet schemas for resource editors.
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::iter::Peekable;
 use std::net::{IpAddr, Ipv6Addr};
 
 /// One field in a properties sheet.
@@ -506,6 +508,50 @@ pub fn with_leading_all(options: Vec<String>) -> Vec<String> {
     prepend_unique("all", options)
 }
 
+/// Compare picker labels so `ether2` precedes `ether10`.
+///
+/// Digit runs are numbers; letters compare case-insensitively.
+#[must_use]
+pub fn cmp_alphanumeric(left: &str, right: &str) -> Ordering {
+    let mut left = left.chars().peekable();
+    let mut right = right.chars().peekable();
+    loop {
+        match (left.peek().copied(), right.peek().copied()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(a), Some(b)) if a.is_ascii_digit() && b.is_ascii_digit() => {
+                match take_ascii_u64(&mut left).cmp(&take_ascii_u64(&mut right)) {
+                    Ordering::Equal => {}
+                    other => return other,
+                }
+            }
+            (Some(a), Some(b)) => {
+                left.next();
+                right.next();
+                match a.to_ascii_lowercase().cmp(&b.to_ascii_lowercase()) {
+                    Ordering::Equal => {}
+                    other => return other,
+                }
+            }
+        }
+    }
+}
+
+fn take_ascii_u64(chars: &mut Peekable<impl Iterator<Item = char>>) -> u64 {
+    let mut n = 0_u64;
+    while chars.peek().is_some_and(char::is_ascii_digit) {
+        let digit = chars.next().expect("peeked digit") as u8 - b'0';
+        n = n.saturating_mul(10).saturating_add(u64::from(digit));
+    }
+    n
+}
+
+/// Sort lookup rows the same way the Select/Lookup picker presents them.
+pub fn sort_lookup_options(options: &mut [LookupOption]) {
+    options.sort_by(|left, right| cmp_alphanumeric(&left.value, &right.value));
+}
+
 fn prepend_unique(lead: &str, options: Vec<String>) -> Vec<String> {
     if options.iter().any(|item| item == lead) {
         return options;
@@ -540,6 +586,12 @@ pub fn prepare_lookup_options(
     if matches!(sheet_resource_id, "wifi-cap" | "wifi-capsman")
         && lookup_resource_id == "certificates"
     {
+        return with_leading_none(options);
+    }
+    if sheet_resource_id == "vrrp" && lookup_resource_id == "vrrp" {
+        return prepend_unique("none", prepend_unique("self", options));
+    }
+    if sheet_resource_id == "ipsec-mode-config" && lookup_resource_id == "pools" {
         return with_leading_none(options);
     }
     options
@@ -1357,12 +1409,42 @@ mod tests {
             vec!["ether1".to_string()]
         );
         assert_eq!(
+            prepare_lookup_options("vrrp", "vrrp", vec!["vrrp1".into()]),
+            vec!["none".to_string(), "self".into(), "vrrp1".into()]
+        );
+        assert_eq!(
+            prepare_lookup_options("ipsec-mode-config", "pools", vec!["dhcp".into()]),
+            vec!["none".to_string(), "dhcp".into()]
+        );
+        assert_eq!(
             default_writable_value(FieldKind::Lookup {
                 resource_id: "ntp-keys",
                 value_key: "key-id",
                 multiple: false,
             }),
             "none"
+        );
+    }
+
+    #[test]
+    fn alphanumeric_order_puts_ether2_before_ether10() {
+        assert_eq!(cmp_alphanumeric("ether2", "ether10"), Ordering::Less);
+        assert_eq!(cmp_alphanumeric("500MHz", "716MHz"), Ordering::Less);
+        assert_eq!(cmp_alphanumeric("716MHz", "auto"), Ordering::Less);
+        assert_eq!(cmp_alphanumeric("BSD syslog", "CEF"), Ordering::Less);
+        assert_eq!(cmp_alphanumeric("chap", "none"), Ordering::Less);
+        let mut options = vec![
+            LookupOption::plain("ether10"),
+            LookupOption::plain("ether2"),
+            LookupOption::plain("bridge"),
+        ];
+        sort_lookup_options(&mut options);
+        assert_eq!(
+            options
+                .iter()
+                .map(|option| option.value.as_str())
+                .collect::<Vec<_>>(),
+            ["bridge", "ether2", "ether10"]
         );
     }
 

@@ -329,7 +329,7 @@ const VRF_SECTIONS: &[FormSection] = &[FormSection {
     read_only: false,
     fields: &[
         NAME,
-        f!("interfaces", "Interfaces", FieldKind::Repeat),
+        f!("interfaces", "Interfaces", LOOKUP_IFACES),
         ENABLED,
         f!("builtin", "Builtin", FieldKind::Readonly),
         COMMENT,

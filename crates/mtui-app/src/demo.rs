@@ -79,7 +79,7 @@ impl DemoStore {
             }
             options.push(mtui_core::LookupOption::from_fields(value, &row.fields));
         }
-        options.sort_by(|left, right| left.value.cmp(&right.value));
+        mtui_core::sort_lookup_options(&mut options);
         options
     }
 

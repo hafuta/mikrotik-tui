@@ -1,5 +1,14 @@
 //! Form schemas for the IP navigation group.
 
+use crate::form_fields::{
+    FIELD_FILTER_ACTION, FIELD_FILTER_CHAIN, FIELD_MANGLE_ACTION, FIELD_MANGLE_CHAIN,
+    FIELD_NAT_ACTION, FIELD_NAT_CHAIN, FIELD_PROTOCOL, FIELD_RAW_ACTION, FIELD_RAW_CHAIN,
+    KIND_CONNTRACK_ENABLED, KIND_DNS_STATIC_TYPE, KIND_NEIGHBOR_MODE, KIND_RP_FILTER,
+    KIND_SSH_FORWARDING, KIND_SSH_HOST_KEY_SIZE, KIND_UPNP_TYPE, LOOKUP_ADDRESS_LIST,
+    LOOKUP_CERTIFICATES, LOOKUP_DHCP_SERVERS, LOOKUP_FILES, LOOKUP_INTERFACE_LISTS,
+    LOOKUP_INTERFACES, LOOKUP_INTERFACES_MULTI, LOOKUP_KID_CONTROL, LOOKUP_POOLS,
+    LOOKUP_ROUTING_TABLES,
+};
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -11,47 +20,6 @@ macro_rules! f {
         }
     };
 }
-
-const LOOKUP_INTERFACES: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_INTERFACES_MULTI: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: true,
-};
-const LOOKUP_POOLS: FieldKind = FieldKind::Lookup {
-    resource_id: "pools",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_DHCP_SERVERS: FieldKind = FieldKind::Lookup {
-    resource_id: "dhcp-servers",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_ROUTING_TABLES: FieldKind = FieldKind::Lookup {
-    resource_id: "routing-tables",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_CERTIFICATES: FieldKind = FieldKind::Lookup {
-    resource_id: "certificates",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_INTERFACE_LISTS: FieldKind = FieldKind::Lookup {
-    resource_id: "interface-lists",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_ADDRESS_LIST_NAMES: FieldKind = FieldKind::Lookup {
-    resource_id: "address-list",
-    value_key: "list",
-    multiple: false,
-};
 const LOOKUP_DHCP_OPTIONS: FieldKind = FieldKind::Lookup {
     resource_id: "dhcp-options",
     value_key: "name",
@@ -62,12 +30,6 @@ const LOOKUP_SMB_USERS: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: true,
 };
-const LOOKUP_FILES: FieldKind = FieldKind::Lookup {
-    resource_id: "files",
-    value_key: "name",
-    multiple: false,
-};
-
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const ENABLED: FieldSpec = f!("disabled", "Enabled", FieldKind::InvertedToggle);
@@ -75,43 +37,21 @@ const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_INTERFACES);
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ip);
 const MAC: FieldSpec = f!("mac-address", "MAC address", FieldKind::Mac);
 const GATEWAY: FieldSpec = f!("gateway", "Gateway", FieldKind::Text);
-const FILTER_CHAIN: FieldSpec = f!(
-    "chain",
-    "Chain",
-    FieldKind::Enum {
-        values: &["input", "forward", "output"],
-    }
-);
-const RAW_CHAIN: FieldSpec = f!(
-    "chain",
-    "Chain",
-    FieldKind::Enum {
-        values: &["prerouting", "output"],
-    }
-);
-const NAT_CHAIN: FieldSpec = f!(
-    "chain",
-    "Chain",
-    FieldKind::Enum {
-        values: &["srcnat", "dstnat"],
-    }
-);
-const ACTION: FieldSpec = f!("action", "Action", FieldKind::Text);
-const PROTOCOL: FieldSpec = f!("protocol", "Protocol", FieldKind::Text);
+const FILTER_CHAIN: FieldSpec = FIELD_FILTER_CHAIN;
+const MANGLE_CHAIN: FieldSpec = FIELD_MANGLE_CHAIN;
+const RAW_CHAIN: FieldSpec = FIELD_RAW_CHAIN;
+const NAT_CHAIN: FieldSpec = FIELD_NAT_CHAIN;
+const FILTER_ACTION: FieldSpec = FIELD_FILTER_ACTION;
+const NAT_ACTION: FieldSpec = FIELD_NAT_ACTION;
+const MANGLE_ACTION: FieldSpec = FIELD_MANGLE_ACTION;
+const RAW_ACTION: FieldSpec = FIELD_RAW_ACTION;
+const PROTOCOL: FieldSpec = FIELD_PROTOCOL;
 const SRC_ADDRESS: FieldSpec = f!("src-address", "Source", FieldKind::Ip);
 const DST_ADDRESS: FieldSpec = f!("dst-address", "Destination", FieldKind::Ip);
 const SRC_PORT: FieldSpec = f!("src-port", "Src port", FieldKind::Text);
 const DST_PORT: FieldSpec = f!("dst-port", "Dst port", FieldKind::Text);
-const SRC_ADDRESS_LIST: FieldSpec = f!(
-    "src-address-list",
-    "Src address list",
-    LOOKUP_ADDRESS_LIST_NAMES
-);
-const DST_ADDRESS_LIST: FieldSpec = f!(
-    "dst-address-list",
-    "Dst address list",
-    LOOKUP_ADDRESS_LIST_NAMES
-);
+const SRC_ADDRESS_LIST: FieldSpec = f!("src-address-list", "Src address list", LOOKUP_ADDRESS_LIST);
+const DST_ADDRESS_LIST: FieldSpec = f!("dst-address-list", "Dst address list", LOOKUP_ADDRESS_LIST);
 const IN_INTERFACE: FieldSpec = f!("in-interface", "In interface", LOOKUP_INTERFACES);
 const OUT_INTERFACE: FieldSpec = f!("out-interface", "Out interface", LOOKUP_INTERFACES);
 const IN_INTERFACE_LIST: FieldSpec = f!(
@@ -129,7 +69,7 @@ const DHCP_SERVER: FieldSpec = f!("server", "Server", LOOKUP_DHCP_SERVERS);
 const NEXT_POOL: FieldSpec = f!("next-pool", "Next pool", LOOKUP_POOLS);
 const ROUTING_TABLE: FieldSpec = f!("routing-table", "Routing table", LOOKUP_ROUTING_TABLES);
 const CERTIFICATE: FieldSpec = f!("certificate", "Certificate", LOOKUP_CERTIFICATES);
-const ADDRESS_LIST_NAME: FieldSpec = f!("list", "List", LOOKUP_ADDRESS_LIST_NAMES);
+const ADDRESS_LIST_NAME: FieldSpec = f!("list", "List", LOOKUP_ADDRESS_LIST);
 const PACKETS: FieldSpec = f!("packets", "Packets", FieldKind::Readonly);
 const BYTES: FieldSpec = f!("bytes", "Bytes", FieldKind::Readonly);
 const DYNAMIC: FieldSpec = f!("dynamic", "Dynamic", FieldKind::Readonly);
@@ -255,7 +195,7 @@ pub static FIREWALL_FILTER_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[FILTER_CHAIN, ACTION, COMMENT, ENABLED],
+            fields: &[FILTER_CHAIN, FILTER_ACTION, COMMENT, ENABLED],
         },
         FormSection {
             id: "match",
@@ -348,7 +288,7 @@ pub static DNS_STATIC_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             ADDRESS,
-            f!("type", "Type", FieldKind::Text),
+            f!("type", "Type", KIND_DNS_STATIC_TYPE),
             f!("ttl", "TTL", FieldKind::Time),
             COMMENT,
             ENABLED,
@@ -445,7 +385,7 @@ pub static IP_SETTINGS_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("ip-forward", "IP forward", FieldKind::Toggle),
-            f!("rp-filter", "RP filter", FieldKind::Text),
+            f!("rp-filter", "RP filter", KIND_RP_FILTER),
             f!("tcp-syncookies", "TCP syncookies", FieldKind::Toggle),
             f!("accept-redirects", "Accept redirects", FieldKind::Toggle),
             f!("send-redirects", "Send redirects", FieldKind::Toggle),
@@ -464,7 +404,7 @@ pub static FIREWALL_NAT_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 NAT_CHAIN,
-                ACTION,
+                NAT_ACTION,
                 f!("to-addresses", "To addresses", FieldKind::Text),
                 f!("to-ports", "To ports", FieldKind::Text),
                 COMMENT,
@@ -507,9 +447,9 @@ pub static FIREWALL_MANGLE_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                FILTER_CHAIN,
-                ACTION,
-                f!("new-routing-mark", "Routing mark", FieldKind::Text),
+                MANGLE_CHAIN,
+                MANGLE_ACTION,
+                f!("new-routing-mark", "Routing mark", LOOKUP_ROUTING_TABLES),
                 f!("passthrough", "Passthrough", FieldKind::Toggle),
                 COMMENT,
                 ENABLED,
@@ -626,7 +566,7 @@ pub static FIREWALL_RAW_FORM: FormSchema = FormSchema {
             id: "general",
             label: "General",
             read_only: false,
-            fields: &[RAW_CHAIN, ACTION, COMMENT, ENABLED],
+            fields: &[RAW_CHAIN, RAW_ACTION, COMMENT, ENABLED],
         },
         FormSection {
             id: "match",
@@ -742,7 +682,7 @@ pub static KID_CONTROL_DEVICE_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             MAC,
-            f!("user", "User", FieldKind::Text),
+            f!("user", "User", LOOKUP_KID_CONTROL),
             COMMENT,
             ENABLED,
         ],
@@ -877,7 +817,7 @@ pub static UPNP_INTERFACE_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             INTERFACE,
-            f!("type", "Type", FieldKind::Text),
+            f!("type", "Type", KIND_UPNP_TYPE),
             f!("forced-external-ip", "Forced external IP", FieldKind::Text),
             ENABLED,
         ],
@@ -911,7 +851,7 @@ pub static CONNECTION_TRACKING_FORM: FormSchema = FormSchema {
             label: "General",
             read_only: false,
             fields: &[
-                f!("enabled", "Enabled", FieldKind::Text),
+                f!("enabled", "Enabled", KIND_CONNTRACK_ENABLED),
                 f!(
                     "tcp-established-timeout",
                     "TCP established",
@@ -950,7 +890,7 @@ pub static NEIGHBOR_DISCOVERY_FORM: FormSchema = FormSchema {
             ),
             f!("protocol", "Protocol", FieldKind::Text),
             f!("lldp-med-net-policy-vlan", "LLDP-MED VLAN", FieldKind::Text),
-            f!("mode", "Mode", FieldKind::Text),
+            f!("mode", "Mode", KIND_NEIGHBOR_MODE),
         ],
     }],
     create_sections: &[],
@@ -965,13 +905,13 @@ pub static IP_SSH_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("strong-crypto", "Strong crypto", FieldKind::Toggle),
-            f!("host-key-size", "Host key size", FieldKind::Number),
+            f!("host-key-size", "Host key size", KIND_SSH_HOST_KEY_SIZE),
             f!(
                 "always-allow-password-login",
                 "Password login",
                 FieldKind::Toggle
             ),
-            f!("forwarding-enabled", "Forwarding", FieldKind::Text),
+            f!("forwarding-enabled", "Forwarding", KIND_SSH_FORWARDING),
         ],
     }],
     create_sections: &[],
@@ -992,7 +932,7 @@ pub static TRAFFIC_FLOW_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("enabled", "Enabled", FieldKind::Toggle),
-            f!("interfaces", "Interfaces", FieldKind::Repeat),
+            f!("interfaces", "Interfaces", LOOKUP_INTERFACES_MULTI),
             f!(
                 "cache-entries",
                 "Cache Entries",

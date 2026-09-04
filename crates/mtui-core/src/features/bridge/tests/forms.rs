@@ -122,6 +122,10 @@ fn bridge_form_writable_status_and_short_create() {
         BRIDGE_FORM.field("mac-address").map(|field| field.kind),
         Some(FieldKind::Mac)
     );
+    assert_eq!(
+        BRIDGE_FORM.field("priority").map(|field| field.kind),
+        Some(crate::form_fields::KIND_BRIDGE_PRIORITY)
+    );
     let Some(FieldKind::LabeledEnum { choices }) = BRIDGE_FORM.field("arp").map(|field| field.kind)
     else {
         panic!("bridge arp must be a labeled enum");
@@ -174,6 +178,10 @@ fn bridge_port_form_splits_stp() {
             max: Some(4095)
         })
     );
+    assert_eq!(
+        BRIDGE_PORT_FORM.field("priority").map(|field| field.kind),
+        Some(crate::form_fields::KIND_BRIDGE_PORT_PRIORITY)
+    );
 }
 
 #[test]
@@ -213,6 +221,10 @@ fn vlan_mdb_msti_have_no_junk_advanced() {
             .all(|section| section.id != "advanced")
     );
     assert_status_readonly(&BRIDGE_MSTI_FORM);
+    assert_eq!(
+        BRIDGE_MSTI_FORM.field("priority").map(|field| field.kind),
+        Some(crate::form_fields::KIND_BRIDGE_PRIORITY)
+    );
 }
 
 #[test]
@@ -244,6 +256,26 @@ fn filter_and_nat_counters_stay_on_status() {
     );
     assert_status_readonly(&BRIDGE_FILTER_FORM);
     assert_enabled_toggle(&BRIDGE_FILTER_FORM);
+    assert_eq!(
+        BRIDGE_FILTER_FORM.field("chain").map(|field| field.kind),
+        Some(crate::form_fields::KIND_BRIDGE_FILTER_CHAIN)
+    );
+    assert_eq!(
+        BRIDGE_FILTER_FORM.field("action").map(|field| field.kind),
+        Some(crate::form_fields::KIND_BRIDGE_FILTER_ACTION)
+    );
+    assert_eq!(
+        BRIDGE_FILTER_FORM
+            .field("mac-protocol")
+            .map(|field| field.kind),
+        Some(crate::form_fields::KIND_MAC_PROTOCOL)
+    );
+    assert_eq!(
+        BRIDGE_FILTER_FORM
+            .field("ip-protocol")
+            .map(|field| field.kind),
+        Some(crate::form_fields::KIND_IP_PROTOCOL)
+    );
 
     assert_eq!(
         section_ids(&BRIDGE_NAT_FORM),
@@ -269,6 +301,20 @@ fn filter_and_nat_counters_stay_on_status() {
     assert!(!section_keys(&BRIDGE_NAT_FORM, "match").contains(&"ip-protocol"));
     assert_status_readonly(&BRIDGE_NAT_FORM);
     assert_enabled_toggle(&BRIDGE_NAT_FORM);
+    assert_eq!(
+        BRIDGE_NAT_FORM.field("chain").map(|field| field.kind),
+        Some(crate::form_fields::KIND_BRIDGE_NAT_CHAIN)
+    );
+    assert_eq!(
+        BRIDGE_NAT_FORM.field("action").map(|field| field.kind),
+        Some(crate::form_fields::KIND_BRIDGE_NAT_ACTION)
+    );
+    assert_eq!(
+        BRIDGE_NAT_FORM
+            .field("mac-protocol")
+            .map(|field| field.kind),
+        Some(crate::form_fields::KIND_MAC_PROTOCOL)
+    );
 }
 
 #[test]
@@ -374,6 +420,7 @@ fn bridge_lookups_target_catalog_resources() {
     );
 
     assert_lookup(&BRIDGE_MDB_FORM, "bridge", "bridges", "name", false);
+    assert_lookup(&BRIDGE_MDB_FORM, "on-ports", "interfaces", "name", true);
     assert_eq!(
         BRIDGE_MDB_FORM.field("vid").map(|field| field.kind),
         Some(FieldKind::Text)
@@ -423,11 +470,33 @@ fn bridge_lookups_target_catalog_resources() {
         "name",
         false,
     );
-    assert_eq!(
-        BRIDGE_PORT_CONTROLLER_FORM
-            .field("cascade-ports")
-            .map(|field| field.kind),
-        Some(FieldKind::Text)
+    assert_lookup(
+        &BRIDGE_PORT_CONTROLLER_FORM,
+        "cascade-ports",
+        "interfaces",
+        "name",
+        true,
+    );
+    assert_lookup(
+        &BRIDGE_PORT_CONTROLLER_DEVICE_FORM,
+        "control-ports",
+        "interfaces",
+        "name",
+        true,
+    );
+    assert_lookup(
+        &BRIDGE_PORT_EXTENDER_FORM,
+        "control-ports",
+        "interfaces",
+        "name",
+        true,
+    );
+    assert_lookup(
+        &BRIDGE_PORT_EXTENDER_FORM,
+        "excluded-ports",
+        "interfaces",
+        "name",
+        true,
     );
 }
 

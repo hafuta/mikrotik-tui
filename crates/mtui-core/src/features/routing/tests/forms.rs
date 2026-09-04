@@ -2,6 +2,7 @@ use crate::features::routing::forms::*;
 use crate::features::routing::guides::GUIDES;
 use crate::features::routing::resources::RESOURCES;
 use crate::features::routing::rules::form_field_state;
+use crate::form_fields::KIND_ORIGINATE_DEFAULT;
 use crate::forms::{FieldKind, FormSchema, extra_status_fields, patch_body};
 use std::collections::HashMap;
 
@@ -175,9 +176,7 @@ fn ospf_instance_short_create() {
         OSPF_INSTANCE_FORM
             .field("originate-default")
             .map(|field| field.kind),
-        Some(FieldKind::Enum {
-            values: &["never", "if-installed", "always"],
-        })
+        Some(KIND_ORIGINATE_DEFAULT)
     );
 }
 
@@ -538,6 +537,16 @@ fn bgp_template_is_smaller_than_connection() {
             .map(|field| field.kind),
         Some(FieldKind::Repeat)
     );
+    assert_eq!(
+        BGP_TEMPLATE_FORM
+            .field("output.network")
+            .map(|field| field.kind),
+        Some(FieldKind::Lookup {
+            resource_id: "address-list",
+            value_key: "list",
+            multiple: false,
+        })
+    );
 }
 
 #[test]
@@ -571,6 +580,12 @@ fn patch_body_keeps_dotted_bgp_template_keys() {
 #[test]
 fn rip_and_bfd_lookups_and_kinds() {
     assert_lookup(&RIP_INSTANCE_FORM, "vrf", "vrf", "name", false);
+    assert_eq!(
+        RIP_INSTANCE_FORM
+            .field("originate-default")
+            .map(|field| field.kind),
+        Some(KIND_ORIGINATE_DEFAULT)
+    );
     assert_lookup(
         &RIP_INTERFACE_TEMPLATE_FORM,
         "instance",

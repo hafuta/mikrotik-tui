@@ -4,6 +4,7 @@ use crate::features::container::forms::*;
 use crate::features::container::guides::GUIDES;
 use crate::features::container::resources::RESOURCES;
 use crate::features::container::rules::form_field_state;
+use crate::form_fields::STOP_SIGNAL;
 use crate::forms::{FieldKind, FormSchema};
 
 const FORMS: &[&FormSchema] = &[
@@ -153,6 +154,12 @@ fn container_lookups_enums_and_runtime_status() {
         Some(FieldKind::Enum { values }) => assert_eq!(values, RESTART_POLICY),
         other => panic!("{other:?}"),
     }
+    assert_eq!(
+        CONTAINER_FORM.field("stop-signal").map(|field| field.kind),
+        Some(FieldKind::LabeledEnum {
+            choices: STOP_SIGNAL,
+        })
+    );
     assert_eq!(
         CONTAINER_FORM
             .field("start-on-boot")

@@ -1,5 +1,8 @@
 //! Feature-owned form schemas for the complete PPP navigation group.
 
+use crate::form_fields::{
+    KIND_USE_IPSEC_REQUIRE, LOOKUP_INTERFACE_LISTS, LOOKUP_INTERFACES, LOOKUP_POOLS, LOOKUP_PORTS,
+};
 use crate::forms::{EnumChoice, FieldKind, FieldSpec, FormSchema, FormSection};
 
 macro_rules! f {
@@ -17,18 +20,8 @@ const LOOKUP_PPP_PROFILE: FieldKind = FieldKind::Lookup {
     value_key: "name",
     multiple: false,
 };
-const LOOKUP_IFACE: FieldKind = FieldKind::Lookup {
-    resource_id: "interfaces",
-    value_key: "name",
-    multiple: false,
-};
 const LOOKUP_BRIDGE: FieldKind = FieldKind::Lookup {
     resource_id: "bridges",
-    value_key: "name",
-    multiple: false,
-};
-const LOOKUP_IFACE_LIST: FieldKind = FieldKind::Lookup {
-    resource_id: "interface-lists",
     value_key: "name",
     multiple: false,
 };
@@ -45,7 +38,8 @@ const USER: FieldSpec = f!("user", "User", FieldKind::Text);
 const PASSWORD: FieldSpec = f!("password", "Password", FieldKind::Secret);
 const PROFILE: FieldSpec = f!("profile", "Profile", LOOKUP_PPP_PROFILE);
 const RUNNING: FieldSpec = f!("running", "Running", FieldKind::Readonly);
-const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_IFACE);
+const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_INTERFACES);
+const PORT: FieldSpec = f!("port", "Port", LOOKUP_PORTS);
 const CONNECT_TO: FieldSpec = f!("connect-to", "Connect To", FieldKind::Text);
 const ADD_DEFAULT_ROUTE: FieldSpec =
     f!("add-default-route", "Add Default Route", FieldKind::Toggle);
@@ -235,8 +229,8 @@ pub static PPP_PROFILE_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("local-address", "Local Address", FieldKind::Text),
-            f!("remote-address", "Remote Address", FieldKind::Text),
+            f!("local-address", "Local Address", LOOKUP_POOLS),
+            f!("remote-address", "Remote Address", LOOKUP_POOLS),
             f!("dns-server", "DNS Server", FieldKind::Repeat),
             f!("rate-limit", "Rate Limit", FieldKind::Text),
             f!(
@@ -268,7 +262,7 @@ pub static PPP_PROFILE_FORM: FormSchema = FormSchema {
                 }
             ),
             f!("bridge", "Bridge", LOOKUP_BRIDGE),
-            f!("interface-list", "Interface List", LOOKUP_IFACE_LIST),
+            f!("interface-list", "Interface List", LOOKUP_INTERFACE_LISTS),
             COMMENT,
         ],
     }],
@@ -311,7 +305,7 @@ pub static PPP_CLIENT_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 NAME,
-                f!("port", "Port", FieldKind::Text),
+                PORT,
                 USER,
                 PASSWORD,
                 PROFILE,
@@ -332,13 +326,7 @@ pub static PPP_CLIENT_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[
-            NAME,
-            f!("port", "Port", FieldKind::Text),
-            USER,
-            PASSWORD,
-            COMMENT,
-        ],
+        fields: &[NAME, PORT, USER, PASSWORD, COMMENT],
     }],
 };
 
@@ -513,7 +501,7 @@ pub static L2TP_SERVER_FORM: FormSchema = FormSchema {
             SERVER_ENABLED,
             DEFAULT_PROFILE,
             AUTHENTICATION,
-            USE_IPSEC,
+            f!("use-ipsec", "Use IPsec", KIND_USE_IPSEC_REQUIRE),
             IPSEC_SECRET,
             KEEPALIVE,
             MAX_MTU,

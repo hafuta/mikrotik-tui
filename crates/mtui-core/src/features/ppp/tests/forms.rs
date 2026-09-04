@@ -1,4 +1,5 @@
 use crate::features::ppp::forms::*;
+use crate::form_fields::KIND_USE_IPSEC_REQUIRE;
 use crate::forms::{FieldKind, FormSchema, extra_status_fields, patch_body};
 use std::collections::HashMap;
 
@@ -157,6 +158,9 @@ fn lookup_fields_point_at_named_resources() {
     }
     assert_lookup(&PPP_PROFILE_FORM, "bridge", "bridges");
     assert_lookup(&PPP_PROFILE_FORM, "interface-list", "interface-lists");
+    assert_lookup(&PPP_PROFILE_FORM, "local-address", "pools");
+    assert_lookup(&PPP_PROFILE_FORM, "remote-address", "pools");
+    assert_lookup(&PPP_CLIENT_FORM, "port", "ports");
     assert_lookup(&PPPOE_CLIENT_FORM, "interface", "interfaces");
     assert_lookup(&PPPOE_SERVER_FORM, "interface", "interfaces");
     for form in [
@@ -243,10 +247,6 @@ fn non_resource_fields_stay_plain_text_or_secret() {
         Some(FieldKind::Time)
     );
     assert_eq!(
-        PPP_CLIENT_FORM.field("port").map(|field| field.kind),
-        Some(FieldKind::Text)
-    );
-    assert_eq!(
         SSTP_SERVER_FORM.field("port").map(|field| field.kind),
         Some(FieldKind::Number)
     );
@@ -267,5 +267,13 @@ fn non_resource_fields_stay_plain_text_or_secret() {
             .field("add-default-route")
             .map(|field| field.label),
         Some("Add Default Route")
+    );
+    assert_eq!(
+        L2TP_CLIENT_FORM.field("use-ipsec").map(|field| field.kind),
+        Some(FieldKind::Toggle)
+    );
+    assert_eq!(
+        L2TP_SERVER_FORM.field("use-ipsec").map(|field| field.kind),
+        Some(KIND_USE_IPSEC_REQUIRE)
     );
 }
