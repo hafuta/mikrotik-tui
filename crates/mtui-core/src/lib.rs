@@ -57,9 +57,10 @@ pub use files_write::{DOWNLOAD_FORM, UPLOAD_FORM};
 pub use forms::{
     BoxedFieldPredicate, EnumChoice, FieldKind, FieldPredicate, FieldRule, FieldSpec, FormSchema,
     FormSection, LookupOption, ScalarKind, accepts_constrained_number_char, accepts_number_char,
-    default_writable_value, evaluate_field_rules, extra_status_fields, field_enabled,
-    field_visible, form_mutation_body, join_ros_list, patch_body, prepare_lookup_options,
-    preview_changes, split_ros_list, validate_form_values, with_leading_all, with_leading_none,
+    cmp_alphanumeric, default_writable_value, evaluate_field_rules, extra_status_fields,
+    field_enabled, field_visible, form_mutation_body, join_ros_list, patch_body,
+    prepare_lookup_options, preview_changes, sort_lookup_options, split_ros_list,
+    validate_form_values, with_leading_all, with_leading_none,
 };
 pub use resources::{
     ALL_RESOURCES, CatalogError, ColumnSpec, DASHBOARD_ID, FetchKind, NAVIGATION, NavGroup,
