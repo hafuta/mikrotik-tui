@@ -2,6 +2,7 @@
 //!
 //! `RouterOS` 7 writes `OSPF` interface parameters on `/routing/ospf/interface-template`.
 //! `/routing/ospf/interface` is the matched live object (cost, state, DR/BDR).
+//! `/routing/bgp/session` is the live peer cache; connections and templates stay writable.
 
 use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
 
@@ -258,6 +259,53 @@ pub static BGP_CONNECTION_FORM: FormSchema = FormSchema {
             f!("listen", "Listen", FieldKind::Toggle),
             COMMENT,
             ENABLED,
+        ],
+    }],
+    create_sections: &[],
+};
+
+/// Live `/routing/bgp/session` rows. `RouterOS` marks this menu read-only.
+pub static BGP_SESSION_FORM: FormSchema = FormSchema {
+    title_key: "name",
+    subtitle_keys: &["established", "remote.address"],
+    sections: &[FormSection {
+        id: "status",
+        label: "Status",
+        read_only: true,
+        fields: &[
+            f!("name", "Name", FieldKind::Readonly),
+            f!("instance", "Instance", FieldKind::Readonly),
+            f!("remote.address", "Remote Address", FieldKind::Readonly),
+            f!("remote.as", "Remote AS", FieldKind::Readonly),
+            f!("remote.id", "Remote ID", FieldKind::Readonly),
+            f!("remote.afi", "Remote AFI", FieldKind::Readonly),
+            f!("local.address", "Local Address", FieldKind::Readonly),
+            f!("local.role", "Local Role", FieldKind::Readonly),
+            f!("established", "Established", FieldKind::Readonly),
+            f!("ebgp", "eBGP", FieldKind::Readonly),
+            f!("ibgp", "iBGP", FieldKind::Readonly),
+            f!("stopped", "Stopped", FieldKind::Readonly),
+            f!("limit-exceeded", "Limit Exceeded", FieldKind::Readonly),
+            f!("uptime", "Uptime", FieldKind::Readonly),
+            f!("last-started", "Last Started", FieldKind::Readonly),
+            f!("last-stopped", "Last Stopped", FieldKind::Readonly),
+            f!("prefix-count", "Prefix Count", FieldKind::Readonly),
+            f!("hold-time", "Hold Time", FieldKind::Readonly),
+            f!("keepalive-time", "Keepalive Time", FieldKind::Readonly),
+            f!("remote.messages", "Remote Messages", FieldKind::Readonly),
+            f!("local.messages", "Local Messages", FieldKind::Readonly),
+            f!(
+                "input.last-notification",
+                "Input Last Notification",
+                FieldKind::Readonly
+            ),
+            f!(
+                "output.last-notification",
+                "Output Last Notification",
+                FieldKind::Readonly
+            ),
+            f!("multihop", "Multihop", FieldKind::Readonly),
+            f!("use-bfd", "Use BFD", FieldKind::Readonly),
         ],
     }],
     create_sections: &[],

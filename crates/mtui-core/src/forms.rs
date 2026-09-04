@@ -641,7 +641,8 @@ pub fn evaluate_field_rules(
 /// Logging Actions show only the knobs that belong to Type (`target`) and, for
 /// remote, to Remote Log Format and Remote Protocol. NTP Server shows Broadcast
 /// Addresses only when Broadcast is on, and Local Clock Stratum only when Use
-/// Local Clock is on. Traffic Flow shows Sampling Interval and Sampling Space
+/// Local Clock is on. Hotspot User Profiles show Advertise URL/Interval/Timeout
+/// only when Advertise is on. Traffic Flow shows Sampling Interval and Sampling Space
 /// only when Packet Sampling is on. Traffic Flow Targets show v9 template
 /// fields only for version `9` or `ipfix`. IGMP Proxy Interfaces show
 /// Alternative Subnets only when Upstream is on. Disks show type-specific RAID,

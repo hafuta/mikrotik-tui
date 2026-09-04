@@ -279,6 +279,15 @@ pub(crate) static GUIDES: &[(&str, ScreenGuide)] = &[
         "enabled, ca-certificate, certificate."
     ),
     guide!(
+        "wifi-registration-table",
+        "Live stations associated to a wifiwave2 radio (`/interface/wifi/registration-table`). \
+         Read-only besides disconnect.",
+        "See who is on the AP. Disconnect with remove; that de-authenticates the peer. Scan \
+         stays on the radio row.",
+        "mac-address, interface, ssid, signal, uptime, rx-rate, tx-rate, authorized.",
+        "https://manual.mikrotik.com/docs/wireless/wifi/"
+    ),
+    guide!(
         "wireless-security-profiles",
         "Legacy `/interface wireless security-profiles` (WPA PSK and friends).",
         "Needed only when the old wireless package is installed.",

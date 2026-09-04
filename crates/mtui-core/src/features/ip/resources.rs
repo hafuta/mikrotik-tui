@@ -1285,6 +1285,26 @@ pub const HOTSPOT_USERS: ResourceSpec = ResourceSpec {
     form: Some(&crate::features::ip::forms::HOTSPOT_USER_FORM),
 };
 
+pub const HOTSPOT_USER_PROFILES: ResourceSpec = ResourceSpec {
+    id: "hotspot-user-profiles",
+    group: "ip-group",
+    cli_path: None,
+    label: "Hotspot User Profiles",
+    fetch: FetchKind::List {
+        endpoint: "/ip/hotspot/user/profile",
+    },
+    columns: &[
+        col!("name", "Name", 18),
+        col!("session-timeout", "Session", 12),
+        col!("idle-timeout", "Idle", 10),
+        col!("rate-limit", "Rate limit", 16),
+        col!("shared-users", "Shared", 8),
+    ],
+    refresh: Duration::from_secs(15),
+    actions: crate::actions::LIST_ACTIONS,
+    form: Some(&crate::features::ip::forms::HOTSPOT_USER_PROFILE_FORM),
+};
+
 pub const HOTSPOT_COOKIES: ResourceSpec = ResourceSpec {
     id: "hotspot-cookies",
     group: "ip-group",
@@ -1444,6 +1464,7 @@ pub(crate) static RESOURCES: &[ResourceSpec] = &[
     HOTSPOT,
     HOTSPOT_PROFILES,
     HOTSPOT_USERS,
+    HOTSPOT_USER_PROFILES,
     HOTSPOT_COOKIES,
     HOTSPOT_HOSTS,
     HOTSPOT_IP_BINDINGS,

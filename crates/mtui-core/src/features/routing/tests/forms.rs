@@ -13,6 +13,7 @@ const FORMS: &[&FormSchema] = &[
     &OSPF_INTERFACE_TEMPLATE_FORM,
     &OSPF_INTERFACE_FORM,
     &BGP_CONNECTION_FORM,
+    &BGP_SESSION_FORM,
     &BGP_TEMPLATE_FORM,
     &RIP_INSTANCE_FORM,
     &RIP_INTERFACE_TEMPLATE_FORM,
@@ -74,8 +75,8 @@ fn assert_lookup(
 
 #[test]
 fn catalog_and_guides_cover_the_routing_group() {
-    assert_eq!(RESOURCES.len(), 16);
-    assert_eq!(GUIDES.len(), 16);
+    assert_eq!(RESOURCES.len(), 17);
+    assert_eq!(GUIDES.len(), 17);
     for spec in RESOURCES {
         assert!(
             GUIDES.iter().any(|(id, _)| *id == spec.id),
@@ -433,6 +434,70 @@ fn ospf_interface_runtime_never_encodes_a_patch() {
     current.insert("state".into(), "bdr".into());
     let body = patch_body(&OSPF_INTERFACE_FORM, &original, &current, "********");
     assert!(body.is_empty(), "{body:?}");
+}
+
+#[test]
+fn bgp_session_runtime_form_is_status_only() {
+    assert!(BGP_SESSION_FORM.create_sections.is_empty());
+    assert!(BGP_SESSION_FORM.writable_keys().is_empty());
+    assert_eq!(BGP_SESSION_FORM.sections.len(), 1);
+    assert_eq!(BGP_SESSION_FORM.sections[0].id, "status");
+    assert!(BGP_SESSION_FORM.sections[0].read_only);
+    assert!(
+        BGP_SESSION_FORM
+            .sections
+            .iter()
+            .all(|section| section.id != "advanced")
+    );
+    for field in BGP_SESSION_FORM.sections[0].fields {
+        assert_eq!(field.kind, FieldKind::Readonly, "{}", field.key);
+    }
+    assert_eq!(
+        BGP_SESSION_FORM
+            .field("remote.address")
+            .map(|field| field.label),
+        Some("Remote Address")
+    );
+    assert_eq!(
+        BGP_SESSION_FORM
+            .field("prefix-count")
+            .map(|field| field.label),
+        Some("Prefix Count")
+    );
+    assert_eq!(
+        BGP_SESSION_FORM
+            .field("input.last-notification")
+            .map(|field| field.label),
+        Some("Input Last Notification")
+    );
+    assert!(BGP_SESSION_FORM.field("disabled").is_none());
+    assert!(BGP_SESSION_FORM.field("connect").is_none());
+    assert_status_readonly(&BGP_SESSION_FORM);
+}
+
+#[test]
+fn bgp_session_runtime_never_encodes_a_patch() {
+    let mut original = HashMap::new();
+    original.insert("name".into(), "peer1-1".into());
+    original.insert("established".into(), "true".into());
+    original.insert("prefix-count".into(), "12".into());
+    let mut current = original.clone();
+    current.insert("established".into(), "false".into());
+    current.insert("prefix-count".into(), "0".into());
+    let body = patch_body(&BGP_SESSION_FORM, &original, &current, "********");
+    assert!(body.is_empty(), "{body:?}");
+}
+
+#[test]
+fn bgp_session_runtime_rows_keep_optional_fields() {
+    let row = HashMap::from([
+        ("name".into(), "toR2".into()),
+        ("remote.address".into(), "192.168.1.2".into()),
+        ("established".into(), "true".into()),
+        ("unexpected-cap".into(), "ms".into()),
+    ]);
+    let extras = extra_status_fields(&BGP_SESSION_FORM, &row);
+    assert_eq!(extras, vec![("unexpected-cap".into(), "ms".into())]);
 }
 
 #[test]

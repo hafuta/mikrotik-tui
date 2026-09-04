@@ -163,3 +163,26 @@ pub const WIFI_CAPSMAN: ResourceSpec = ResourceSpec {
     actions: crate::features::interfaces::actions::SINGLETON_EDIT_ACTIONS,
     form: Some(&crate::features::interfaces::forms::WIFI_CAPSMAN_FORM),
 };
+
+pub const WIFI_REGISTRATION_TABLE: ResourceSpec = ResourceSpec {
+    id: "wifi-registration-table",
+    group: "interfaces-group",
+    cli_path: None,
+    label: "WiFi Registration",
+    fetch: FetchKind::List {
+        endpoint: "/interface/wifi/registration-table",
+    },
+    columns: &[
+        col!("mac-address", "MAC", 18),
+        col!("interface", "Interface", 16),
+        col!("ssid", "SSID", 16),
+        col!("signal", "Signal", 8),
+        col!("uptime", "Uptime", 10),
+        col!("rx-rate", "RX", 14),
+        col!("tx-rate", "TX", 14),
+        col!("authorized", "Auth", 6),
+    ],
+    refresh: Duration::from_secs(5),
+    actions: crate::features::interfaces::actions::DISCONNECT_ACTIONS,
+    form: None,
+};

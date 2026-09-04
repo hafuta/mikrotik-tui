@@ -60,6 +60,7 @@ const FORMS: &[&FormSchema] = &[
     &HOTSPOT_FORM,
     &HOTSPOT_PROFILE_FORM,
     &HOTSPOT_USER_FORM,
+    &HOTSPOT_USER_PROFILE_FORM,
     &HOTSPOT_HOST_FORM,
     &HOTSPOT_IP_BINDING_FORM,
     &HOTSPOT_WALLED_GARDEN_FORM,
@@ -111,8 +112,8 @@ fn disabled_uses_enabled_inverted_toggle() {
 
 #[test]
 fn catalog_and_guides_cover_the_ip_group() {
-    assert_eq!(RESOURCES.len(), 67);
-    assert_eq!(GUIDES.len(), 67);
+    assert_eq!(RESOURCES.len(), 68);
+    assert_eq!(GUIDES.len(), 68);
     for spec in RESOURCES {
         assert!(
             GUIDES.iter().any(|(id, _)| *id == spec.id),
@@ -1066,6 +1067,7 @@ mod ipsec {
 
 mod hotspot {
     use super::*;
+    use std::collections::HashMap;
 
     fn create_keys(schema: &FormSchema) -> Vec<&'static str> {
         schema.create_keys()
@@ -1081,6 +1083,10 @@ mod hotspot {
         assert_eq!(
             create_keys(&HOTSPOT_USER_FORM),
             HOTSPOT_USER_FORM.writable_keys()
+        );
+        assert_eq!(
+            create_keys(&HOTSPOT_USER_PROFILE_FORM),
+            HOTSPOT_USER_PROFILE_FORM.writable_keys()
         );
         assert_eq!(
             create_keys(&HOTSPOT_HOST_FORM),
@@ -1105,5 +1111,132 @@ mod hotspot {
         );
         assert!(HOTSPOT_USER_FORM.writable_keys().contains(&"password"));
         assert!(!HOTSPOT_HOST_FORM.writable_keys().contains(&"authorized"));
+    }
+
+    #[test]
+    fn hotspot_user_profile_lookup_is_not_the_server_profile() {
+        assert_eq!(
+            HOTSPOT_FORM.field("profile").map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id: "hotspot-profiles",
+                value_key: "name",
+                multiple: false,
+            })
+        );
+        assert_eq!(
+            HOTSPOT_USER_FORM.field("profile").map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id: "hotspot-user-profiles",
+                value_key: "name",
+                multiple: false,
+            })
+        );
+    }
+
+    #[test]
+    fn hotspot_user_profile_uses_webfig_field_kinds() {
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("session-timeout")
+                .map(|field| field.kind),
+            Some(FieldKind::Time)
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("idle-timeout")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("rate-limit")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("shared-users")
+                .map(|field| field.kind),
+            Some(FieldKind::Text)
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("address-pool")
+                .map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id: "pools",
+                value_key: "name",
+                multiple: false,
+            })
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("address-list")
+                .map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id: "address-list",
+                value_key: "list",
+                multiple: false,
+            })
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("on-login")
+                .map(|field| field.kind),
+            Some(FieldKind::Lookup {
+                resource_id: "scripts",
+                value_key: "name",
+                multiple: false,
+            })
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("open-status-page")
+                .map(|field| field.kind),
+            Some(FieldKind::Enum {
+                values: &["always", "http-login"],
+            })
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("advertise-url")
+                .map(|field| field.kind),
+            Some(FieldKind::Repeat)
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("session-timeout")
+                .map(|field| field.label),
+            Some("Session Timeout")
+        );
+        assert_eq!(
+            HOTSPOT_USER_PROFILE_FORM
+                .field("add-mac-cookie")
+                .map(|field| field.label),
+            Some("Add MAC Cookie")
+        );
+    }
+
+    #[test]
+    fn hotspot_user_profile_hides_advertise_fields_until_enabled() {
+        let empty = HashMap::new();
+        assert_eq!(
+            form_field_state("hotspot-user-profiles", "advertise-url", &empty),
+            Some((false, false))
+        );
+        let advertised = HashMap::from([("advertise".into(), "true".into())]);
+        assert_eq!(
+            form_field_state("hotspot-user-profiles", "advertise-url", &advertised),
+            Some((true, true))
+        );
+        assert_eq!(
+            form_field_state("hotspot-user-profiles", "advertise-interval", &advertised),
+            Some((true, true))
+        );
+        assert_eq!(
+            form_field_state("hotspot-user-profiles", "name", &empty),
+            None
+        );
+        assert!(form_field_state("hotspot-users", "profile", &empty).is_none());
     }
 }

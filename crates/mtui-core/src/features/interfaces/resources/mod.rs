@@ -43,6 +43,7 @@ pub(crate) static RESOURCES: &[ResourceSpec] = &[
     wifi::WIFI_PROVISIONING,
     wifi::WIFI_CAP,
     wifi::WIFI_CAPSMAN,
+    wifi::WIFI_REGISTRATION_TABLE,
     wireless::WIRELESS,
     wireless::WIRELESS_SECURITY_PROFILES,
     wireless::WIRELESS_ACCESS_LIST,

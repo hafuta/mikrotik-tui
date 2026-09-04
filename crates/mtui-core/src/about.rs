@@ -287,6 +287,24 @@ mod tests {
     }
 
     #[test]
+    fn bgp_session_guide_is_runtime_not_a_connection() {
+        let live = about_copy("bgp-sessions").expect("bgp-sessions");
+        let connections = about_copy("bgp-connections").expect("bgp-connections");
+        assert_eq!(live.title, "About BGP Sessions");
+        assert_eq!(connections.title, "About BGP");
+        assert!(live.kicker.contains("/routing/bgp/session"));
+        assert!(!live.kicker.contains("/routing/bgp/connection"));
+        assert!(connections.kicker.contains("/routing/bgp/connection"));
+        assert!(live.body.contains("Monitor-only"));
+        assert!(live.body.contains("prefix-count"));
+        assert!(connections.body.contains("BGP Sessions"));
+        assert!(
+            live.body
+                .contains("https://manual.mikrotik.com/docs/cli-reference/routing/bgp/session/")
+        );
+    }
+
+    #[test]
     fn traffic_flow_and_igmp_guides_track_the_manual() {
         let flow = about_copy("traffic-flow").expect("traffic-flow");
         assert_eq!(flow.title, "About Traffic Flow");
