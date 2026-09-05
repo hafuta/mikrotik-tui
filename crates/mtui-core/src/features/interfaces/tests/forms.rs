@@ -85,7 +85,17 @@ fn interface_lookups_use_catalog_resources() {
     assert_lookup(&VRRP_FORM, "group-authority", "vrrp", false);
     assert!(matches!(
         VXLAN_FORM.field("group").map(|field| field.kind),
-        Some(FieldKind::Optional { .. })
+        Some(FieldKind::Optional {
+            kind: crate::forms::ScalarKind::Ip,
+            ..
+        })
+    ));
+    assert!(matches!(
+        VXLAN_FORM.field("local-address").map(|field| field.kind),
+        Some(FieldKind::Optional {
+            kind: crate::forms::ScalarKind::Ip,
+            ..
+        })
     ));
     assert!(matches!(
         BONDING_FORM.field("mode").map(|field| field.kind),

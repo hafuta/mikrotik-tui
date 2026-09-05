@@ -213,7 +213,7 @@ pub static IPV6_POOL_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("prefix", "Prefix", FieldKind::Text),
+            PREFIX,
             f!("prefix-length", "Prefix length", FieldKind::Number),
             COMMENT,
         ],
@@ -252,8 +252,8 @@ pub static IPV6_FIREWALL_FILTER_FORM: FormSchema = FormSchema {
             fields: &[
                 FILTER_CHAIN,
                 FILTER_ACTION,
-                f!("src-address", "Src address", FieldKind::Text),
-                f!("dst-address", "Dst address", FieldKind::Text),
+                SRC_ADDRESS,
+                DST_ADDRESS,
                 PROTOCOL,
                 IN_INTERFACE,
                 OUT_INTERFACE,
@@ -289,7 +289,7 @@ pub static IPV6_DHCP_CLIENT_FORM: FormSchema = FormSchema {
             fields: &[
                 INTERFACE,
                 f!("pool-name", "Pool name", FieldKind::Text),
-                f!("request", "Request", FieldKind::Text),
+                f!("request", "Request", FieldKind::Repeat),
                 f!("add-default-route", "Default route", FieldKind::Toggle),
                 COMMENT,
                 ENABLED,
@@ -320,7 +320,7 @@ pub static IPV6_DHCP_SERVER_FORM: FormSchema = FormSchema {
             NAME,
             INTERFACE,
             ADDRESS_POOL,
-            f!("lease-time", "Lease time", FieldKind::Text),
+            f!("lease-time", "Lease time", FieldKind::Time),
             COMMENT,
             ENABLED,
         ],
@@ -399,7 +399,7 @@ pub static IPV6_ADDRESS_LIST_FORM: FormSchema = FormSchema {
             fields: &[
                 ADDRESS_LIST_NAME,
                 ADDRESS,
-                f!("timeout", "Timeout", FieldKind::Text),
+                f!("timeout", "Timeout", FieldKind::Time),
                 COMMENT,
                 ENABLED,
             ],
@@ -427,7 +427,7 @@ pub static IPV6_DHCP_RELAY_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             INTERFACE,
-            f!("dhcp-server", "DHCP server", FieldKind::Text),
+            f!("dhcp-server", "DHCP server", FieldKind::Ipv6),
             COMMENT,
             ENABLED,
         ],
@@ -464,8 +464,8 @@ pub static IPV6_FIREWALL_MANGLE_FORM: FormSchema = FormSchema {
             fields: &[
                 MANGLE_CHAIN,
                 MANGLE_ACTION,
-                f!("src-address", "Src address", FieldKind::Text),
-                f!("dst-address", "Dst address", FieldKind::Text),
+                SRC_ADDRESS,
+                DST_ADDRESS,
                 PROTOCOL,
                 IN_INTERFACE,
                 OUT_INTERFACE,
@@ -497,8 +497,8 @@ pub static IPV6_FIREWALL_RAW_FORM: FormSchema = FormSchema {
             fields: &[
                 RAW_CHAIN,
                 RAW_ACTION,
-                f!("src-address", "Src address", FieldKind::Text),
-                f!("dst-address", "Dst address", FieldKind::Text),
+                SRC_ADDRESS,
+                DST_ADDRESS,
                 IN_INTERFACE,
                 OUT_INTERFACE,
                 COMMENT,

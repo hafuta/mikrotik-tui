@@ -4,7 +4,7 @@ use crate::form_fields::{
     FIELD_ALLOW_DENY, FIELD_PROXY_ACCESS_ACTION, KIND_HOTSPOT_BINDING_TYPE, KIND_HTTP_METHOD,
     LOOKUP_ADDRESS_LIST, LOOKUP_INTERFACES, LOOKUP_POOLS,
 };
-use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
+use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection, ScalarKind};
 
 macro_rules! f {
     ($key:literal, $label:literal, $kind:expr) => {
@@ -38,6 +38,19 @@ const LOOKUP_SCRIPT: FieldKind = FieldKind::Lookup {
 };
 
 const OPEN_STATUS_PAGE: &[&str] = &["always", "http-login"];
+const OPTIONAL_TIME_NONE: FieldKind = FieldKind::Optional {
+    kind: ScalarKind::Time,
+    unset: "none",
+    unset_label: "none",
+};
+const OPTIONAL_SHARED_USERS: FieldKind = FieldKind::Optional {
+    kind: ScalarKind::Number {
+        min: None,
+        max: None,
+    },
+    unset: "unlimited",
+    unset_label: "unlimited",
+};
 
 const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
@@ -77,7 +90,7 @@ pub static HOTSPOT_PROFILE_FORM: FormSchema = FormSchema {
             f!("hotspot-address", "Hotspot address", FieldKind::Ip),
             f!("dns-name", "DNS name", FieldKind::Text),
             f!("html-directory", "HTML directory", FieldKind::Text),
-            f!("login-by", "Login by", FieldKind::Text),
+            f!("login-by", "Login by", FieldKind::Repeat),
             f!("use-radius", "Use RADIUS", FieldKind::Toggle),
             COMMENT,
         ],
@@ -115,10 +128,10 @@ pub static HOTSPOT_USER_PROFILE_FORM: FormSchema = FormSchema {
             fields: &[
                 NAME,
                 f!("session-timeout", "Session Timeout", FieldKind::Time),
-                f!("idle-timeout", "Idle Timeout", FieldKind::Text),
-                f!("keepalive-timeout", "Keepalive Timeout", FieldKind::Text),
-                f!("status-autorefresh", "Status Autorefresh", FieldKind::Text),
-                f!("shared-users", "Shared Users", FieldKind::Text),
+                f!("idle-timeout", "Idle Timeout", OPTIONAL_TIME_NONE),
+                f!("keepalive-timeout", "Keepalive Timeout", OPTIONAL_TIME_NONE),
+                f!("status-autorefresh", "Status Autorefresh", FieldKind::Time),
+                f!("shared-users", "Shared Users", OPTIONAL_SHARED_USERS),
                 f!("rate-limit", "Rate Limit", FieldKind::Text),
                 f!("address-pool", "Address Pool", LOOKUP_POOLS),
                 f!("address-list", "Address List", LOOKUP_ADDRESS_LIST),
@@ -160,7 +173,7 @@ pub static HOTSPOT_USER_PROFILE_FORM: FormSchema = FormSchema {
                     "Advertise Interval",
                     FieldKind::Repeat
                 ),
-                f!("advertise-timeout", "Advertise Timeout", FieldKind::Text),
+                f!("advertise-timeout", "Advertise Timeout", FieldKind::Time),
             ],
         },
     ],
@@ -265,7 +278,7 @@ pub static PROXY_FORM: FormSchema = FormSchema {
             f!("enabled", "Enabled", FieldKind::Toggle),
             f!("port", "Port", FieldKind::Number),
             f!("src-address", "Src address", FieldKind::Ip),
-            f!("parent-proxy", "Parent proxy", FieldKind::Text),
+            f!("parent-proxy", "Parent proxy", FieldKind::Ip),
             f!("cache-administrator", "Administrator", FieldKind::Text),
             f!("max-cache-size", "Max cache", FieldKind::Text),
         ],

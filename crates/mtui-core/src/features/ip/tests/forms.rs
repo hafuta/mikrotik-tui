@@ -10,7 +10,7 @@ use crate::form_fields::{
     MANGLE_CHAINS, NAT_ACTIONS, NAT_CHAINS, NEIGHBOR_MODE, PROXY_ACCESS_ACTION, RAW_ACTIONS,
     RAW_CHAINS, RP_FILTER, SSH_FORWARDING, SSH_HOST_KEY_SIZE, UPNP_INTERFACE_TYPE,
 };
-use crate::forms::{FieldKind, FormSchema};
+use crate::forms::{FieldKind, FormSchema, ScalarKind};
 use std::collections::HashMap;
 
 const FORMS: &[&FormSchema] = &[
@@ -145,6 +145,95 @@ fn disabled_uses_enabled_inverted_toggle() {
         }
     }
     assert!(n >= 35, "expected every disabled key converted, got {n}");
+}
+
+#[test]
+fn remaining_scalar_kinds() {
+    assert_eq!(
+        field_kind(&CONNECTION_TRACKING_FORM, "tcp-established-timeout"),
+        FieldKind::Time
+    );
+    assert_eq!(
+        field_kind(&NEIGHBOR_DISCOVERY_FORM, "protocol"),
+        FieldKind::Repeat
+    );
+    assert_eq!(
+        field_kind(&UPNP_INTERFACE_FORM, "forced-external-ip"),
+        FieldKind::Ip
+    );
+    assert_eq!(field_kind(&DNS_FORM, "servers"), FieldKind::Repeat);
+    assert_eq!(field_kind(&DNS_FORM, "cache-max-ttl"), FieldKind::Time);
+    assert_eq!(field_kind(&DHCP_SERVER_FORM, "lease-time"), FieldKind::Time);
+    assert_eq!(
+        field_kind(&DHCP_NETWORK_FORM, "dns-server"),
+        FieldKind::Repeat
+    );
+    assert_eq!(field_kind(&DHCP_NETWORK_FORM, "gateway"), FieldKind::Ip);
+    assert_eq!(field_kind(&ROUTE_FORM, "gateway"), FieldKind::Text);
+    assert_eq!(
+        field_kind(&DHCP_RELAY_FORM, "dhcp-server"),
+        FieldKind::Repeat
+    );
+    assert_eq!(field_kind(&DHCP_RELAY_FORM, "local-address"), FieldKind::Ip);
+    assert_eq!(
+        field_kind(&SOCKS_FORM, "connection-idle-timeout"),
+        FieldKind::Time
+    );
+    assert_eq!(
+        field_kind(&CLOUD_FORM, "public-address"),
+        FieldKind::Readonly
+    );
+    assert!(!CLOUD_FORM.writable_keys().contains(&"public-address"));
+    assert_eq!(field_kind(&ADDRESS_LIST_FORM, "timeout"), FieldKind::Time);
+    assert_eq!(
+        field_kind(&DHCP_ALERT_FORM, "valid-server"),
+        FieldKind::Repeat
+    );
+    assert_eq!(
+        field_kind(&DHCP_ALERT_FORM, "alert-timeout"),
+        FieldKind::Time
+    );
+    assert_eq!(field_kind(&IPSEC_PEER_FORM, "local-address"), FieldKind::Ip);
+    assert_eq!(
+        field_kind(&IPSEC_PROPOSAL_FORM, "lifetime"),
+        FieldKind::Time
+    );
+    assert_eq!(
+        field_kind(&IPSEC_PROFILE_FORM, "enc-algorithm"),
+        FieldKind::Repeat
+    );
+    assert_eq!(
+        field_kind(&IPSEC_PROFILE_FORM, "dh-group"),
+        FieldKind::Repeat
+    );
+    assert_eq!(
+        field_kind(&IPSEC_PROFILE_FORM, "dpd-interval"),
+        FieldKind::Time
+    );
+    assert_eq!(
+        field_kind(&IPSEC_SETTINGS_FORM, "interim-update"),
+        FieldKind::Time
+    );
+    assert_eq!(
+        field_kind(&IPSEC_MODE_CONFIG_FORM, "split-include"),
+        FieldKind::Repeat
+    );
+    assert_eq!(
+        field_kind(&HOTSPOT_PROFILE_FORM, "login-by"),
+        FieldKind::Repeat
+    );
+    assert_eq!(field_kind(&PROXY_FORM, "parent-proxy"), FieldKind::Ip);
+    assert_eq!(
+        field_kind(&IPSEC_POLICY_FORM, "src-port"),
+        FieldKind::Optional {
+            kind: ScalarKind::Number {
+                min: Some(0),
+                max: Some(65535),
+            },
+            unset: "any",
+            unset_label: "any",
+        }
+    );
 }
 
 #[test]
@@ -1111,13 +1200,13 @@ mod ipsec {
             IPSEC_PROPOSAL_FORM
                 .field("auth-algorithms")
                 .map(|field| field.kind),
-            Some(FieldKind::Text)
+            Some(FieldKind::Repeat)
         );
         assert_eq!(
             IPSEC_PROPOSAL_FORM
                 .field("enc-algorithms")
                 .map(|field| field.kind),
-            Some(FieldKind::Text)
+            Some(FieldKind::Repeat)
         );
     }
 
@@ -1249,7 +1338,11 @@ mod hotspot {
             HOTSPOT_USER_PROFILE_FORM
                 .field("idle-timeout")
                 .map(|field| field.kind),
-            Some(FieldKind::Text)
+            Some(FieldKind::Optional {
+                kind: ScalarKind::Time,
+                unset: "none",
+                unset_label: "none",
+            })
         );
         assert_eq!(
             HOTSPOT_USER_PROFILE_FORM
@@ -1261,7 +1354,14 @@ mod hotspot {
             HOTSPOT_USER_PROFILE_FORM
                 .field("shared-users")
                 .map(|field| field.kind),
-            Some(FieldKind::Text)
+            Some(FieldKind::Optional {
+                kind: ScalarKind::Number {
+                    min: None,
+                    max: None,
+                },
+                unset: "unlimited",
+                unset_label: "unlimited",
+            })
         );
         assert_eq!(
             HOTSPOT_USER_PROFILE_FORM

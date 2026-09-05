@@ -335,7 +335,7 @@ fn ipv6_operator_create_keys_and_lookups() {
         IPV6_DHCP_RELAY_FORM
             .field("dhcp-server")
             .map(|field| field.kind),
-        Some(FieldKind::Text)
+        Some(FieldKind::Ipv6)
     );
     assert!(
         IPV6_FIREWALL_NAT_FORM
@@ -440,5 +440,37 @@ fn ipv6_firewall_connections_have_no_field_sheet() {
             .actions
             .iter()
             .all(|action| action.id == "remove")
+    );
+}
+
+#[test]
+fn remaining_scalar_kinds() {
+    assert_eq!(
+        IPV6_POOL_FORM.field("prefix").map(|field| field.kind),
+        Some(FieldKind::Ipv6)
+    );
+    assert_eq!(
+        IPV6_FIREWALL_FILTER_FORM
+            .field("src-address")
+            .map(|field| field.kind),
+        Some(FieldKind::Ipv6)
+    );
+    assert_eq!(
+        IPV6_DHCP_CLIENT_FORM
+            .field("request")
+            .map(|field| field.kind),
+        Some(FieldKind::Repeat)
+    );
+    assert_eq!(
+        IPV6_DHCP_SERVER_FORM
+            .field("lease-time")
+            .map(|field| field.kind),
+        Some(FieldKind::Time)
+    );
+    assert_eq!(
+        IPV6_ADDRESS_LIST_FORM
+            .field("timeout")
+            .map(|field| field.kind),
+        Some(FieldKind::Time)
     );
 }

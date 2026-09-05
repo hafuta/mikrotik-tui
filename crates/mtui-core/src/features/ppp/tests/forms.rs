@@ -206,7 +206,7 @@ fn non_resource_fields_stay_plain_text_or_secret() {
         PPP_SECRET_FORM
             .field("local-address")
             .map(|field| field.kind),
-        Some(FieldKind::Text)
+        Some(FieldKind::Ip)
     );
     assert_eq!(
         PPP_CLIENT_FORM.field("phone").map(|field| field.kind),
@@ -275,5 +275,27 @@ fn non_resource_fields_stay_plain_text_or_secret() {
     assert_eq!(
         L2TP_SERVER_FORM.field("use-ipsec").map(|field| field.kind),
         Some(KIND_USE_IPSEC_REQUIRE)
+    );
+    assert_eq!(
+        PPP_SECRET_FORM
+            .field("remote-ipv6-prefix")
+            .map(|field| field.kind),
+        Some(FieldKind::Ipv6)
+    );
+    assert_eq!(
+        PPP_AAA_FORM.field("interim-update").map(|field| field.kind),
+        Some(FieldKind::Time)
+    );
+    assert_eq!(
+        PPTP_SERVER_FORM.field("mrru").map(|field| field.kind),
+        Some(FieldKind::Number)
+    );
+    assert_eq!(
+        OVPN_SERVER_FORM.field("auth").map(|field| field.kind),
+        Some(FieldKind::Repeat)
+    );
+    assert_eq!(
+        OVPN_SERVER_FORM.field("cipher").map(|field| field.kind),
+        Some(FieldKind::Repeat)
     );
 }

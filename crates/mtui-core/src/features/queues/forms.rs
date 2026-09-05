@@ -33,11 +33,20 @@ const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const ENABLED: FieldSpec = f!("disabled", "Enabled", FieldKind::InvertedToggle);
 const MAX_LIMIT: FieldSpec = f!("max-limit", "Max Limit", FieldKind::Text);
 const LIMIT_AT: FieldSpec = f!("limit-at", "Limit At", FieldKind::Text);
-const PRIORITY: FieldSpec = f!("priority", "Priority", FieldKind::Text);
+const SIMPLE_PRIORITY: FieldSpec = f!("priority", "Priority", FieldKind::Text);
+const TREE_PRIORITY: FieldSpec = f!(
+    "priority",
+    "Priority",
+    FieldKind::ConstrainedNumber {
+        min: Some(1),
+        max: Some(8)
+    }
+);
 const BUCKET_SIZE: FieldSpec = f!("bucket-size", "Bucket Size", FieldKind::Text);
 const BURST_LIMIT: FieldSpec = f!("burst-limit", "Burst Limit", FieldKind::Text);
 const BURST_THRESHOLD: FieldSpec = f!("burst-threshold", "Burst Threshold", FieldKind::Text);
-const BURST_TIME: FieldSpec = f!("burst-time", "Burst Time", FieldKind::Time);
+const SIMPLE_BURST_TIME: FieldSpec = f!("burst-time", "Burst Time", FieldKind::Text);
+const TREE_BURST_TIME: FieldSpec = f!("burst-time", "Burst Time", FieldKind::Time);
 const TIME: FieldSpec = f!("time", "Time", FieldKind::Text);
 const QUEUE_TYPE: FieldSpec = f!("queue", "Queue", LOOKUP_QUEUE_TYPE);
 
@@ -67,12 +76,12 @@ pub static QUEUE_SIMPLE_FORM: FormSchema = FormSchema {
             fields: &[
                 NAME,
                 f!("target", "Target", FieldKind::Repeat),
-                f!("dst", "Dst.", FieldKind::Text),
+                f!("dst", "Dst.", FieldKind::Ip),
                 f!("parent", "Parent", LOOKUP_QUEUE_SIMPLE),
                 f!("packet-marks", "Packet Marks", FieldKind::Repeat),
                 MAX_LIMIT,
                 LIMIT_AT,
-                PRIORITY,
+                SIMPLE_PRIORITY,
                 f!("queue", "Queue", FieldKind::Text),
                 COMMENT,
                 ENABLED,
@@ -82,7 +91,13 @@ pub static QUEUE_SIMPLE_FORM: FormSchema = FormSchema {
             id: "advanced",
             label: "Advanced",
             read_only: false,
-            fields: &[BURST_LIMIT, BURST_THRESHOLD, BURST_TIME, BUCKET_SIZE, TIME],
+            fields: &[
+                BURST_LIMIT,
+                BURST_THRESHOLD,
+                SIMPLE_BURST_TIME,
+                BUCKET_SIZE,
+                TIME,
+            ],
         },
         FormSection {
             id: "status",
@@ -108,11 +123,11 @@ pub static QUEUE_TREE_FORM: FormSchema = FormSchema {
                 f!("packet-mark", "Packet Mark", FieldKind::Text),
                 MAX_LIMIT,
                 LIMIT_AT,
-                PRIORITY,
+                TREE_PRIORITY,
                 QUEUE_TYPE,
                 BURST_LIMIT,
                 BURST_THRESHOLD,
-                BURST_TIME,
+                TREE_BURST_TIME,
                 BUCKET_SIZE,
                 TIME,
                 COMMENT,

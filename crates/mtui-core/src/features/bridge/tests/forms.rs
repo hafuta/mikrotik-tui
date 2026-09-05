@@ -421,10 +421,6 @@ fn bridge_lookups_target_catalog_resources() {
 
     assert_lookup(&BRIDGE_MDB_FORM, "bridge", "bridges", "name", false);
     assert_lookup(&BRIDGE_MDB_FORM, "on-ports", "interfaces", "name", true);
-    assert_eq!(
-        BRIDGE_MDB_FORM.field("vid").map(|field| field.kind),
-        Some(FieldKind::Text)
-    );
     assert_lookup(&BRIDGE_MSTI_FORM, "bridge", "bridges", "name", false);
 
     assert_lookup(
@@ -505,5 +501,38 @@ fn rules_have_no_field_gates() {
     assert!(
         crate::features::bridge::rules::form_field_state("bridges", "pvid", &HashMap::new())
             .is_none()
+    );
+}
+
+#[test]
+fn remaining_scalar_kinds() {
+    assert_eq!(
+        BRIDGE_MDB_FORM.field("vid").map(|field| field.kind),
+        Some(FieldKind::ConstrainedNumber {
+            min: Some(1),
+            max: Some(4094),
+        })
+    );
+    assert_eq!(
+        BRIDGE_FILTER_FORM
+            .field("src-mac-address")
+            .map(|field| field.kind),
+        Some(FieldKind::Mac)
+    );
+    assert_eq!(
+        BRIDGE_FILTER_FORM
+            .field("src-address")
+            .map(|field| field.kind),
+        Some(FieldKind::Ip)
+    );
+    assert_eq!(
+        BRIDGE_NAT_FORM
+            .field("to-src-mac-address")
+            .map(|field| field.kind),
+        Some(FieldKind::Mac)
+    );
+    assert_eq!(
+        BRIDGE_PORT_FORM.field("path-cost").map(|field| field.kind),
+        Some(FieldKind::Number)
     );
 }

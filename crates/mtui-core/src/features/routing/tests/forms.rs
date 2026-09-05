@@ -640,3 +640,21 @@ fn form_none_tables_have_no_editor() {
         assert!(spec.form.is_none(), "{id}");
     }
 }
+
+#[test]
+fn remaining_scalar_kinds() {
+    assert_eq!(
+        BGP_CONNECTION_FORM
+            .field("remote.as")
+            .map(|field| field.kind),
+        Some(FieldKind::Number)
+    );
+    assert_eq!(
+        BGP_TEMPLATE_FORM.field("as").map(|field| field.kind),
+        Some(FieldKind::Number)
+    );
+    assert_eq!(
+        ROUTING_ID_FORM.field("id").map(|field| field.kind),
+        Some(FieldKind::Ip)
+    );
+}
