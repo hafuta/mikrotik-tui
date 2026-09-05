@@ -232,7 +232,7 @@ pub static BGP_CONNECTION_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             f!("remote.address", "Remote Address", FieldKind::Ip),
-            f!("remote.as", "Remote AS", FieldKind::Text),
+            f!("remote.as", "Remote AS", FieldKind::Number),
             f!(
                 "local.role",
                 "Local Role",
@@ -306,7 +306,7 @@ pub static BGP_TEMPLATE_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("as", "AS", FieldKind::Text),
+            f!("as", "AS", FieldKind::Number),
             f!("router-id", "Router ID", FieldKind::Ip),
             f!("address-families", "Address Families", FieldKind::Repeat),
             f!("output.network", "Output Network", LOOKUP_ADDRESS_LIST),
@@ -401,7 +401,7 @@ pub static ROUTING_ID_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("id", "ID", FieldKind::Text),
+            f!("id", "ID", FieldKind::Ip),
             f!(
                 "select",
                 "Select",

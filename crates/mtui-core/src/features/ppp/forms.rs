@@ -205,9 +205,9 @@ pub static PPP_SECRET_FORM: FormSchema = FormSchema {
             SERVICE,
             PROFILE,
             f!("caller-id", "Caller ID", FieldKind::Text),
-            f!("local-address", "Local Address", FieldKind::Text),
-            f!("remote-address", "Remote Address", FieldKind::Text),
-            f!("remote-ipv6-prefix", "Remote IPv6 Prefix", FieldKind::Text),
+            f!("local-address", "Local Address", FieldKind::Ip),
+            f!("remote-address", "Remote Address", FieldKind::Ip),
+            f!("remote-ipv6-prefix", "Remote IPv6 Prefix", FieldKind::Ipv6),
             COMMENT,
             ENABLED,
         ],
@@ -284,7 +284,7 @@ pub static PPP_AAA_FORM: FormSchema = FormSchema {
         fields: &[
             f!("use-radius", "Use RADIUS", FieldKind::Toggle),
             f!("accounting", "Accounting", FieldKind::Toggle),
-            f!("interim-update", "Interim Update", FieldKind::Text),
+            f!("interim-update", "Interim Update", FieldKind::Time),
             f!(
                 "enable-ipv6-accounting",
                 "Enable IPv6 Accounting",
@@ -448,7 +448,7 @@ pub static PPTP_SERVER_FORM: FormSchema = FormSchema {
             KEEPALIVE,
             MAX_MTU,
             MAX_MRU,
-            f!("mrru", "MRRU", FieldKind::Text),
+            f!("mrru", "MRRU", FieldKind::Number),
         ],
     }],
     create_sections: &[],
@@ -628,11 +628,18 @@ pub static OVPN_SERVER_FORM: FormSchema = FormSchema {
             SERVER_ENABLED,
             f!("port", "Port", FieldKind::Number),
             MODE,
-            f!("netmask", "Netmask", FieldKind::Text),
+            f!(
+                "netmask",
+                "Netmask",
+                FieldKind::ConstrainedNumber {
+                    min: Some(0),
+                    max: Some(32),
+                }
+            ),
             CERTIFICATE,
             DEFAULT_PROFILE,
-            AUTH,
-            CIPHER,
+            f!("auth", "Authentication", FieldKind::Repeat),
+            f!("cipher", "Cipher", FieldKind::Repeat),
             f!(
                 "require-client-certificate",
                 "Require Client Certificate",

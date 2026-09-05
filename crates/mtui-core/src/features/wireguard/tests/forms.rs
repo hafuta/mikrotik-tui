@@ -174,4 +174,10 @@ fn non_resource_fields_stay_plain_text_or_secret() {
             .map(|field| field.kind),
         Some(FieldKind::Optional { .. })
     ));
+    assert_eq!(
+        WIREGUARD_PEER_FORM
+            .field("client-address")
+            .map(|field| field.kind),
+        Some(FieldKind::Repeat)
+    );
 }

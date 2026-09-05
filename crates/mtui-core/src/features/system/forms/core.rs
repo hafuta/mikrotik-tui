@@ -109,9 +109,9 @@ const LOGGING_ACTION_GENERAL: &[FieldSpec] = &[
     ),
     f!("disk-file-count", "Disk File Count", FieldKind::Number),
     f!("disk-stop-on-full", "Disk Stop On Full", FieldKind::Toggle),
-    f!("remote", "Remote Address", FieldKind::Text),
+    f!("remote", "Remote Address", FieldKind::Ip),
     f!("remote-port", "Remote Port", FieldKind::Number),
-    f!("src-address", "Src Address", FieldKind::Text),
+    f!("src-address", "Src Address", FieldKind::Ip),
     REMOTE_LOG_FORMAT,
     REMOTE_PROTOCOL,
     SYSLOG_FACILITY,
@@ -361,7 +361,7 @@ pub static LOGGING_FORM: FormSchema = FormSchema {
         label: "General",
         read_only: false,
         fields: &[
-            f!("topics", "Topics", FieldKind::Text),
+            f!("topics", "Topics", FieldKind::Repeat),
             f!(
                 "action",
                 "Action",
@@ -445,7 +445,7 @@ pub static WATCHDOG_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("watchdog-timer", "Watchdog Timer", FieldKind::Toggle),
-            f!("watch-address", "Watch Address", FieldKind::Text),
+            f!("watch-address", "Watch Address", FieldKind::Ip),
             f!("watch-interval", "Watch Interval", FieldKind::Time),
             f!("no-ping-delay", "No Ping Delay", FieldKind::Time),
             f!("ping-start-after", "Ping Start After", FieldKind::Time),
@@ -554,7 +554,7 @@ pub static DEVICE_MODE_FORM: FormSchema = FormSchema {
                 f!("routerboard", "RouterBOARD", FieldKind::Toggle),
                 f!("flagging-enabled", "Flagging Enabled", FieldKind::Toggle),
                 f!("flagged", "Flagged", FieldKind::Toggle),
-                f!("activation-timeout", "Activation Timeout", FieldKind::Text),
+                f!("activation-timeout", "Activation Timeout", FieldKind::Time),
             ],
         },
         FormSection {
@@ -686,7 +686,7 @@ pub static EXPORT_CONFIG_PROMPT: FormSchema = FormSchema {
 
 const IMPORT_CONFIG_FIELDS: &[FieldSpec] = &[
     FILE_NAME,
-    f!("from-line", "From Line", FieldKind::Text),
+    f!("from-line", "From Line", FieldKind::Number),
     f!("verbose", "Verbose", FieldKind::Toggle),
 ];
 

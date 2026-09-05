@@ -16,7 +16,7 @@
 //!
 //! Group id: `tools-group`.
 
-use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
+use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection, ScalarKind};
 
 macro_rules! f {
     ($key:literal, $label:literal, $kind:expr) => {
@@ -142,7 +142,7 @@ pub static WOL_PROMPT: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("interface", "Interface", LOOKUP_IFACE),
-            f!("mac", "MAC", FieldKind::Text),
+            f!("mac", "MAC", FieldKind::Mac),
         ],
     }],
     create_sections: &[],
@@ -174,7 +174,15 @@ pub static ROMON_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 f!("enabled", "Enabled", FieldKind::Toggle),
-                f!("id", "ID", FieldKind::Text),
+                f!(
+                    "id",
+                    "ID",
+                    FieldKind::Optional {
+                        kind: ScalarKind::Mac,
+                        unset: "00:00:00:00:00:00",
+                        unset_label: "auto",
+                    }
+                ),
                 SECRETS,
             ],
         },
@@ -228,7 +236,7 @@ pub static GRAPHING_FORM: FormSchema = FormSchema {
     create_sections: &[],
 };
 
-const GRAPHING_ALLOW_ADDRESS: FieldSpec = f!("allow-address", "Allow Address", FieldKind::Text);
+const GRAPHING_ALLOW_ADDRESS: FieldSpec = f!("allow-address", "Allow Address", FieldKind::Ip);
 const GRAPHING_STORE_ON_DISK: FieldSpec = f!("store-on-disk", "Store On Disk", FieldKind::Toggle);
 
 pub static GRAPHING_INTERFACE_FORM: FormSchema = FormSchema {

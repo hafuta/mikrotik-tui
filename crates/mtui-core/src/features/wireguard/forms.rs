@@ -130,7 +130,7 @@ pub static WIREGUARD_PEER_FORM: FormSchema = FormSchema {
             label: "Client",
             read_only: false,
             fields: &[
-                f!("client-address", "Client Address", FieldKind::Text),
+                f!("client-address", "Client Address", FieldKind::Repeat),
                 f!("client-dns", "Client DNS", FieldKind::Repeat),
                 f!("client-endpoint", "Client Endpoint", FieldKind::Text),
                 f!(

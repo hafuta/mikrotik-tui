@@ -24,7 +24,7 @@ pub static CERTIFICATE_FORM: FormSchema = FormSchema {
             fields: &[
                 NAME,
                 f!("common-name", "Common Name", FieldKind::Text),
-                f!("key-usage", "Key Usage", FieldKind::Text),
+                f!("key-usage", "Key Usage", FieldKind::Repeat),
                 f!("trusted", "Trusted", FieldKind::Toggle),
                 f!("days-valid", "Days Valid", FieldKind::Number),
             ],

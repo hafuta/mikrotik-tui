@@ -389,4 +389,10 @@ fn switch_lookups_target_catalog_resources() {
             .map(|field| field.kind),
         Some(FieldKind::Text)
     );
+    assert_eq!(
+        SWITCH_RULE_FORM
+            .field("src-mac-address")
+            .map(|field| field.kind),
+        Some(FieldKind::Text)
+    );
 }

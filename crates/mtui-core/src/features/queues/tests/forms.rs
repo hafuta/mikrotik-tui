@@ -135,6 +135,16 @@ fn queue_simple_status_is_runtime_only() {
         QUEUE_SIMPLE_FORM.field("queue").map(|field| field.kind),
         Some(FieldKind::Text)
     );
+    assert_eq!(
+        QUEUE_SIMPLE_FORM.field("dst").map(|field| field.kind),
+        Some(FieldKind::Ip)
+    );
+    assert_eq!(
+        QUEUE_SIMPLE_FORM
+            .field("burst-time")
+            .map(|field| field.kind),
+        Some(FieldKind::Text)
+    );
 }
 
 #[test]
@@ -172,6 +182,17 @@ fn queue_tree_and_type_kinds() {
         Some(FieldKind::Number)
     );
     assert!(QUEUE_TYPE_FORM.writable_keys().contains(&"pfifo-limit"));
+    assert_eq!(
+        QUEUE_TREE_FORM.field("priority").map(|field| field.kind),
+        Some(FieldKind::ConstrainedNumber {
+            min: Some(1),
+            max: Some(8),
+        })
+    );
+    assert_eq!(
+        QUEUE_TREE_FORM.field("burst-time").map(|field| field.kind),
+        Some(FieldKind::Time)
+    );
 }
 
 #[test]

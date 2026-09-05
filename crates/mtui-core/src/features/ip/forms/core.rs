@@ -9,7 +9,7 @@ use crate::form_fields::{
     LOOKUP_INTERFACES, LOOKUP_INTERFACES_MULTI, LOOKUP_KID_CONTROL, LOOKUP_POOLS,
     LOOKUP_ROUTING_TABLES,
 };
-use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
+use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection, ScalarKind};
 
 macro_rules! f {
     ($key:literal, $label:literal, $kind:expr) => {
@@ -37,6 +37,15 @@ const INTERFACE: FieldSpec = f!("interface", "Interface", LOOKUP_INTERFACES);
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ip);
 const MAC: FieldSpec = f!("mac-address", "MAC address", FieldKind::Mac);
 const GATEWAY: FieldSpec = f!("gateway", "Gateway", FieldKind::Text);
+const DHCP_GATEWAY: FieldSpec = f!("gateway", "Gateway", FieldKind::Ip);
+const OPTIONAL_VLAN_DISABLED: FieldKind = FieldKind::Optional {
+    kind: ScalarKind::Number {
+        min: Some(0),
+        max: Some(4094),
+    },
+    unset: "disabled",
+    unset_label: "disabled",
+};
 const FILTER_CHAIN: FieldSpec = FIELD_FILTER_CHAIN;
 const MANGLE_CHAIN: FieldSpec = FIELD_MANGLE_CHAIN;
 const RAW_CHAIN: FieldSpec = FIELD_RAW_CHAIN;
@@ -129,7 +138,7 @@ pub static DHCP_SERVER_FORM: FormSchema = FormSchema {
                 NAME,
                 INTERFACE,
                 ADDRESS_POOL,
-                f!("lease-time", "Lease time", FieldKind::Text),
+                f!("lease-time", "Lease time", FieldKind::Time),
                 COMMENT,
                 ENABLED,
             ],
@@ -153,8 +162,8 @@ pub static DHCP_NETWORK_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             ADDRESS,
-            GATEWAY,
-            f!("dns-server", "DNS", FieldKind::Text),
+            DHCP_GATEWAY,
+            f!("dns-server", "DNS", FieldKind::Repeat),
             f!("domain", "Domain", FieldKind::Text),
             COMMENT,
         ],
@@ -265,14 +274,14 @@ pub static DNS_FORM: FormSchema = FormSchema {
         label: "General",
         read_only: false,
         fields: &[
-            f!("servers", "Servers", FieldKind::Text),
+            f!("servers", "Servers", FieldKind::Repeat),
             f!(
                 "allow-remote-requests",
                 "Remote requests",
                 FieldKind::Toggle
             ),
             f!("cache-size", "Cache size", FieldKind::Number),
-            f!("cache-max-ttl", "Cache max TTL", FieldKind::Text),
+            f!("cache-max-ttl", "Cache max TTL", FieldKind::Time),
         ],
     }],
     create_sections: &[],
@@ -492,7 +501,7 @@ pub static ADDRESS_LIST_FORM: FormSchema = FormSchema {
             fields: &[
                 ADDRESS_LIST_NAME,
                 ADDRESS,
-                f!("timeout", "Timeout", FieldKind::Text),
+                f!("timeout", "Timeout", FieldKind::Time),
                 COMMENT,
                 ENABLED,
             ],
@@ -520,8 +529,8 @@ pub static DHCP_RELAY_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             INTERFACE,
-            f!("dhcp-server", "DHCP server", FieldKind::Text),
-            f!("local-address", "Local address", FieldKind::Text),
+            f!("dhcp-server", "DHCP server", FieldKind::Repeat),
+            f!("local-address", "Local address", FieldKind::Ip),
             COMMENT,
             ENABLED,
         ],
@@ -636,7 +645,6 @@ pub static CLOUD_FORM: FormSchema = FormSchema {
             fields: &[
                 f!("ddns-enabled", "DDNS", FieldKind::Toggle),
                 f!("update-time", "Update time", FieldKind::Toggle),
-                f!("public-address", "Public address", FieldKind::Text),
             ],
         },
         FormSection {
@@ -644,6 +652,7 @@ pub static CLOUD_FORM: FormSchema = FormSchema {
             label: "Status",
             read_only: true,
             fields: &[
+                f!("public-address", "Public address", FieldKind::Readonly),
                 f!("dns-name", "DNS name", FieldKind::Readonly),
                 f!("status", "Status", FieldKind::Readonly),
             ],
@@ -700,7 +709,7 @@ pub static SOCKS_FORM: FormSchema = FormSchema {
         fields: &[
             f!("enabled", "Enabled", FieldKind::Toggle),
             f!("port", "Port", FieldKind::Number),
-            f!("connection-idle-timeout", "Idle timeout", FieldKind::Text),
+            f!("connection-idle-timeout", "Idle timeout", FieldKind::Time),
         ],
     }],
     create_sections: &[],
@@ -818,7 +827,7 @@ pub static UPNP_INTERFACE_FORM: FormSchema = FormSchema {
         fields: &[
             INTERFACE,
             f!("type", "Type", KIND_UPNP_TYPE),
-            f!("forced-external-ip", "Forced external IP", FieldKind::Text),
+            f!("forced-external-ip", "Forced external IP", FieldKind::Ip),
             ENABLED,
         ],
     }],
@@ -834,8 +843,8 @@ pub static DHCP_ALERT_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             INTERFACE,
-            f!("valid-server", "Valid server", FieldKind::Text),
-            f!("alert-timeout", "Alert timeout", FieldKind::Text),
+            f!("valid-server", "Valid server", FieldKind::Repeat),
+            f!("alert-timeout", "Alert timeout", FieldKind::Time),
             ENABLED,
         ],
     }],
@@ -855,11 +864,11 @@ pub static CONNECTION_TRACKING_FORM: FormSchema = FormSchema {
                 f!(
                     "tcp-established-timeout",
                     "TCP established",
-                    FieldKind::Text
+                    FieldKind::Time
                 ),
-                f!("udp-timeout", "UDP timeout", FieldKind::Text),
-                f!("icmp-timeout", "ICMP timeout", FieldKind::Text),
-                f!("generic-timeout", "Generic timeout", FieldKind::Text),
+                f!("udp-timeout", "UDP timeout", FieldKind::Time),
+                f!("icmp-timeout", "ICMP timeout", FieldKind::Time),
+                f!("generic-timeout", "Generic timeout", FieldKind::Time),
             ],
         },
         FormSection {
@@ -888,8 +897,12 @@ pub static NEIGHBOR_DISCOVERY_FORM: FormSchema = FormSchema {
                 "Discover list",
                 LOOKUP_INTERFACE_LISTS
             ),
-            f!("protocol", "Protocol", FieldKind::Text),
-            f!("lldp-med-net-policy-vlan", "LLDP-MED VLAN", FieldKind::Text),
+            f!("protocol", "Protocol", FieldKind::Repeat),
+            f!(
+                "lldp-med-net-policy-vlan",
+                "LLDP-MED VLAN",
+                OPTIONAL_VLAN_DISABLED
+            ),
             f!("mode", "Mode", KIND_NEIGHBOR_MODE),
         ],
     }],

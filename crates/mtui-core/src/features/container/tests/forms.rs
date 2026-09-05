@@ -204,6 +204,28 @@ fn app_network_enum() {
 }
 
 #[test]
+fn remaining_scalar_kinds() {
+    assert_eq!(
+        CONTAINER_FORM.field("dns").map(|field| field.kind),
+        Some(FieldKind::Repeat)
+    );
+    assert_eq!(
+        CONTAINER_FORM.field("devices").map(|field| field.kind),
+        Some(FieldKind::Repeat)
+    );
+    assert_eq!(
+        CONTAINER_FORM.field("cpu-list").map(|field| field.kind),
+        Some(FieldKind::Repeat)
+    );
+    assert_eq!(
+        CONTAINER_FORM
+            .field("healthcheck-interval")
+            .map(|field| field.kind),
+        Some(FieldKind::Time)
+    );
+}
+
+#[test]
 fn rules_stub_leaves_visibility_ungated() {
     let values = HashMap::from([("remote-image".to_string(), "pihole/pihole".to_string())]);
     assert!(form_field_state("containers", "file", &values).is_none());

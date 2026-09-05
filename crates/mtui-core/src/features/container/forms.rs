@@ -125,7 +125,7 @@ pub static CONTAINER_FORM: FormSchema = FormSchema {
                 f!("mountlists", "Mount Lists", LOOKUP_MOUNT_LISTS),
                 f!("start-on-boot", "Start On Boot", FieldKind::Toggle),
                 f!("logging", "Logging", FieldKind::Toggle),
-                f!("dns", "DNS", FieldKind::Text),
+                f!("dns", "DNS", FieldKind::Repeat),
                 f!("domain-name", "Domain Name", FieldKind::Text),
                 f!("hostname", "Hostname", FieldKind::Text),
                 f!("workdir", "Work Dir", FieldKind::Text),
@@ -150,8 +150,8 @@ pub static CONTAINER_FORM: FormSchema = FormSchema {
                 f!("stop-signal", "Stop Signal", KIND_STOP_SIGNAL),
                 f!("stop-time", "Stop Time", FieldKind::Time),
                 f!("user", "User", FieldKind::Text),
-                f!("devices", "Devices", FieldKind::Text),
-                f!("cpu-list", "CPU List", FieldKind::Text),
+                f!("devices", "Devices", FieldKind::Repeat),
+                f!("cpu-list", "CPU List", FieldKind::Repeat),
                 f!("memory-high", "Memory High", FieldKind::Number),
                 f!("memory-max", "Memory Max", FieldKind::Number),
                 f!("swap-max", "Swap Max", FieldKind::Number),
@@ -164,7 +164,7 @@ pub static CONTAINER_FORM: FormSchema = FormSchema {
                 f!(
                     "healthcheck-interval",
                     "Healthcheck Interval",
-                    FieldKind::Text
+                    FieldKind::Time
                 ),
                 f!(
                     "healthcheck-retries",
@@ -174,17 +174,17 @@ pub static CONTAINER_FORM: FormSchema = FormSchema {
                 f!(
                     "healthcheck-start-interval",
                     "Healthcheck Start Interval",
-                    FieldKind::Text
+                    FieldKind::Time
                 ),
                 f!(
                     "healthcheck-start-period",
                     "Healthcheck Start Period",
-                    FieldKind::Text
+                    FieldKind::Time
                 ),
                 f!(
                     "healthcheck-timeout",
                     "Healthcheck Timeout",
-                    FieldKind::Text
+                    FieldKind::Time
                 ),
             ],
         },
@@ -241,7 +241,7 @@ pub static APP_FORM: FormSchema = FormSchema {
                     "Container Command Lines",
                     FieldKind::Text
                 ),
-                f!("devices", "Devices", FieldKind::Text),
+                f!("devices", "Devices", FieldKind::Repeat),
                 f!("environment", "Environment", FieldKind::Repeat),
                 f!("extra-mounts", "Extra Mounts", FieldKind::Repeat),
                 f!(

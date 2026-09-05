@@ -1052,3 +1052,53 @@ fn routerboard_settings_hides_board_only_keys_until_printed() {
             .all(|(key, _)| key != "enable-jumper-reset" && key != "cpu-frequency")
     );
 }
+
+#[test]
+fn remaining_scalar_kinds() {
+    assert_eq!(
+        LOGGING_ACTION_FORM.field("remote").map(|field| field.kind),
+        Some(FieldKind::Ip)
+    );
+    assert_eq!(
+        LOGGING_ACTION_FORM
+            .field("src-address")
+            .map(|field| field.kind),
+        Some(FieldKind::Ip)
+    );
+    assert_eq!(
+        LOGGING_FORM.field("topics").map(|field| field.kind),
+        Some(FieldKind::Repeat)
+    );
+    assert_eq!(
+        USER_GROUP_FORM.field("policy").map(|field| field.kind),
+        Some(FieldKind::Repeat)
+    );
+    assert_eq!(
+        CERTIFICATE_FORM.field("key-usage").map(|field| field.kind),
+        Some(FieldKind::Repeat)
+    );
+    assert_eq!(
+        WATCHDOG_FORM.field("watch-address").map(|field| field.kind),
+        Some(FieldKind::Ip)
+    );
+    assert_eq!(
+        DEVICE_MODE_FORM
+            .field("activation-timeout")
+            .map(|field| field.kind),
+        Some(FieldKind::Time)
+    );
+    assert_eq!(
+        IMPORT_CONFIG_PROMPT
+            .field("from-line")
+            .map(|field| field.kind),
+        Some(FieldKind::Number)
+    );
+    assert_eq!(
+        DISK_FORM.field("nfs-address").map(|field| field.kind),
+        Some(FieldKind::Ip)
+    );
+    assert_eq!(
+        DISK_FORM.field("sshfs-address").map(|field| field.kind),
+        Some(FieldKind::Text)
+    );
+}

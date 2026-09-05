@@ -6,7 +6,7 @@ use crate::form_fields::{
     KIND_IPSEC_POLICY_ACTION, KIND_IPSEC_POLICY_LEVEL, KIND_IPSEC_PROPOSAL_CHECK,
     KIND_IPSEC_PROTOCOLS, LOOKUP_CERTIFICATES, LOOKUP_IPSEC_POLICY_GROUPS, LOOKUP_POOLS,
 };
-use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection};
+use crate::forms::{FieldKind, FieldSpec, FormSchema, FormSection, ScalarKind};
 
 macro_rules! f {
     ($key:literal, $label:literal, $kind:expr) => {
@@ -38,6 +38,14 @@ const NAME: FieldSpec = f!("name", "Name", FieldKind::Text);
 const ADDRESS: FieldSpec = f!("address", "Address", FieldKind::Ip);
 const COMMENT: FieldSpec = f!("comment", "Comment", FieldKind::Text);
 const ENABLED: FieldSpec = f!("disabled", "Enabled", FieldKind::InvertedToggle);
+const OPTIONAL_PORT_ANY: FieldKind = FieldKind::Optional {
+    kind: ScalarKind::Number {
+        min: Some(0),
+        max: Some(65535),
+    },
+    unset: "any",
+    unset_label: "any",
+};
 const PEER: FieldSpec = f!("peer", "Peer", LOOKUP_PEER);
 const PROFILE: FieldSpec = f!("profile", "Profile", LOOKUP_PROFILE);
 const PROPOSAL: FieldSpec = f!("proposal", "Proposal", LOOKUP_PROPOSAL);
@@ -72,7 +80,7 @@ pub static IPSEC_PEER_FORM: FormSchema = FormSchema {
             label: "Advanced",
             read_only: false,
             fields: &[
-                f!("local-address", "Local address", FieldKind::Text),
+                f!("local-address", "Local address", FieldKind::Ip),
                 f!("responder", "Responder", FieldKind::Toggle),
             ],
         },
@@ -165,8 +173,8 @@ pub static IPSEC_POLICY_FORM: FormSchema = FormSchema {
             fields: &[
                 f!("src-address", "Src address", FieldKind::Ip),
                 f!("dst-address", "Dst address", FieldKind::Ip),
-                f!("src-port", "Src port", FieldKind::Text),
-                f!("dst-port", "Dst port", FieldKind::Text),
+                f!("src-port", "Src port", OPTIONAL_PORT_ANY),
+                f!("dst-port", "Dst port", OPTIONAL_PORT_ANY),
                 FIELD_PROTOCOL,
             ],
         },
@@ -193,10 +201,10 @@ pub static IPSEC_PROPOSAL_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             NAME,
-            f!("auth-algorithms", "Auth algorithms", FieldKind::Text),
-            f!("enc-algorithms", "Enc algorithms", FieldKind::Text),
+            f!("auth-algorithms", "Auth algorithms", FieldKind::Repeat),
+            f!("enc-algorithms", "Enc algorithms", FieldKind::Repeat),
             f!("pfs-group", "PFS group", KIND_IPSEC_PFS_GROUP),
-            f!("lifetime", "Lifetime", FieldKind::Text),
+            f!("lifetime", "Lifetime", FieldKind::Time),
             ENABLED,
         ],
     }],
@@ -213,16 +221,16 @@ pub static IPSEC_PROFILE_FORM: FormSchema = FormSchema {
         fields: &[
             NAME,
             f!("hash-algorithm", "Hash algorithm", KIND_IPSEC_HASH),
-            f!("enc-algorithm", "Enc algorithm", FieldKind::Text),
-            f!("dh-group", "DH group", FieldKind::Text),
+            f!("enc-algorithm", "Enc algorithm", FieldKind::Repeat),
+            f!("dh-group", "DH group", FieldKind::Repeat),
             f!(
                 "proposal-check",
                 "Proposal check",
                 KIND_IPSEC_PROPOSAL_CHECK
             ),
-            f!("lifetime", "Lifetime", FieldKind::Text),
+            f!("lifetime", "Lifetime", FieldKind::Time),
             f!("nat-traversal", "NAT traversal", FieldKind::Toggle),
-            f!("dpd-interval", "DPD interval", FieldKind::Text),
+            f!("dpd-interval", "DPD interval", FieldKind::Time),
             f!(
                 "dpd-maximum-failures",
                 "DPD max failures",
@@ -242,7 +250,7 @@ pub static IPSEC_SETTINGS_FORM: FormSchema = FormSchema {
         read_only: false,
         fields: &[
             f!("accounting", "Accounting", FieldKind::Toggle),
-            f!("interim-update", "Interim update", FieldKind::Text),
+            f!("interim-update", "Interim update", FieldKind::Time),
             f!("xauth-use-radius", "XAuth RADIUS", FieldKind::Toggle),
             f!(
                 "uniq-id-accounting",
@@ -270,7 +278,7 @@ pub static IPSEC_MODE_CONFIG_FORM: FormSchema = FormSchema {
             NAME,
             f!("address-pool", "Address pool", LOOKUP_POOLS),
             f!("address-prefix-length", "Prefix length", FieldKind::Number),
-            f!("split-include", "Split include", FieldKind::Text),
+            f!("split-include", "Split include", FieldKind::Repeat),
             f!("system-dns", "System DNS", FieldKind::Toggle),
             COMMENT,
             ENABLED,

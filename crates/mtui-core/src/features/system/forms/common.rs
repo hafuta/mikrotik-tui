@@ -76,7 +76,7 @@ pub(crate) const ON_EVENT: FieldSpec = FieldSpec {
 pub(crate) const POLICY: FieldSpec = FieldSpec {
     key: "policy",
     label: "Policy",
-    kind: FieldKind::Text,
+    kind: FieldKind::Repeat,
 };
 pub(crate) const CA: FieldSpec = FieldSpec {
     key: "ca",

@@ -226,7 +226,11 @@ fn romon_is_singleton_with_status_and_secret_list() {
     );
     assert_eq!(
         ROMON_FORM.field("id").map(|field| field.kind),
-        Some(FieldKind::Text)
+        Some(FieldKind::Optional {
+            kind: crate::forms::ScalarKind::Mac,
+            unset: "00:00:00:00:00:00",
+            unset_label: "auto",
+        })
     );
     assert_eq!(
         ROMON_FORM.field("secrets").map(|field| field.kind),
@@ -345,7 +349,7 @@ fn graphing_children_use_lookups_toggles_and_full_create() {
         GRAPHING_INTERFACE_FORM
             .field("allow-address")
             .map(|field| field.kind),
-        Some(FieldKind::Text)
+        Some(FieldKind::Ip)
     );
     assert_eq!(
         GRAPHING_INTERFACE_FORM
@@ -424,4 +428,20 @@ fn unknown_netwatch_keys_land_on_status_extras() {
     row.insert("loss-count".into(), "2".into());
     let extras = extra_status_fields(&NETWATCH_FORM, &row);
     assert_eq!(extras, vec![("loss-count".into(), "2".into())]);
+}
+
+#[test]
+fn remaining_scalar_kinds() {
+    assert_eq!(
+        WOL_PROMPT.field("mac").map(|field| field.kind),
+        Some(FieldKind::Mac)
+    );
+    assert!(matches!(
+        ROMON_FORM.field("id").map(|field| field.kind),
+        Some(FieldKind::Optional {
+            kind: crate::forms::ScalarKind::Mac,
+            unset: "00:00:00:00:00:00",
+            ..
+        })
+    ));
 }

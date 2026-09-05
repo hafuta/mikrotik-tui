@@ -6,7 +6,7 @@ use crate::form_fields::{
     KIND_BRIDGE_PRIORITY, LOOKUP_INTERFACES as LOOKUP_IFACE,
     LOOKUP_INTERFACES_MULTI as LOOKUP_IFACES,
 };
-use crate::forms::{EnumChoice, FieldKind, FieldSpec, FormSchema, FormSection};
+use crate::forms::{EnumChoice, FieldKind, FieldSpec, FormSchema, FormSection, ScalarKind};
 
 macro_rules! f {
     ($key:literal, $label:literal, $kind:expr) => {
@@ -135,8 +135,16 @@ const FRAME_TYPES: FieldSpec = f!(
 const INGRESS: FieldSpec = f!("ingress-filtering", "Ingress filtering", FieldKind::Toggle);
 const BRIDGE_PRIORITY: FieldSpec = f!("priority", "Priority", KIND_BRIDGE_PRIORITY);
 const PORT_PRIORITY: FieldSpec = f!("priority", "Priority", KIND_BRIDGE_PORT_PRIORITY);
-const SRC_MAC: FieldSpec = f!("src-mac-address", "Src MAC", FieldKind::Text);
-const DST_MAC: FieldSpec = f!("dst-mac-address", "Dst MAC", FieldKind::Text);
+const SRC_MAC: FieldSpec = f!("src-mac-address", "Src MAC", FieldKind::Mac);
+const DST_MAC: FieldSpec = f!("dst-mac-address", "Dst MAC", FieldKind::Mac);
+const OPTIONAL_HORIZON: FieldKind = FieldKind::Optional {
+    kind: ScalarKind::Number {
+        min: None,
+        max: None,
+    },
+    unset: "none",
+    unset_label: "none",
+};
 const IN_IFACE: FieldSpec = f!("in-interface", "In interface", LOOKUP_IFACE);
 const OUT_IFACE: FieldSpec = f!("out-interface", "Out interface", LOOKUP_IFACE);
 const PACKETS: FieldSpec = f!("packets", "Packets", FieldKind::Readonly);
@@ -255,8 +263,8 @@ pub static BRIDGE_PORT_FORM: FormSchema = FormSchema {
                         choices: EDGE_CHOICES
                     }
                 ),
-                f!("horizon", "Horizon", FieldKind::Text),
-                f!("path-cost", "Path Cost", FieldKind::Text),
+                f!("horizon", "Horizon", OPTIONAL_HORIZON),
+                f!("path-cost", "Path Cost", FieldKind::Number),
                 PORT_PRIORITY,
                 f!("bpdu-guard", "BPDU Guard", FieldKind::Toggle),
                 f!("restricted-role", "Restricted Role", FieldKind::Toggle),
@@ -324,7 +332,14 @@ pub static BRIDGE_MDB_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 f!("group", "Group", FieldKind::Text),
-                f!("vid", "VID", FieldKind::Text),
+                f!(
+                    "vid",
+                    "VID",
+                    FieldKind::ConstrainedNumber {
+                        min: Some(1),
+                        max: Some(4094)
+                    }
+                ),
                 f!("on-ports", "On ports", LOOKUP_IFACES),
                 BRIDGE,
                 ENABLED,
@@ -394,8 +409,8 @@ pub static BRIDGE_FILTER_FORM: FormSchema = FormSchema {
                 IN_IFACE,
                 OUT_IFACE,
                 FIELD_IP_PROTOCOL,
-                f!("src-address", "Source", FieldKind::Text),
-                f!("dst-address", "Destination", FieldKind::Text),
+                f!("src-address", "Source", FieldKind::Ip),
+                f!("dst-address", "Destination", FieldKind::Ip),
                 f!("src-port", "Src port", FieldKind::Text),
                 f!("dst-port", "Dst port", FieldKind::Text),
             ],
@@ -440,8 +455,8 @@ pub static BRIDGE_NAT_FORM: FormSchema = FormSchema {
                 DST_MAC,
                 IN_IFACE,
                 OUT_IFACE,
-                f!("to-src-mac-address", "To src MAC", FieldKind::Text),
-                f!("to-dst-mac-address", "To dst MAC", FieldKind::Text),
+                f!("to-src-mac-address", "To src MAC", FieldKind::Mac),
+                f!("to-dst-mac-address", "To dst MAC", FieldKind::Mac),
             ],
         },
         FormSection {
@@ -544,7 +559,7 @@ pub static BRIDGE_PORT_CONTROLLER_DEVICE_FORM: FormSchema = FormSchema {
             read_only: false,
             fields: &[
                 NAME,
-                f!("pe-mac", "PE MAC", FieldKind::Text),
+                f!("pe-mac", "PE MAC", FieldKind::Mac),
                 f!("descr", "Description", FieldKind::Text),
                 CONTROL_PORTS,
             ],
@@ -560,7 +575,7 @@ pub static BRIDGE_PORT_CONTROLLER_DEVICE_FORM: FormSchema = FormSchema {
         id: "general",
         label: "General",
         read_only: false,
-        fields: &[NAME, f!("pe-mac", "PE MAC", FieldKind::Text)],
+        fields: &[NAME, f!("pe-mac", "PE MAC", FieldKind::Mac)],
     }],
 };
 

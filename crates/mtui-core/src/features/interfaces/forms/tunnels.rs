@@ -744,7 +744,7 @@ pub static VXLAN_FORM: FormSchema = FormSchema {
                     "local-address",
                     "Local Address",
                     FieldKind::Optional {
-                        kind: ScalarKind::Raw,
+                        kind: ScalarKind::Ip,
                         unset: "",
                         unset_label: "Auto"
                     }
@@ -753,7 +753,7 @@ pub static VXLAN_FORM: FormSchema = FormSchema {
                     "group",
                     "Group",
                     FieldKind::Optional {
-                        kind: ScalarKind::Raw,
+                        kind: ScalarKind::Ip,
                         unset: "",
                         unset_label: "None"
                     }
